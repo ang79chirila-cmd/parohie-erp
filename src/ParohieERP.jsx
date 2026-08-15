@@ -2702,6 +2702,7 @@ export default function ParohieERP() {
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} />}
           {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
+          {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} />}
         </div>
       </main>
 
