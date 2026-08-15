@@ -13,7 +13,7 @@ import {
   ArrowDownCircle, ArrowUpCircle, AlertTriangle, ArrowLeftRight,
   Trash2, X, Church, Lock, User, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil,
   Download, ChevronDown, FileText, FileSpreadsheet, FileCode, Building2, Boxes, Archive, ClipboardCheck, MapPin, Mail,
-  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock,
+  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload,
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- *
