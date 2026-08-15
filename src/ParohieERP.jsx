@@ -2093,6 +2093,12 @@ export default function ParohieERP() {
   // După folosirea codului de recuperare, forțăm reînrolarea imediată (contul rămâne
   // fără al doilea factor până atunci) — deschide automat ecranul de Securitate la login.
   const [forteazaReinrolareMfa, setForteazaReinrolareMfa] = useState(false);
+  // Incrementat manual pentru a forța o reîncărcare completă a datelor din Supabase
+  // (folosit după resetarea completă a mediului demo, când nu există alt semnal automat
+  // care să schimbe [loaded, contActiv?.parohieId] și să repornească efectul de încărcare).
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [resetareInCurs, setResetareInCurs] = useState(false);
+  const [resetareEroare, setResetareEroare] = useState("");
 
   const authCurent = contActiv; // { cif, username, rol, parohieId } — folosit pentru afișare (username, rol)
 
@@ -2191,7 +2197,7 @@ export default function ParohieERP() {
         console.error("Eroare la încărcarea datelor din Supabase:", e);
       }
     })();
-  }, [loaded, contActiv?.parohieId]);
+  }, [loaded, contActiv?.parohieId, refreshTrigger]);
 
   // Auto-salvare, cu debounce, a bucăților ținute în date_locale (vezi mai sus) — singurul loc din
   // aplicație unde mai există un echivalent al vechii auto-salvări locale, dar scris direct în
@@ -2343,8 +2349,26 @@ export default function ParohieERP() {
   }
 
   async function handleResetDemo() {
-    const fresh = seedDemoState();
-    setState(fresh);
+    setResetareEroare("");
+    setResetareInCurs(true);
+    try {
+      const { error } = await supabase.rpc("sterge_toate_datele_parohie", {
+        p_parohie_id: contActiv.parohieId,
+      });
+      if (error) throw error;
+      // Nu reseamănă date fictive — parohia demo rămâne goală, exact ca decizia luată.
+      // Forțăm o reîncărcare completă din Supabase (acum gol) prin efectul existent,
+      // în loc să presupunem local ce s-a șters.
+      setState(emptyState());
+      setDateLocaleIncarcate(false);
+      setRefreshTrigger((n) => n + 1);
+      return true;
+    } catch (e) {
+      setResetareEroare(e.message || "Eroare la resetarea mediului demo.");
+      return false;
+    } finally {
+      setResetareInCurs(false);
+    }
   }
 
   // Login în 2 pași: parola e verificată de `logare()` ca înainte (stabilește sesiunea
@@ -2689,23 +2713,32 @@ export default function ParohieERP() {
       )}
 
       {showResetConfirm && (
-        <Modal title="Resetează mediul de test" onClose={() => setShowResetConfirm(false)}>
+        <Modal title="Resetează mediul de test" onClose={() => !resetareInCurs && setShowResetConfirm(false)}>
           <div className="flex flex-col gap-4">
             <p className="text-sm text-stone-600">
-              Sigur vrei să resetezi mediul de test? Toate modificările făcute (operațiuni, conturi noi, articole,
-              vânzări) vor fi <span className="font-medium text-rose-700">șterse ireversibil</span> și înlocuite cu
-              datele inițiale de test.
+              Sigur vrei să resetezi mediul de test? Absolut toate datele acestei parohii demo
+              (Registru Jurnal, Pangar, Cimitir, Patrimoniu, Corespondență, Date parohie,
+              Prevederi bugetare) vor fi{" "}
+              <span className="font-medium text-rose-700">șterse ireversibil din Supabase</span>.
+              Parohia va rămâne <span className="font-medium">complet goală</span> după resetare —
+              nu se reînsămânțează date fictive automat.
             </p>
+            {resetareEroare && (
+              <span className="text-rose-600 text-xs flex items-center gap-1">
+                <AlertTriangle size={12} /> {resetareEroare}
+              </span>
+            )}
             <div className="flex justify-end gap-2">
-              <Btn variant="ghost" onClick={() => setShowResetConfirm(false)}>Anulează</Btn>
+              <Btn variant="ghost" onClick={() => setShowResetConfirm(false)} disabled={resetareInCurs}>Anulează</Btn>
               <Btn
                 variant="danger"
+                disabled={resetareInCurs}
                 onClick={async () => {
-                  await handleResetDemo();
-                  setShowResetConfirm(false);
+                  const ok = await handleResetDemo();
+                  if (ok) setShowResetConfirm(false);
                 }}
               >
-                <RotateCcw size={14} /> Da, resetează
+                <RotateCcw size={14} /> {resetareInCurs ? "Se resetează..." : "Da, resetează definitiv"}
               </Btn>
             </div>
           </div>
