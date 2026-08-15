@@ -1,0 +1,10123 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import * as XLSX from "xlsx";
+import { supabase } from "./supabaseClient";
+import { gasesteParohieDupaCif, logare, delogare, creeazaCont, tokenSesiuneCurenta } from "./authSupabase";
+import {
+  inceapeInrolareTOTP, confirmaInrolareTOTP, listeazaFactoriMFA, verificaLoginTOTP,
+  dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
+} from "./mfaHelpers";
+import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, receptioneazaPangar, vanzareFIFOPangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
+import {
+  LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
+  ArrowDownCircle, ArrowUpCircle, AlertTriangle, ArrowLeftRight,
+  Trash2, X, Church, Lock, User, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil,
+  Download, ChevronDown, FileText, FileSpreadsheet, FileCode, Building2, Boxes, Archive, ClipboardCheck, MapPin, Mail,
+  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock,
+} from "lucide-react";
+
+/* ---------------------------------------------------------------------- *
+ *  Sistem ERP Parohial — Modul Contabilitate (partidă simplă) + Pangar
+ *  Multi-parohie, 100% Supabase — fără nicio persistență locală.
+ * ---------------------------------------------------------------------- */
+
+const PRAG_SOLD = 1000; // RON, prag fix sold casă/bancă
+const PRAG_STOC_PROCENT = 0.2; // 20%
+const PRAG_STOC_MINIM = 5; // unități, prag minim absolut
+
+const fmt = (n) =>
+  (Math.round((n + Number.EPSILON) * 100) / 100).toLocaleString("ro-RO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// Soldurile Casă și Bancă, calculate strict din operațiunile cu data <= dataLimitaInclusiv —
+// folosit pentru excedentul reportat la închiderea unui exercițiu (soldul de la 31.12.an), și
+// pentru recalcularea lui automată dacă un document din acel an e modificat ulterior.
+function soldCasaBancaLaData(operatiuni, dataLimitaInclusiv) {
+  let soldCasa = 0;
+  let soldBanca = 0;
+  for (const op of operatiuni) {
+    if (op.data > dataLimitaInclusiv) continue;
+    const semn = op.tip === "incasare" ? 1 : -1;
+    if (op.modPlata === "numerar") soldCasa += semn * op.suma;
+    else soldBanca += semn * op.suma;
+  }
+  return { soldCasa, soldBanca };
+}
+
+// Reconstruiește forma locală buget[contId][an] = suma, pornind de la prevederile bugetare
+// aduse din Supabase (formă { [an]: { validat, dataValidare, linii: [{contId, suma}] } }) —
+// exact aceeași transformare pe care o făcea local valideazaPrevederi() la fiecare validare.
+function construiesteBugetDinPrevederi(prevederiBugetare) {
+  const buget = {};
+  for (const an of Object.keys(prevederiBugetare || {})) {
+    for (const l of prevederiBugetare[an]?.linii || []) {
+      buget[l.contId] = { ...(buget[l.contId] || {}), [an]: l.suma };
+    }
+  }
+  return buget;
+}
+const yearOf = (dateStr) => Number(dateStr.slice(0, 4));
+
+// Nomenclator oficial de articole bugetare (BVC), furnizat de parohie — 83 de articole,
+// plus cele două conturi speciale (106, 581). Sursă: "Art_bug_BVC.xlsx" (document propriu).
+function seedAccounts() {
+  return [
+    { id: "106", simbol: "106", denumire: "Rezerve (dispoziție an precedent, casă și conturi la bănci)", clasa: "venit", special: true },
+    { id: "581", simbol: "581", denumire: "Viramente interne", clasa: "viramente", special: true },
+
+    // --- Venituri (clasa 73x, 76x, 77x) ---
+    { id: "731.01.01", simbol: "731.01.01", denumire: "Venituri din contribuția anuală a credincioșilor", clasa: "venit" },
+    { id: "731.01.02", simbol: "731.01.02", denumire: "Venituri din contribuția pentru diverse servicii religioase", clasa: "venit" },
+    { id: "731.01.03", simbol: "731.01.03", denumire: "Venituri din contribuția la distribuirea lumânărilor", clasa: "venit" },
+    { id: "731.01.04", simbol: "731.01.04", denumire: "Venituri din contribuția la distribuirea tipăriturilor", clasa: "venit" },
+    { id: "731.01.05.01", simbol: "731.01.05.01", denumire: "Venituri din contribuția la distribuirea obiectelor de cult — COLPORTAJ", clasa: "venit" },
+    { id: "731.01.05.02", simbol: "731.01.05.02", denumire: "Venituri din contribuția la distribuirea obiectelor de cult — VIN BISERICESC", clasa: "venit" },
+    { id: "731.01.06", simbol: "731.01.06", denumire: "Venituri din contribuția pentru concesionarea și îngrijirea locurilor din cimitir", clasa: "venit" },
+    { id: "732.01", simbol: "732.01", denumire: "Venituri din donații (ajutoare) primite de locașurile de cult", clasa: "venit" },
+    { id: "732.02", simbol: "732.02", denumire: "Venituri din ajutoare primite de la credincioși", clasa: "venit" },
+    { id: "732.03", simbol: "732.03", denumire: "Venituri din alte donații", clasa: "venit" },
+    { id: "733", simbol: "733", denumire: "Venituri din sponsorizări", clasa: "venit" },
+    { id: "737.01", simbol: "737.01", denumire: "Venituri din ajutoare acordate de la unități din cadrul cultului", clasa: "venit" },
+    { id: "737.02", simbol: "737.02", denumire: "Venituri din ajutoare acordate de la Fondul Central Misionar", clasa: "venit" },
+    { id: "737.03", simbol: "737.03", denumire: "Venituri din ajutoare acordate de la Fondul Comisiei de Pictură Bisericească", clasa: "venit" },
+    { id: "737.04", simbol: "737.04", denumire: "Venituri din ajutoare acordate de la Fondul de Asigurări ale Bunurilor Bisericești", clasa: "venit" },
+    { id: "738", simbol: "738", denumire: "Venituri din subvenții primite de la bugetul de stat", clasa: "venit" },
+    { id: "739.01", simbol: "739.01", denumire: "Venituri din valorificarea unor bunuri", clasa: "venit" },
+    { id: "739.02", simbol: "739.02", denumire: "Venituri din valorificarea resturilor de lumânări", clasa: "venit" },
+    { id: "739.03", simbol: "739.03", denumire: "Venituri din valorificarea materialelor nefolosite, recuperări sume, etc.", clasa: "venit" },
+    { id: "739.04", simbol: "739.04", denumire: "Venituri din activități agricole", clasa: "venit" },
+    { id: "739.05", simbol: "739.05", denumire: "Venituri din taxe de vizitare", clasa: "venit" },
+    { id: "739.06", simbol: "739.06", denumire: "Alte venituri", clasa: "venit" },
+    { id: "766", simbol: "766", denumire: "Venituri financiare — Dobânzi bancare", clasa: "venit" },
+    { id: "771", simbol: "771", denumire: "Venituri excepționale din operațiuni de gestiune — cu drepturi de personal neridicate, prescrise și evidențiate pe venituri", clasa: "venit" },
+    { id: "772.01.01", simbol: "772.01.01", denumire: "Venituri excepționale din operațiuni de capital — încasări cuvenite altor unități de cult — din distribuirea lumânărilor", clasa: "venit" },
+    { id: "772.01.02", simbol: "772.01.02", denumire: "Venituri excepționale din operațiuni de capital — încasări cuvenite altor unități de cult — din distribuirea tipăriturilor", clasa: "venit" },
+    { id: "772.01.03.01", simbol: "772.01.03.01", denumire: "Venituri excepționale din operațiuni de capital — încasări cuvenite altor unități de cult — din distribuirea obiectelor de cult — COLPORTAJ", clasa: "venit" },
+    { id: "772.01.03.02", simbol: "772.01.03.02", denumire: "Venituri excepționale din operațiuni de capital — încasări cuvenite altor unități de cult — din distribuirea obiectelor de cult — VIN BISERICESC", clasa: "venit" },
+    { id: "772.01.04", simbol: "772.01.04", denumire: "Venituri excepționale din operațiuni de capital — încasări pentru Fondul Central Misionar (FCM)", clasa: "venit" },
+    { id: "772.01.05", simbol: "772.01.05", denumire: "Venituri excepționale din operațiuni de capital — încasări pentru alte eparhii și sinistrați", clasa: "venit" },
+    { id: "772.01.06", simbol: "772.01.06", denumire: "Venituri excepționale din operațiuni de capital — încasări pentru Fondul Filantropia", clasa: "venit" },
+
+    // --- Cheltuieli (clasa 60x-67x) ---
+    { id: "601.01", simbol: "601.01", denumire: "Cheltuieli cu materiale consumabile — pentru exercitarea cultului (consum propriu intern)", clasa: "cheltuiala" },
+    { id: "601.02", simbol: "601.02", denumire: "Cheltuieli cu materiale consumabile — carburanți", clasa: "cheltuiala" },
+    { id: "601.03", simbol: "601.03", denumire: "Cheltuieli cu materiale consumabile — colecții de acte normative și publicații", clasa: "cheltuiala" },
+    { id: "601.04", simbol: "601.04", denumire: "Cheltuieli cu materiale consumabile — materiale, birotică, curățenie", clasa: "cheltuiala" },
+    { id: "601.05", simbol: "601.05", denumire: "Cheltuieli cu materiale consumabile — alte cheltuieli materiale consumabile", clasa: "cheltuiala" },
+    { id: "602.01", simbol: "602.01", denumire: "Cheltuieli cu obiectele de inventar — obiecte de mică valoare și de scurtă durată", clasa: "cheltuiala" },
+    { id: "602.02", simbol: "602.02", denumire: "Cheltuieli cu obiectele de inventar — echipament și uniforme de lucru", clasa: "cheltuiala" },
+    { id: "602.03", simbol: "602.03", denumire: "Cheltuieli cu obiectele de inventar — cărți pentru bibliotecă", clasa: "cheltuiala" },
+    { id: "605.01", simbol: "605.01", denumire: "Cheltuieli cu energia și apa — încălzirea", clasa: "cheltuiala" },
+    { id: "605.02", simbol: "605.02", denumire: "Cheltuieli cu energia și apa — iluminatul și forța motrică", clasa: "cheltuiala" },
+    { id: "605.03", simbol: "605.03", denumire: "Cheltuieli cu energia și apa — apa", clasa: "cheltuiala" },
+    { id: "605.04", simbol: "605.04", denumire: "Cheltuieli cu energia și apa — salubritatea", clasa: "cheltuiala" },
+    { id: "611.01", simbol: "611.01", denumire: "Cheltuieli cu reparații curente la clădiri", clasa: "cheltuiala" },
+    { id: "611.02", simbol: "611.02", denumire: "Cheltuieli cu reparații capitale la clădiri", clasa: "cheltuiala" },
+    { id: "611.03", simbol: "611.03", denumire: "Cheltuieli cu lucrări și restaurări de pictură", clasa: "cheltuiala" },
+    { id: "611.04", simbol: "611.04", denumire: "Cheltuieli cu reparații auto", clasa: "cheltuiala" },
+    { id: "612", simbol: "612", denumire: "Cheltuieli cu redevențe, locații de gestiune și chirii", clasa: "cheltuiala" },
+    { id: "613", simbol: "613", denumire: "Cheltuieli cu primele de asigurare", clasa: "cheltuiala" },
+    { id: "621.01", simbol: "621.01", denumire: "Cheltuieli cu colaboratorii — plata cu ora", clasa: "cheltuiala" },
+    { id: "621.02", simbol: "621.02", denumire: "Cheltuieli cu colaboratorii — activități ocazionale, sezoniere, traduceri, expertize etc.", clasa: "cheltuiala" },
+    { id: "622", simbol: "622", denumire: "Cheltuieli cu comisioane și onorarii", clasa: "cheltuiala" },
+    { id: "623", simbol: "623", denumire: "Cheltuieli de protocol, reclamă și publicitate", clasa: "cheltuiala" },
+    { id: "642", simbol: "642", denumire: "Cheltuieli cu transportul de bunuri și de persoane", clasa: "cheltuiala" },
+    { id: "625", simbol: "625", denumire: "Cheltuieli cu deplasările", clasa: "cheltuiala" },
+    { id: "626", simbol: "626", denumire: "Cheltuieli cu poșta și telecomunicațiile", clasa: "cheltuiala" },
+    { id: "627", simbol: "627", denumire: "Cheltuieli cu comisioanele bancare", clasa: "cheltuiala" },
+    { id: "628", simbol: "628", denumire: "Cheltuieli cu alte servicii executate de terți", clasa: "cheltuiala" },
+    { id: "635", simbol: "635", denumire: "Cheltuieli cu alte impozite, taxe și vărsăminte asimilate", clasa: "cheltuiala" },
+    { id: "641", simbol: "641", denumire: "Cheltuieli cu remunerațiile de personal", clasa: "cheltuiala" },
+    { id: "645", simbol: "645", denumire: "Cheltuieli cu asigurarea și protecția socială", clasa: "cheltuiala" },
+    { id: "645.01", simbol: "645.01", denumire: "Cheltuieli cu contribuția la asigurări sociale", clasa: "cheltuiala" },
+    { id: "651", simbol: "651", denumire: "Cheltuieli cu imobilizările corporale (mijloace fixe)", clasa: "cheltuiala" },
+    { id: "655.01", simbol: "655.01", denumire: "Cheltuieli cu contribuții acordate Centrului eparhial", clasa: "cheltuiala" },
+    { id: "655.02", simbol: "655.02", denumire: "Cheltuieli cu contribuții acordate protopopiatului", clasa: "cheltuiala" },
+    { id: "657", simbol: "657", denumire: "Ajutoare și împrumuturi nerambursabile, din surse externe, transferate altor persoane juridice fără scop lucrativ", clasa: "cheltuiala" },
+    { id: "658.01", simbol: "658.01", denumire: "Cheltuieli de exploatare — cu activitățile agricole", clasa: "cheltuiala" },
+    { id: "658.02", simbol: "658.02", denumire: "Cheltuieli de exploatare — cu spațiile locative închiriate", clasa: "cheltuiala" },
+    { id: "658.03", simbol: "658.03", denumire: "Cheltuieli de exploatare — cu colecțiile de obiecte de valoare istorică, artistică și culturală", clasa: "cheltuiala" },
+    { id: "671", simbol: "671", denumire: "Donații și subvenții acordate (acte filantropice/caritabile)", clasa: "cheltuiala" },
+    { id: "672.01.01", simbol: "672.01.01", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — din distribuirea lumânărilor", clasa: "cheltuiala" },
+    { id: "672.01.02", simbol: "672.01.02", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — din distribuirea tipăriturilor", clasa: "cheltuiala" },
+    { id: "672.01.03", simbol: "672.01.03", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — din distribuirea obiectelor de cult", clasa: "cheltuiala" },
+    { id: "672.01.03.01", simbol: "672.01.03.01", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — din distribuirea obiectelor de cult — COLPORTAJ", clasa: "cheltuiala" },
+    { id: "672.01.03.02", simbol: "672.01.03.02", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — din distribuirea obiectelor de cult — VIN BISERICESC", clasa: "cheltuiala" },
+    { id: "672.01.04", simbol: "672.01.04", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — plăți pentru Fondul Central Misionar (FCM)", clasa: "cheltuiala" },
+    { id: "672.01.05", simbol: "672.01.05", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — plăți cu alte destinații, eparhii, sinistrați", clasa: "cheltuiala" },
+    { id: "672.01.06", simbol: "672.01.06", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — plăți pentru Fondul Filantropia", clasa: "cheltuiala" },
+    { id: "627.03", simbol: "627.03", denumire: "Alte cheltuieli (din rate, chirii, etc.)", clasa: "cheltuiala" },
+  ];
+}
+
+// Mapare categorie marfă pangar -> tripletul de conturi BVC reale pe care se defalcă
+// automat achiziția (cost) și vânzarea (venit propriu / venit tranzitoriu cuvenit altei unități).
+// Sursă: decizie explicită a parohiei, confirmată în conversație.
+const CATEGORII_PANGAR = {
+  lumanari: {
+    label: "Lumânări",
+    achizitie: "672.01.01",
+    venitPropriu: "731.01.03",
+    venitTranzitoriu: "772.01.01",
+  },
+  tipar: {
+    label: "Tipărituri (calendare bisericești)",
+    achizitie: "672.01.02",
+    venitPropriu: "731.01.04",
+    venitTranzitoriu: "772.01.02",
+  },
+  colportaj: {
+    label: "Obiecte de cult — Colportaj",
+    achizitie: "672.01.03.01",
+    venitPropriu: "731.01.05.01",
+    venitTranzitoriu: "772.01.03.01",
+  },
+  vin: {
+    label: "Obiecte de cult — Vin bisericesc",
+    achizitie: "672.01.03.02",
+    venitPropriu: "731.01.05.02",
+    venitTranzitoriu: "772.01.03.02",
+  },
+};
+
+function buildCod(bazaCod, cost, pret) {
+  return `${bazaCod}.${cost}.${pret}`;
+}
+
+// Adaugă un număr de zile calendaristice la o dată ISO (yyyy-mm-dd), întoarce tot ISO.
+function adaugaZile(dataISO, zile) {
+  const d = new Date(dataISO);
+  d.setDate(d.getDate() + zile);
+  return d.toISOString().slice(0, 10);
+}
+
+// Categorii pentru care scadența facturii se calculează automat (60 zile calendaristice de la
+// data facturii) — lumânări (include și candelele, aceeași categorieBVC "lumanari"), colportaj,
+// vin bisericesc. Tipăriturile (calendare bisericești) rămân cu scadență introdusă manual.
+const CATEGORII_SCADENTA_AUTOMATA = ["lumanari", "colportaj", "vin"];
+
+function seedArticole() {
+  return [
+    {
+      id: "a1", seq: 1, bazaCod: "LP100B", denumire: "Lumânări din parafină 100 B 56/100", um: "kg",
+      pretAchizitie: 56, pretVanzare: 100, cod: buildCod("LP100B", 56, 100),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a2", seq: 2, bazaCod: "LC20B", denumire: "Lumânări din ceară 20 B 108/200", um: "kg",
+      pretAchizitie: 108, pretVanzare: 200, cod: buildCod("LC20B", 108, 200),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a3", seq: 3, bazaCod: "CC0", denumire: "Candele de cult Tip 0", um: "buc",
+      pretAchizitie: 1, pretVanzare: 1.5, cod: buildCod("CC0", 1, 1.5),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a4", seq: 4, bazaCod: "CC1", denumire: "Candele de cult Tip 1", um: "buc",
+      pretAchizitie: 3, pretVanzare: 4, cod: buildCod("CC1", 3, 4),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a5", seq: 5, bazaCod: "CC2", denumire: "Candele de cult Tip 2", um: "buc",
+      pretAchizitie: 6, pretVanzare: 8, cod: buildCod("CC2", 6, 8),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a6", seq: 6, bazaCod: "CC3", denumire: "Candele de cult Tip 3", um: "buc",
+      pretAchizitie: 8, pretVanzare: 10, cod: buildCod("CC3", 8, 10),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a7", seq: 7, bazaCod: "CC4", denumire: "Candele de cult Tip 4", um: "buc",
+      pretAchizitie: 15.5, pretVanzare: 18, cod: buildCod("CC4", 15.5, 18),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a8", seq: 8, bazaCod: "COLPORTAJ", denumire: "Colportaj (icoane, cruci, cărți, metanii, cărbuni, tămâie etc.)", um: "buc",
+      pretAchizitie: 1, pretVanzare: 1.25, cod: buildCod("COLPORTAJ", 1, 1.25),
+      categorieBVC: "colportaj", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Nomenclator Arhiepiscopia Bucureștilor — a treia calitate distinctă de ceară (94/160 pe kg),
+    // aceeași convenție de codificare ca LC20B/LP100B.
+    {
+      id: "a9", seq: 9, bazaCod: "LC160B", denumire: "Lumânări din ceară 160 B 94/160", um: "kg",
+      pretAchizitie: 94, pretVanzare: 160, cod: buildCod("LC160B", 94, 160),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a10", seq: 10, bazaCod: "LC200B", denumire: "Lumânări din ceară 200 B 108/200", um: "kg",
+      pretAchizitie: 108, pretVanzare: 200, cod: buildCod("LC200B", 108, 200),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a11", seq: 11, bazaCod: "LC100B", denumire: "Lumânări din ceară 100 B 108/200", um: "kg",
+      pretAchizitie: 108, pretVanzare: 200, cod: buildCod("LC100B", 108, 200),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a12", seq: 12, bazaCod: "LC50B", denumire: "Lumânări din ceară 50 B 108/200", um: "kg",
+      pretAchizitie: 108, pretVanzare: 200, cod: buildCod("LC50B", 108, 200),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a13", seq: 13, bazaCod: "LC10B", denumire: "Lumânări din ceară 10 B 108/200", um: "kg",
+      pretAchizitie: 108, pretVanzare: 200, cod: buildCod("LC10B", 108, 200),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a14", seq: 14, bazaCod: "LC5B", denumire: "Lumânări din ceară 5 B 108/200", um: "kg",
+      pretAchizitie: 108, pretVanzare: 200, cod: buildCod("LC5B", 108, 200),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Tip 2B 650gr (cununie/botez) — singurul rând din tabel dat pe bucată, nu pe kg;
+    // convertit la kg (71 ÷ 0,650 / 120 ÷ 0,650), ca să respecte UM=kg unitar pentru tot pangarul.
+    {
+      id: "a15", seq: 15, bazaCod: "LC2B650", denumire: "Lumânări din ceară tip 2B 650gr (cununie/botez) — 109,23/184,62", um: "kg",
+      pretAchizitie: 109.23, pretVanzare: 184.62, cod: buildCod("LC2B650", 109.23, 184.62),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a16", seq: 16, bazaCod: "LP200B", denumire: "Lumânări din parafină 200 B 56/100", um: "kg",
+      pretAchizitie: 56, pretVanzare: 100, cod: buildCod("LP200B", 56, 100),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a17", seq: 17, bazaCod: "LP50B", denumire: "Lumânări din parafină 50 B 56/100", um: "kg",
+      pretAchizitie: 56, pretVanzare: 100, cod: buildCod("LP50B", 56, 100),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a18", seq: 18, bazaCod: "LP20B", denumire: "Lumânări din parafină 20 B 56/100", um: "kg",
+      pretAchizitie: 56, pretVanzare: 100, cod: buildCod("LP20B", 56, 100),
+      categorieBVC: "lumanari", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Calendare bisericești destinate vânzării la pangar — categoria Tipărituri (731.01.04 /
+    // 772.01.02 / 672.01.02). Cost = preț de livrare protoierie→unitate bisericească; preț de
+    // vânzare = preț final la pangar. Nomenclator conform circularei pentru anul 2026 — codul
+    // respectă tiparul de la lumânări (Produs+Tip+An, fără punct intern, apoi .Cost.PretVanzare).
+    {
+      id: "a19", seq: 19, bazaCod: "CALFOAIE2026", denumire: "Calendar bisericesc — Foaie de perete 2026", um: "buc",
+      pretAchizitie: 3.5, pretVanzare: 5, cod: buildCod("CALFOAIE2026", 3.5, 5),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a20", seq: 20, bazaCod: "CALAGMICA2026", denumire: "Calendar bisericesc — Agendă mică 2026", um: "buc",
+      pretAchizitie: 7.5, pretVanzare: 10, cod: buildCod("CALAGMICA2026", 7.5, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a21", seq: 21, bazaCod: "CALAGMARE2026", denumire: "Calendar bisericesc — Agendă mare 2026", um: "buc",
+      pretAchizitie: 9.5, pretVanzare: 12, cod: buildCod("CALAGMARE2026", 9.5, 12),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a22", seq: 22, bazaCod: "CALSPIRA2026", denumire: "Calendar bisericesc — De perete cu spiră 2026", um: "buc",
+      pretAchizitie: 10.5, pretVanzare: 12, cod: buildCod("CALSPIRA2026", 10.5, 12),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a23", seq: 23, bazaCod: "CALBIROU2026", denumire: "Calendar bisericesc — De birou cu picior 2026", um: "buc",
+      pretAchizitie: 9.5, pretVanzare: 11, cod: buildCod("CALBIROU2026", 9.5, 11),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a24", seq: 24, bazaCod: "CALINSEMN2026", denumire: "Calendar bisericesc — Agendă cu însemnări 2026", um: "buc",
+      pretAchizitie: 14, pretVanzare: 15, cod: buildCod("CALINSEMN2026", 14, 15),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Circulară nr. 11196/2024 (18.09.2024) — calendare bisericești pentru anul 2025, aceleași
+    // valori ca 2026, dar cod distinct (an diferit = produs nou, conform politicii stabilite).
+    {
+      id: "a25", seq: 25, bazaCod: "CALFOAIE2025", denumire: "Calendar bisericesc — Foaie de perete 2025", um: "buc",
+      pretAchizitie: 3.5, pretVanzare: 5, cod: buildCod("CALFOAIE2025", 3.5, 5),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a26", seq: 26, bazaCod: "CALAGMICA2025", denumire: "Calendar bisericesc — Agendă mică 2025", um: "buc",
+      pretAchizitie: 7.5, pretVanzare: 10, cod: buildCod("CALAGMICA2025", 7.5, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a27", seq: 27, bazaCod: "CALAGMARE2025", denumire: "Calendar bisericesc — Agendă mare 2025", um: "buc",
+      pretAchizitie: 9.5, pretVanzare: 12, cod: buildCod("CALAGMARE2025", 9.5, 12),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a28", seq: 28, bazaCod: "CALSPIRA2025", denumire: "Calendar bisericesc — De perete cu spiră 2025", um: "buc",
+      pretAchizitie: 10.5, pretVanzare: 12, cod: buildCod("CALSPIRA2025", 10.5, 12),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a29", seq: 29, bazaCod: "CALBIROU2025", denumire: "Calendar bisericesc — De birou cu picior 2025", um: "buc",
+      pretAchizitie: 9.5, pretVanzare: 11, cod: buildCod("CALBIROU2025", 9.5, 11),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a30", seq: 30, bazaCod: "CALINSEMN2025", denumire: "Calendar bisericesc — Agendă cu însemnări 2025", um: "buc",
+      pretAchizitie: 14, pretVanzare: 15, cod: buildCod("CALINSEMN2025", 14, 15),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Circulară nr. 10400/2022 (10.10.2022) — calendare bisericești pentru anul 2023.
+    {
+      id: "a31", seq: 31, bazaCod: "CALFOAIE2023", denumire: "Calendar bisericesc — Foaie de perete 2023", um: "buc",
+      pretAchizitie: 3.5, pretVanzare: 5, cod: buildCod("CALFOAIE2023", 3.5, 5),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a32", seq: 32, bazaCod: "CALAGMICA2023", denumire: "Calendar bisericesc — Agendă mică 2023", um: "buc",
+      pretAchizitie: 6.5, pretVanzare: 9, cod: buildCod("CALAGMICA2023", 6.5, 9),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a33", seq: 33, bazaCod: "CALAGMARE2023", denumire: "Calendar bisericesc — Agendă mare 2023", um: "buc",
+      pretAchizitie: 8, pretVanzare: 10, cod: buildCod("CALAGMARE2023", 8, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a34", seq: 34, bazaCod: "CALSPIRA2023", denumire: "Calendar bisericesc — De perete cu spiră 2023", um: "buc",
+      pretAchizitie: 9, pretVanzare: 10, cod: buildCod("CALSPIRA2023", 9, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a35", seq: 35, bazaCod: "CALBIROU2023", denumire: "Calendar bisericesc — De birou cu picior 2023", um: "buc",
+      pretAchizitie: 9, pretVanzare: 10, cod: buildCod("CALBIROU2023", 9, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a36", seq: 36, bazaCod: "CALINSEMN2023", denumire: "Calendar bisericesc — Agendă cu însemnări 2023", um: "buc",
+      pretAchizitie: 10.5, pretVanzare: 11, cod: buildCod("CALINSEMN2023", 10.5, 11),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Circulară nr. 10.265/2023 (19.09.2023) — calendare bisericești pentru anul 2024
+    // (valori identice cu 2023, la toate sortimentele).
+    {
+      id: "a37", seq: 37, bazaCod: "CALFOAIE2024", denumire: "Calendar bisericesc — Foaie de perete 2024", um: "buc",
+      pretAchizitie: 3.5, pretVanzare: 5, cod: buildCod("CALFOAIE2024", 3.5, 5),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a38", seq: 38, bazaCod: "CALAGMICA2024", denumire: "Calendar bisericesc — Agendă mică 2024", um: "buc",
+      pretAchizitie: 6.5, pretVanzare: 9, cod: buildCod("CALAGMICA2024", 6.5, 9),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a39", seq: 39, bazaCod: "CALAGMARE2024", denumire: "Calendar bisericesc — Agendă mare 2024", um: "buc",
+      pretAchizitie: 8, pretVanzare: 10, cod: buildCod("CALAGMARE2024", 8, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a40", seq: 40, bazaCod: "CALSPIRA2024", denumire: "Calendar bisericesc — De perete cu spiră 2024", um: "buc",
+      pretAchizitie: 9, pretVanzare: 10, cod: buildCod("CALSPIRA2024", 9, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a41", seq: 41, bazaCod: "CALBIROU2024", denumire: "Calendar bisericesc — De birou cu picior 2024", um: "buc",
+      pretAchizitie: 9, pretVanzare: 10, cod: buildCod("CALBIROU2024", 9, 10),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a42", seq: 42, bazaCod: "CALINSEMN2024", denumire: "Calendar bisericesc — Agendă cu însemnări 2024", um: "buc",
+      pretAchizitie: 10.5, pretVanzare: 11, cod: buildCod("CALINSEMN2024", 10.5, 11),
+      categorieBVC: "tipar", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Vin cult liturgic (Alb/Roșu, același preț) — destinat vânzării la pangar. Sursă: hotărâre
+    // Permanența Consiliului Eparhial, 25.06.2019, valabilă de la 26.06.2019 (an preluat din document).
+    {
+      id: "a43", seq: 43, bazaCod: "VCLT2019", denumire: "Vin cult liturgic (Alb/Roșu) 2019", um: "sticlă",
+      pretAchizitie: 17, pretVanzare: 20, cod: buildCod("VCLT2019", 17, 20),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Circulară nr. 8725/12.08.2025 — vinuri Liturgic/Via Domnului D.O.C./Ediție limitată/Ierbar/
+    // Jercălăi. Cost = preț protoierie→parohie + 0,50 lei SGR (adăugat la cost, nerecuperat).
+    // Un singur preț per categorie, indiferent de culoare (confirmat).
+    {
+      id: "a44", seq: 44, bazaCod: "VINLITPREM2025", denumire: "Vin Liturgic dulce premium 2025", um: "sticlă",
+      pretAchizitie: 31.5, pretVanzare: 35, cod: buildCod("VINLITPREM2025", 31.5, 35),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a45", seq: 45, bazaCod: "VINLITDEMI2025", denumire: "Vin Liturgic dulce/demidulce 2025", um: "sticlă",
+      pretAchizitie: 28.5, pretVanzare: 30, cod: buildCod("VINLITDEMI2025", 28.5, 30),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a46", seq: 46, bazaCod: "VINDOC2025", denumire: "Via Domnului D.O.C. 2025 (Alb/Roze/Roșu)", um: "sticlă",
+      pretAchizitie: 28.5, pretVanzare: 30, cod: buildCod("VINDOC2025", 28.5, 30),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a47", seq: 47, bazaCod: "VINEDLIM2025", denumire: "Ediție limitată 2025 (Alb/Roze/Roșu)", um: "sticlă",
+      pretAchizitie: 44.5, pretVanzare: 45, cod: buildCod("VINEDLIM2025", 44.5, 45),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a48", seq: 48, bazaCod: "VINIERBAR2025", denumire: "Ierbar 2025 (Alb/Roze/Roșu)", um: "sticlă",
+      pretAchizitie: 44.5, pretVanzare: 45, cod: buildCod("VINIERBAR2025", 44.5, 45),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a49", seq: 49, bazaCod: "VINJERCALB2025", denumire: "Alb de Jercălăi (Blanc de noir) 2025", um: "sticlă",
+      pretAchizitie: 120.5, pretVanzare: 125, cod: buildCod("VINJERCALB2025", 120.5, 125),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a50", seq: 50, bazaCod: "VINJERCROSU2025", denumire: "Roșu de Jercălăi (Cuvée) 2025", um: "sticlă",
+      pretAchizitie: 120.5, pretVanzare: 125, cod: buildCod("VINJERCROSU2025", 120.5, 125),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Circulară nr. 1674/2023 (Sectorul Agricol, Viticol și Silvic), valabilă de la 01.03.2023 —
+    // preț ales = minimul intervalului propus la pangar; un singur preț per sortiment, orice culoare.
+    {
+      id: "a51", seq: 51, bazaCod: "VCLT2023", denumire: "Vin Bisericesc 2023 (Alb/Roșu)", um: "sticlă",
+      pretAchizitie: 22, pretVanzare: 25, cod: buildCod("VCLT2023", 22, 25),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a52", seq: 52, bazaCod: "VVD2023", denumire: "Via Domnului D.O.C. 2023 (Alb/Rosé/Roșu/Merlot roșu dulce)", um: "sticlă",
+      pretAchizitie: 25, pretVanzare: 30, cod: buildCod("VVD2023", 25, 30),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a53", seq: 53, bazaCod: "VBAR2023", denumire: "Vin Baricat 2023 (Alb/Roșu)", um: "sticlă",
+      pretAchizitie: 40, pretVanzare: 45, cod: buildCod("VBAR2023", 40, 45),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    // Via Domnului 2019 — adăugat acum și la Pangar (inițial fusese doar protocol), ca toate
+    // sortimentele să aibă cele 3 destinații de la început. Preț diferit pe culoare → 3 coduri.
+    {
+      id: "a54", seq: 54, bazaCod: "VPRTALB2019", denumire: "Vin Via Domnului — Alb 2019", um: "sticlă",
+      pretAchizitie: 19, pretVanzare: 21, cod: buildCod("VPRTALB2019", 19, 21),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a55", seq: 55, bazaCod: "VPRTROSE2019", denumire: "Vin Via Domnului — Rosé 2019", um: "sticlă",
+      pretAchizitie: 21, pretVanzare: 23, cod: buildCod("VPRTROSE2019", 21, 23),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+    {
+      id: "a56", seq: 56, bazaCod: "VPRTROSU2019", denumire: "Vin Via Domnului — Roșu 2019", um: "sticlă",
+      pretAchizitie: 23, pretVanzare: 25, cod: buildCod("VPRTROSU2019", 23, 25),
+      categorieBVC: "vin", stoc: 0, stocReferinta: 0, locked: true,
+    },
+  ];
+}
+
+function emptyState() {
+  return {
+    dataCreareInstanta: todayISO(), // folosită pentru a calcula termenul excepției de reconstituire, individual per parohie
+    conturi: seedAccounts(),
+    operatiuni: [],
+    articole: seedArticole(),
+    miscariStoc: [],
+    datoriiFurnizori: [], // { id, furnizor, suma, dataFactura, dataScadenta, status, nrFactura, nrNRCD, contId, opId }
+    contoare: {}, // { "2026": { chitanta: 0, ordinPlata: 0, nrcd: 0 } }
+    buget: {}, // { "106": { "2026": 1000 } } — populat exclusiv prin validarea formularului de Prevederi bugetare
+    prevederiBugetare: {}, // { "2026": { validat: true, dataValidare: "2025-12-20", linii: [{contId, suma}] } }
+    exercitiiFinanciare: {}, // { "2025": { inchis: true, dataInchidere: "2026-03-31", tipInchidere: "manuala" } }
+    // Calendare bisericești destinate protocolului (cedate gratuit clericilor, motiv "Protocol",
+    // cont 623) — nomenclator separat de cel al Pangarului (vânzare). Gestiune FIFO pe loturi:
+    // costul real din circulară se înregistrează la prima recepție, ca prim lot.
+    articoleConsumIntern: [
+      { id: uid(), seq: 1, denumire: "Calendar bisericesc — Foaie de perete 2026 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 2, denumire: "Calendar bisericesc — Agendă mică 2026 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 3, denumire: "Calendar bisericesc — Agendă mare 2026 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 4, denumire: "Calendar bisericesc — De perete cu spiră 2026 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 5, denumire: "Calendar bisericesc — De birou cu picior 2026 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 6, denumire: "Calendar bisericesc — Agendă cu însemnări 2026 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      // Circulară nr. 11196/2024 — protocol 2025 (valori identice cu 2026)
+      { id: uid(), seq: 7, denumire: "Calendar bisericesc — Foaie de perete 2025 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 8, denumire: "Calendar bisericesc — Agendă mică 2025 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 9, denumire: "Calendar bisericesc — Agendă mare 2025 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 10, denumire: "Calendar bisericesc — De perete cu spiră 2025 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 11, denumire: "Calendar bisericesc — De birou cu picior 2025 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 12, denumire: "Calendar bisericesc — Agendă cu însemnări 2025 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      // Circulară nr. 10400/2022 — protocol 2023
+      { id: uid(), seq: 13, denumire: "Calendar bisericesc — Foaie de perete 2023 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 14, denumire: "Calendar bisericesc — Agendă mică 2023 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 15, denumire: "Calendar bisericesc — Agendă mare 2023 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 16, denumire: "Calendar bisericesc — De perete cu spiră 2023 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 17, denumire: "Calendar bisericesc — De birou cu picior 2023 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 18, denumire: "Calendar bisericesc — Agendă cu însemnări 2023 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      // Circulară nr. 10.265/2023 — protocol 2024 (valori identice cu 2023)
+      { id: uid(), seq: 19, denumire: "Calendar bisericesc — Foaie de perete 2024 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 20, denumire: "Calendar bisericesc — Agendă mică 2024 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 21, denumire: "Calendar bisericesc — Agendă mare 2024 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 22, denumire: "Calendar bisericesc — De perete cu spiră 2024 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 23, denumire: "Calendar bisericesc — De birou cu picior 2024 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 24, denumire: "Calendar bisericesc — Agendă cu însemnări 2024 (protocol)", um: "buc", costUnitar: 0, stoc: 0 },
+      // Vin — fiecare sortiment are, de la început, câte 3 destinații: Pangar (vezi seedArticole),
+      // Consum intern — uz la slujbe (motiv "Consum propriu intern" → 601.01), și Protocol
+      // (motiv "Protocol" → 623). Stocuri complet separate, recepții proprii pentru fiecare.
+      { id: uid(), seq: 29, denumire: "Vin cult liturgic (Alb/Roșu) 2019 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 30, denumire: "Vin cult liturgic (Alb/Roșu) 2019 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 31, denumire: "Vin Via Domnului — Alb 2019 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 32, denumire: "Vin Via Domnului — Alb 2019 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 33, denumire: "Vin Via Domnului — Rosé 2019 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 34, denumire: "Vin Via Domnului — Rosé 2019 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 35, denumire: "Vin Via Domnului — Roșu 2019 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 36, denumire: "Vin Via Domnului — Roșu 2019 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 37, denumire: "Vin Liturgic dulce premium 2025 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 38, denumire: "Vin Liturgic dulce premium 2025 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 39, denumire: "Vin Liturgic dulce/demidulce 2025 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 40, denumire: "Vin Liturgic dulce/demidulce 2025 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 41, denumire: "Via Domnului D.O.C. 2025 (Alb/Roze/Roșu) — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 42, denumire: "Via Domnului D.O.C. 2025 (Alb/Roze/Roșu) (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 43, denumire: "Ediție limitată 2025 (Alb/Roze/Roșu) — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 44, denumire: "Ediție limitată 2025 (Alb/Roze/Roșu) (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 45, denumire: "Ierbar 2025 (Alb/Roze/Roșu) — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 46, denumire: "Ierbar 2025 (Alb/Roze/Roșu) (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 47, denumire: "Alb de Jercălăi (Blanc de noir) 2025 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 48, denumire: "Alb de Jercălăi (Blanc de noir) 2025 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 49, denumire: "Roșu de Jercălăi (Cuvée) 2025 — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 50, denumire: "Roșu de Jercălăi (Cuvée) 2025 (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 51, denumire: "Vin Bisericesc 2023 (Alb/Roșu) — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 52, denumire: "Vin Bisericesc 2023 (Alb/Roșu) (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 53, denumire: "Via Domnului D.O.C. 2023 (Alb/Rosé/Roșu/Merlot roșu dulce) — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 54, denumire: "Via Domnului D.O.C. 2023 (Alb/Rosé/Roșu/Merlot roșu dulce) (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 55, denumire: "Vin Baricat 2023 (Alb/Roșu) — uz intern la slujbe", um: "sticlă", costUnitar: 0, stoc: 0 },
+      { id: uid(), seq: 56, denumire: "Vin Baricat 2023 (Alb/Roșu) (protocol)", um: "sticlă", costUnitar: 0, stoc: 0 },
+    ], // { id, seq, denumire, um, costUnitar, stoc } — fiecare recepție = un lot nou, consumat FIFO
+    miscariConsumIntern: [], // { id, data, tip: "intrare"|"iesire", articolId, cantitate, valoareUnitara, valoareTotala, nrBon }
+    parteneri: [], // { id, denumire, cuiCif, adresa, iban, email, telefon, reprezentantLegal, functie }
+    bonuriConsum: [], // { id, nr, an, data, motiv, beneficiar, linii: [{articolId, cantitate, valoare}], opId }
+    bunuriPatrimoniu: [], // { id, denumire, categorie, dataAchizitie, sursa, valoare, stare, locatie, note, referintaFoto, opId, casare }
+    inventarieriPatrimoniu: [], // { id, nrPV, an, data, membri: [nume...], observatii }
+    locuriInhumare: [], // { id, codParcela, suprafata, stare: "disponibil"|"concesionat"|"ocupat" }
+    concesiuni: [], // { id, locId, concesionar, tipDurata: "7"|"25"|"vecie", tarif, dataInceput, dataExpirare, istoric: [...], expirataDefinitiv }
+    persoaneInhumate: [], // { id, locId, nume, dataDeces, dataInhumare, esteConcesionarul }
+    tarifeCimitir: { "7": 500, "25": 1500, vecie: 5000 },
+    corespondenta: [], // { id, tip: "intrare"|"iesire", nr, an, data, partener, obiect, modPrimire, termenRaspuns, status, referintaIntrareId }
+    arhiva: [], // { id, denumire, categorie, an, notite, dataAdaugare }
+    jurnalAudit: [], // { id, data, ora, rol, actiune } — istoric read-only al acțiunilor semnificative
+    parohie: {
+      denumire: "", eparhie: "", protoierie: "", hram: "", cif: "", nrAnaf: "", codLMI: "",
+      judet: "", localitate: "", strada: "", codPostal: "",
+      telefon: "", email: "",
+      preotParoh: "", telefonPreot: "", emailPreot: "",
+      banca: "", iban: "",
+      dataInfiintare: "",
+      areCimitir: false,
+      adresaCimitirDiferita: false,
+      adresaCimitir: { judet: "", localitate: "", strada: "", codPostal: "" },
+    },
+  };
+}
+
+const DEMO_CIF = "00000000";
+const DEMO_PASSWORD = "Demo!2026";
+const DEMO_NUME_PAROHIE = "Parohia „Sfântul Nicolae” (fictivă — date de test)";
+
+// Roluri și permisiuni: un singur cont de acces (CIF), utilizatorul alege rolul activ după autentificare.
+// Restricția "Preotul paroh nu poate cumula rolul de Responsabil pangar" (secțiunea 2.4) e reflectată
+// prin faptul că, odată ales Responsabil pangar, sesiunea respectivă nu mai are acces la restul aplicației.
+// Rolurile din baza de date (enum rol_utilizator: preot/contabil/casier/pangar/auditor) au nume
+// scurte; local, ROLURI foloseau chei mai descriptive de dinainte de migrare. Mapăm o dată aici,
+// la fiecare punct unde primim un rol de la Supabase, ca restul aplicației să rămână neschimbat.
+const ROL_DB_LA_LOCAL = {
+  preot: "preot_paroh",
+  contabil: "contabil",
+  casier: "casier",
+  pangar: "responsabil_pangar",
+  auditor: "auditor",
+};
+
+const ROLURI = {
+  preot_paroh: {
+    id: "preot_paroh", label: "Preot paroh / Administrator parohie",
+    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte", "profil"],
+    citireOnly: false, poateEmiteOP: true,
+  },
+  contabil: {
+    id: "contabil", label: "Contabil parohie",
+    tabs: ["dashboard", "operatiuni", "conturi", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte"],
+    citireOnly: false, poateEmiteOP: true,
+  },
+  casier: {
+    id: "casier", label: "Casier",
+    tabs: ["dashboard", "operatiuni"],
+    citireOnly: false, poateEmiteOP: false,
+  },
+  responsabil_pangar: {
+    id: "responsabil_pangar", label: "Responsabil pangar",
+    tabs: ["dashboard", "pangar"],
+    citireOnly: false, poateEmiteOP: false,
+  },
+  auditor: {
+    id: "auditor", label: "Auditor extern (read-only)",
+    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte"],
+    citireOnly: true, poateEmiteOP: false,
+  },
+};
+
+function seedDemoState() {
+  const an = new Date().getFullYear();
+  const d = (luna, zi) => `${an}-${String(luna).padStart(2, "0")}-${String(zi).padStart(2, "0")}`;
+
+  const conturi = seedAccounts();
+  const operatiuni = [];
+  let chitantaNr = 0;
+  let opNr = 0;
+
+  const incasare = (data, contId, suma, modPlata, tert) => {
+    chitantaNr += 1;
+    operatiuni.push({ id: uid(), tip: "incasare", contId, data, suma, modPlata, tert, nr: chitantaNr, an });
+  };
+  const plata = (data, contId, suma, modPlata, tert, ajustare106 = false) => {
+    opNr += 1;
+    operatiuni.push({ id: uid(), tip: "plata", contId, data, suma, modPlata, tert, nr: opNr, an, ajustare106 });
+  };
+
+  // Chitanța nr. 1 — soldul reportat din anul precedent, pe contul 106
+  incasare(d(1, 5), "106", 4200, "numerar", "Sold reportat din anul precedent (casă + bancă)");
+
+  // Activitate curentă de-a lungul anului (exemple ilustrative)
+  incasare(d(1, 12), "732.01", 350, "numerar", "Donație credincios anonim");
+  incasare(d(1, 19), "731.01.01", 620, "numerar", "Colectă duminicală");
+  incasare(d(2, 2), "732.02", 180, "transfer", "Ofertă parohienă");
+  incasare(d(2, 16), "731.01.02", 400, "transfer", "Taxă cununie");
+  incasare(d(3, 9), "733", 1500, "transfer", "Sponsorizare firmă locală");
+  incasare(d(3, 23), "731.01.01", 540, "numerar", "Colectă duminicală");
+
+  plata(d(1, 28), "605.02", 620, "transfer", "Factură energie electrică — ianuarie");
+  plata(d(2, 10), "611.01", 850, "transfer", "Reparație acoperiș pridvor");
+  plata(d(2, 27), "605.02", 590, "transfer", "Factură energie electrică — februarie");
+  plata(d(3, 15), "601.01", 310, "numerar", "Achiziție lumânări și tămâie pentru exercitarea cultului");
+
+  // Transfer intern casă → bancă (contul 581), rulaje distincte
+  plata(d(2, 20), "581", 1000, "numerar", "Viramente interne — depunere");
+  incasare(d(2, 20), "581", 1000, "transfer", "Viramente interne — depunere");
+
+  // Pangar: recepții + vânzări, cu un articol intenționat aproape de pragul de stoc scăzut
+  // Lumânările au DOUĂ coduri (variante de preț), pentru a ilustra regula FIFO la vânzare.
+  const articole = [
+    { id: "a1", seq: 1, bazaCod: "LP100B", denumire: "Lumânări din parafină 100 B 56/100", um: "kg", pretAchizitie: 56, pretVanzare: 100, cod: buildCod("LP100B", 56, 100), categorieBVC: "lumanari", stoc: 16, stocReferinta: 100, locked: true },
+    { id: "a4", seq: 4, bazaCod: "LP100B", denumire: "Lumânări din parafină 100 B 56/100", um: "kg", pretAchizitie: 58, pretVanzare: 102, cod: buildCod("LP100B", 58, 102), categorieBVC: "lumanari", stoc: 60, stocReferinta: 60, locked: true },
+    { id: "a2", seq: 2, bazaCod: "COLPORTAJ", denumire: "Colportaj (icoane, cruci, cărți, metanii, cărbuni, tămâie etc.)", um: "buc", pretAchizitie: 1, pretVanzare: 1.25, cod: buildCod("COLPORTAJ", 1, 1.25), categorieBVC: "colportaj", stoc: 2, stocReferinta: 12, locked: true },
+    { id: "a3", seq: 3, bazaCod: "CC1", denumire: "Candele de cult Tip 1", um: "buc", pretAchizitie: 3, pretVanzare: 4, cod: buildCod("CC1", 3, 4), categorieBVC: "lumanari", stoc: 0, stocReferinta: 20, locked: true },
+  ];
+
+  const miscariStoc = [
+    { id: uid(), data: d(1, 8), tip: "intrare", articolId: "a1", cantitate: 100, valoareUnitara: 56, valoareTotala: 5600 },
+    { id: uid(), data: d(1, 8), tip: "intrare", articolId: "a2", cantitate: 12, valoareUnitara: 1, valoareTotala: 12 },
+    { id: uid(), data: d(1, 8), tip: "intrare", articolId: "a3", cantitate: 20, valoareUnitara: 3, valoareTotala: 60 },
+    { id: uid(), data: d(3, 5), tip: "intrare", articolId: "a4", cantitate: 60, valoareUnitara: 58, valoareTotala: 3480 },
+  ];
+
+  const vanzarePangar = (data, art, cantitate, tert) => {
+    chitantaNr += 1;
+    const nr = chitantaNr;
+    const costAchizitie = cantitate * art.pretAchizitie;
+    const venitPropriu = cantitate * art.pretVanzare - costAchizitie;
+    const cat = CATEGORII_PANGAR[art.categorieBVC];
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitTranzitoriu, data, suma: costAchizitie, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod}`, nr, an });
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitPropriu, data, suma: venitPropriu, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} (marjă)`, nr, an });
+    miscariStoc.push({ id: uid(), data, tip: "iesire", articolId: art.id, cantitate, valoareUnitara: art.pretVanzare, valoareTotala: cantitate * art.pretVanzare });
+  };
+
+  vanzarePangar(d(1, 19), { id: "a1", pretAchizitie: 56, pretVanzare: 100, cod: buildCod("LP100B", 56, 100), categorieBVC: "lumanari" }, 54, "credincios");
+  vanzarePangar(d(2, 16), { id: "a2", pretAchizitie: 1, pretVanzare: 1.25, cod: buildCod("COLPORTAJ", 1, 1.25), categorieBVC: "colportaj" }, 10, "credincios");
+  vanzarePangar(d(3, 23), { id: "a3", pretAchizitie: 3, pretVanzare: 4, cod: buildCod("CC1", 3, 4), categorieBVC: "lumanari" }, 20, "credincios");
+  vanzarePangar(d(3, 10), { id: "a1", pretAchizitie: 56, pretVanzare: 100, cod: buildCod("LP100B", 56, 100), categorieBVC: "lumanari" }, 30, "credincios");
+
+  // Datorii furnizor din recepții pentru care plata a fost amânată — una veche (peste 60 zile), una recentă
+  const datoriiFurnizori = [
+    {
+      id: uid(), furnizor: "Ceară & Tămâie SRL", suma: 36, nrFactura: "F-2201", nrNRCD: 1,
+      dataFactura: d(1, 8), dataScadenta: d(2, 7), status: "neachitata", contId: CATEGORII_PANGAR.lumanari.achizitie,
+    },
+    {
+      id: uid(), furnizor: "Atelier Iconografic „Emanuel”", suma: 300, nrFactura: "F-0587", nrNRCD: 2,
+      dataFactura: d(3, 5), dataScadenta: d(4, 4), status: "neachitata", contId: CATEGORII_PANGAR.colportaj.achizitie,
+    },
+  ];
+
+  return {
+    conturi,
+    operatiuni,
+    articole,
+    miscariStoc,
+    datoriiFurnizori,
+    contoare: { [an]: { chitanta: chitantaNr, ordinPlata: opNr, nrcd: 2 } },
+    buget: { "732.01": { [an]: 3000 }, "731.01.01": { [an]: 4000 }, "605.02": { [an]: 7000 } },
+    prevederiBugetare: {
+      [an]: {
+        validat: true,
+        dataValidare: `${an - 1}-12-15`,
+        linii: [
+          { contId: "732.01", suma: 3000 },
+          { contId: "731.01.01", suma: 4000 },
+          { contId: "605.02", suma: 7000 },
+        ],
+      },
+    },
+    exercitiiFinanciare: {
+      [an - 1]: { inchis: true, dataInchidere: `${an}-03-20`, tipInchidere: "manuala" },
+    },
+    parohie: {
+      denumire: "Parohia „Sfântul Nicolae”", eparhie: "Arhiepiscopia Exemplu", protoierie: "Protoieria Exemplu",
+      hram: "Sfântul Ierarh Nicolae (6 decembrie)", cif: DEMO_CIF, nrAnaf: "RCU-000123", codLMI: "",
+      judet: "Exemplu", localitate: "Localitatea Exemplu", strada: "Str. Bisericii nr. 1", codPostal: "000000",
+      telefon: "0212345678", email: "contact@parohia-exemplu.ro",
+      preotParoh: "Pr. Ion Exemplu", telefonPreot: "0721234567", emailPreot: "preot@parohia-exemplu.ro",
+      banca: "Banca Exemplu", iban: "RO00EXEM0000000000000000",
+      dataInfiintare: "1920-01-01",
+      areCimitir: true,
+      adresaCimitirDiferita: true,
+      adresaCimitir: { judet: "Exemplu", localitate: "Localitatea Exemplu", strada: "Str. Cimitirului nr. 5", codPostal: "000001" },
+    },
+    jurnalAudit: [
+      { id: uid(), data: `${an}-01-05`, ora: "09:15", rol: "Preot paroh / Administrator parohie", actiune: "Chitanță nr. 1 emisă — sold reportat pe cont 106" },
+      { id: uid(), data: `${an}-01-19`, ora: "11:02", rol: "Responsabil pangar", actiune: "Vânzare pangar — 54 buc. LUM.P.MIC" },
+      { id: uid(), data: `${an - 1}-03-20`, ora: "16:40", rol: "Preot paroh / Administrator parohie", actiune: `Închidere manuală a exercițiului financiar ${an - 1}` },
+    ],
+  };
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+/* --------------------------- Autentificare -------------------------------- */
+// Autentificarea reală (verificare parolă, sesiune) e delegată integral către Supabase Auth
+// (vezi authSupabase.js) — nu mai există hash/verificare locală în această aplicație.
+
+function validatePassword(pw) {
+  const rules = {
+    lungime: pw.length >= 8,
+    mare: /[A-Z]/.test(pw),
+    mica: /[a-z]/.test(pw),
+    cifra: /[0-9]/.test(pw),
+    special: /[^A-Za-z0-9]/.test(pw),
+  };
+  return { rules, valid: Object.values(rules).every(Boolean) };
+}
+
+/* ------------------------------ UI atoms -------------------------------- */
+
+function Card({ children, className = "" }) {
+  return (
+    <div className={`bg-white rounded-lg border border-stone-200 shadow-sm ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, tone = "neutral", icon: Icon }) {
+  const toneMap = {
+    neutral: "text-stone-800",
+    good: "text-emerald-700",
+    bad: "text-rose-700",
+    warn: "text-amber-700",
+  };
+  return (
+    <Card className="p-4 flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-wide text-stone-500 font-medium">{label}</span>
+        {Icon && <Icon size={16} className="text-stone-400" />}
+      </div>
+      <span className={`text-2xl font-serif tabular-nums ${toneMap[tone]}`}>{value}</span>
+      {sub && <span className="text-xs text-stone-500">{sub}</span>}
+    </Card>
+  );
+}
+
+function Field({ label, children, error }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-stone-600 font-medium">{label}</span>
+      {children}
+      {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+    </label>
+  );
+}
+
+const inputCls =
+  "border border-stone-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#8a6a2f]/40 focus:border-[#8a6a2f] bg-white";
+
+function Btn({ children, onClick, variant = "primary", type = "button", disabled, className = "" }) {
+  const variants = {
+    primary: "bg-[#1F3864] text-white hover:bg-[#152848] disabled:bg-stone-300",
+    gold: "bg-[#B8860B] text-white hover:bg-[#9c7209] disabled:bg-stone-300",
+    verde: "bg-emerald-500 text-white hover:bg-emerald-600 disabled:bg-stone-300",
+    ghost: "bg-transparent text-stone-600 hover:bg-stone-100 border border-stone-300",
+    danger: "bg-transparent text-rose-600 hover:bg-rose-50 border border-rose-200",
+  };
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Hook reutilizabil: căutare text simplă + paginare, pentru orice tabel din aplicație.
+function useTabelFiltrat(items, searchFields, pageSize = 15) {
+  const [cautare, setCautareRaw] = useState("");
+  const [pagina, setPagina] = useState(1);
+
+  const filtrate = useMemo(() => {
+    if (!cautare.trim()) return items;
+    const q = cautare.trim().toLowerCase();
+    return items.filter((item) => searchFields.some((f) => String(item[f] ?? "").toLowerCase().includes(q)));
+  }, [items, cautare, searchFields]);
+
+  const totalPagini = Math.max(1, Math.ceil(filtrate.length / pageSize));
+  const paginaSafe = Math.min(pagina, totalPagini);
+  const afisate = filtrate.slice((paginaSafe - 1) * pageSize, paginaSafe * pageSize);
+
+  function setCautare(v) {
+    setCautareRaw(v);
+    setPagina(1);
+  }
+
+  return { cautare, setCautare, pagina: paginaSafe, setPagina, totalPagini, afisate, filtrate, totalFiltrate: filtrate.length };
+}
+
+// Filtrare + sortare per coloană, reutilizabilă — fiecare coloană eligibilă primește propriul
+// câmp de text (cu sugestii din valorile existente) și poate fi folosită pentru sortare
+// ascendentă/descendentă, prin click pe eticheta antetului. Coloanele de SOLD nu se includ
+// niciodată în `config` (rămân antete simple, fără filtrare/sortare).
+function useFiltrareColoane(rows, config) {
+  const [filtre, setFiltre] = useState({});
+
+  const procesate = useMemo(() => {
+    let r = rows;
+    for (const [cheie, valoare] of Object.entries(filtre)) {
+      if (!valoare || !config[cheie]) continue;
+      const q = String(valoare).toLowerCase();
+      r = r.filter((row) => String(config[cheie].get(row) ?? "").toLowerCase().includes(q));
+    }
+    return r;
+  }, [rows, filtre, config]);
+
+  function sugestiiPentru(cheie) {
+    if (!config[cheie]) return [];
+    const valori = new Set(rows.map((r) => String(config[cheie].get(r) ?? "")).filter(Boolean));
+    return [...valori].sort();
+  }
+
+  return { filtre, setFiltre, procesate, sugestiiPentru };
+}
+
+// Antet de tabel filtrabil — etichetă statică (fără sortare) + câmp de text cu sugestii, sub
+// etichetă. Se folosește doar pentru coloanele prezente în `config`; restul rămân <th> simple.
+function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, className }) {
+  const listaId = `sugestii-col-${cheie}`;
+  return (
+    <th className={className || "px-2 py-2 align-bottom"}>
+      <div className="flex flex-col gap-1">
+        <span className="font-medium">{eticheta}</span>
+        <input
+          list={listaId}
+          value={filtre[cheie] || ""}
+          onChange={(e) => setFiltre((f) => ({ ...f, [cheie]: e.target.value }))}
+          placeholder="Filtrează..."
+          className="w-full text-xs font-normal normal-case border border-stone-200 rounded px-1 py-0.5 text-stone-600"
+        />
+        <datalist id={listaId}>
+          {sugestii?.map((s) => <option key={s} value={s} />)}
+        </datalist>
+      </div>
+    </th>
+  );
+}
+
+function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina, totalFiltrate, placeholder }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-stone-100 flex-wrap">
+      <input
+        className={inputCls + " max-w-xs"}
+        placeholder={placeholder || "Caută..."}
+        value={cautare}
+        onChange={(e) => onCautare(e.target.value)}
+      />
+      <div className="flex items-center gap-2 text-xs text-stone-500">
+        <span>{totalFiltrate} {totalFiltrate === 1 ? "rezultat" : "rezultate"}</span>
+        {totalPagini > 1 && (
+          <>
+            <button onClick={() => onPagina(pagina - 1)} disabled={pagina <= 1} className="disabled:opacity-30 hover:text-[#1F3864]">←</button>
+            <span>Pag. {pagina}/{totalPagini}</span>
+            <button onClick={() => onPagina(pagina + 1)} disabled={pagina >= totalPagini} className="disabled:opacity-30 hover:text-[#1F3864]">→</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose || undefined}>
+      <div
+        className={`bg-[#FAF8F3] rounded-lg shadow-xl w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 bg-[#FAF8F3]">
+          <h3 className="font-serif text-lg text-[#1F3864]">{title}</h3>
+          {onClose && (
+            <button onClick={onClose} className="text-stone-400 hover:text-stone-700">
+              <X size={18} />
+            </button>
+          )}
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ Export rapoarte (PDF / XLSX / XML) -------------------------------- */
+
+function xmlEscape(v) {
+  return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Salvare/restaurare completă a bazei de date proprii a parohiei — un singur fișier JSON,
+// de sine stătător, transferabil către altă instalare (secțiunea 2.1 din specificație).
+const BACKUP_VERSIUNE = 1;
+
+function exportBackup(state) {
+  const payload = {
+    tipDocument: "ParohieERP-Backup",
+    versiune: BACKUP_VERSIUNE,
+    dataExport: todayISO(),
+    parohie: state.parohie?.denumire || "",
+    stare: state,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const numeParohie = (state.parohie?.denumire || "parohie").replace(/[^a-zA-Z0-9-]+/g, "_");
+  a.href = url;
+  a.download = `Backup-${numeParohie}-${todayISO()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function valideazaBackup(payload) {
+  if (!payload || typeof payload !== "object") return "Fișierul nu conține un obiect JSON valid.";
+  if (!payload.stare || typeof payload.stare !== "object") return "Fișierul nu are structura așteptată a unei salvări ParohieERP (lipsește câmpul „stare”).";
+  const s = payload.stare;
+  if (!Array.isArray(s.conturi) || !Array.isArray(s.operatiuni) || !Array.isArray(s.articole)) {
+    return "Fișierul nu conține datele minime așteptate (conturi/operațiuni/articole).";
+  }
+  return null;
+}
+
+function exportXLSX(titlu, columns, rows, parohie) {
+  const p = parohie || {};
+  const antet = [
+    [`Denumirea unității de cult: ${p.denumire || ""}`],
+    [`Cod fiscal: ${p.cif || ""}`],
+    [`Preot Paroh: ${p.preotParoh || ""}`],
+    [`Data: ${fmtDataJurnal(todayISO())}`],
+    [],
+  ];
+  const aoa = [...antet, columns.map((c) => c.label), ...rows.map((r) => columns.map((c) => r[c.key] ?? ""))];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Raport");
+  XLSX.writeFile(wb, `${titlu}.xlsx`);
+}
+
+function exportXML(titlu, columns, rows, parohie) {
+  const p = parohie || {};
+  const antet = `<Antet>
+    <DenumireUnitateCult>${xmlEscape(p.denumire)}</DenumireUnitateCult>
+    <CodFiscal>${xmlEscape(p.cif)}</CodFiscal>
+    <Eparhie>${xmlEscape(p.eparhie)}</Eparhie>
+    <Protoierie>${xmlEscape(p.protoierie)}</Protoierie>
+    <PreotParoh>${xmlEscape(p.preotParoh)}</PreotParoh>
+    <DataGenerare>${xmlEscape(fmtDataJurnal(todayISO()))}</DataGenerare>
+  </Antet>`;
+  const randuri = rows
+    .map((r) => `  <Rand>${columns.map((c) => `<${c.key}>${xmlEscape(r[c.key])}</${c.key}>`).join("")}</Rand>`)
+    .join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<Raport titlu="${xmlEscape(titlu)}">\n${antet}\n${randuri}\n</Raport>`;
+  const blob = new Blob([xml], { type: "application/xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${titlu}.xml`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportPDF(titlu, columns, rows, parohie) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const p = parohie || {};
+  const azi = fmtDataJurnal(todayISO());
+
+  const style = `
+    <style>
+      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      h2 { color: #1F3864; }
+      .coperta { padding: 32px 24px; page-break-after: always; }
+      .coperta h1 { color: #1F3864; font-size: 24px; margin-bottom: 4px; }
+      .coperta .hram { color: #8a6a2f; font-style: italic; margin-bottom: 20px; }
+      .coperta table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      .coperta td { padding: 5px 6px; border-bottom: 1px solid #e7e5e4; }
+      .coperta td.label { color: #78716c; width: 45%; }
+      .continut { padding: 0 24px; }
+      table.raport { width: 100%; border-collapse: collapse; font-size: 12px; }
+      table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
+      table.raport thead.antet-repetat th { background: #1F3864; color: white; font-weight: normal; padding: 6px 8px; }
+      table.raport thead.antet-repetat { display: table-header-group; }
+      table.raport tbody.date-header th { background: #1F3864; color: white; }
+      table.raport tfoot { display: table-footer-group; }
+      table.raport tfoot td { border: none; padding-top: 10px; font-size: 12px; color: #78716c; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; }
+      @page { @bottom-right { content: "Pag. " counter(page) " / " counter(pages); font-size: 12px; color: #78716c; } }
+    </style>`;
+
+  const coperta = `
+    <div class="coperta">
+      <h1>${xmlEscape(p.denumire || "Parohia")}</h1>
+      <div class="hram">${xmlEscape(p.hram || "")}</div>
+      <table>
+        <tr><td class="label">Eparhia</td><td>${xmlEscape(p.eparhie)}</td></tr>
+        <tr><td class="label">Protoieria</td><td>${xmlEscape(p.protoierie)}</td></tr>
+        <tr><td class="label">Cod fiscal (CIF)</td><td>${xmlEscape(p.cif)}</td></tr>
+        <tr><td class="label">Înscrisă în Registrul ANAF</td><td>${p.inscrisAnaf === "inscris" ? "Da" : p.inscrisAnaf === "neinscris" ? "Nu" : "—"}</td></tr>
+        ${p.codLMI ? `<tr><td class="label">Cod LMI</td><td>${xmlEscape(p.codLMI)}</td></tr>` : ""}
+        <tr><td class="label">Adresă</td><td>${xmlEscape([p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", "))}</td></tr>
+        <tr><td class="label">Telefon / E-mail</td><td>${xmlEscape([p.telefon, p.email].filter(Boolean).join(" / "))}</td></tr>
+        <tr><td class="label">Preot paroh</td><td>${xmlEscape(p.preotParoh)}</td></tr>
+        <tr><td class="label">Bancă / IBAN</td><td>${xmlEscape([p.banca, p.iban].filter(Boolean).join(" / "))}</td></tr>
+      </table>
+      <h2 style="margin-top:28px;">${xmlEscape(titlu)}</h2>
+      <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
+    </div>`;
+
+  const headRepetat = `
+    <thead class="antet-repetat">
+      <tr><th colspan="${columns.length}" style="text-align:left;">
+        Denumirea unității de cult: ${xmlEscape(p.denumire)} &nbsp;&nbsp;|&nbsp;&nbsp; Cod fiscal: ${xmlEscape(p.cif)}
+      </th></tr>
+      <tr>${columns.map((c) => `<th>${xmlEscape(c.label)}</th>`).join("")}</tr>
+    </thead>`;
+
+  const body = rows.map((r, i) => `<tr style="background:${i % 2 ? "#f5f5f4" : "white"}">${columns.map((c) => `<td>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`).join("");
+
+  const footerRepetat = `
+    <tfoot>
+      <tr><td colspan="${columns.length}">
+        <div class="footer-line">
+          <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
+          <span>Data: ${azi}</span>
+        </div>
+      </td></tr>
+    </tfoot>`;
+
+  win.document.write(`<html><head><title>${xmlEscape(titlu)}</title>${style}</head><body>
+    ${coperta}
+    <div class="continut">
+      <table class="raport">
+        ${headRepetat}
+        ${footerRepetat}
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  </body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
+// Reconstituie documentele (Chitanță/Ordin de plată) din operațiunile-linie individuale,
+// grupate după (an, nr) — o chitanță/OP cu mai multe linii bugetare rămâne un singur document.
+function grupeazaDocumente(operatiuni, tip) {
+  const grupuri = {};
+  operatiuni
+    .filter((op) => op.tip === tip)
+    .forEach((op) => {
+      const key = `${op.an}-${op.nr}`;
+      if (!grupuri[key]) {
+        grupuri[key] = { an: op.an, nr: op.nr, data: op.data, tert: op.tert, modPlata: op.modPlata, serie: op.serie || null, numarIdentificare: op.numarIdentificare || null, linii: [] };
+      }
+      grupuri[key].linii.push(op);
+    });
+  return Object.values(grupuri).sort((a, b) => (a.an !== b.an ? a.an - b.an : a.nr - b.nr));
+}
+
+function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const p = parohie || {};
+  const azi = fmtDataJurnal(todayISO());
+
+  // Soldul cumulat trebuie calculat mereu pe TOT registrul anului (nu doar pe ce se tipărește
+  // acum) — altfel, printarea unei singure chitanțe/selecții ar arăta un sold greșit, redus
+  // doar la subsetul tipărit. Precalculăm o hartă nr→sold, din setul complet de documente.
+  const soldCumulatPeDoc = {};
+  if (tipEtichetat === "Ordin de plată") {
+    let sold = 0;
+    let anCurent = null;
+    for (const d of [...(toateDocumentele || docs)].sort((a, b) => (a.an !== b.an ? a.an - b.an : a.nr - b.nr))) {
+      if (d.an !== anCurent) { anCurent = d.an; sold = 0; }
+      sold += d.linii.reduce((s, l) => s + l.suma, 0);
+      soldCumulatPeDoc[`${d.an}-${d.nr}`] = sold;
+    }
+  }
+
+  const style = `
+    <style>
+      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      .pagina-doc { padding: 0 8mm; page-break-after: always; }
+      .pagina-doc:last-child { page-break-after: auto; }
+      table.doc { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+      table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
+      table.doc th { background: #1F3864; color: white; font-weight: normal; }
+      .total-row td { font-weight: bold; background: #f5f5f4; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+    </style>`;
+
+  const paginile = docs
+    .map((doc) => {
+      const total = doc.linii.reduce((s, l) => s + l.suma, 0);
+      const soldCumulatPlati = soldCumulatPeDoc[`${doc.an}-${doc.nr}`];
+      const randuri = doc.linii
+        .map((l) => `<tr><td>${xmlEscape(contById[l.contId]?.simbol || l.contId)}</td><td>${xmlEscape(contById[l.contId]?.denumire || "")}</td><td>${xmlEscape(l.explicatie || "")}</td><td style="text-align:right;">${fmt(l.suma)}</td></tr>`)
+        .join("");
+      return `
+        <div class="pagina-doc">
+          <div style="border:2px solid #1F3864; border-radius:4px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; background:#1F3864/5;">
+            <span style="font-size:18px; color:#1F3864; text-transform:uppercase; letter-spacing:0.5px;">${xmlEscape(tipEtichetat)}</span>
+            <div style="text-align:right;">
+              <span style="font-family: monospace; font-size:14px; color:#1F3864; font-weight:bold;">Nr. ${doc.nr}/${doc.an}</span>
+              ${doc.serie && doc.numarIdentificare ? `<br/><span style="font-family: monospace; font-size:12px; color:#78716c;">Serie ${xmlEscape(doc.serie)} nr. ${doc.numarIdentificare}</span>` : ""}
+            </div>
+          </div>
+          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: ${xmlEscape(p.denumire)} &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
+          <table class="doc">
+            <tr><td style="width:25%; color:#78716c;">Data</td><td colspan="3">${fmtDataJurnal(doc.data)}</td></tr>
+            <tr><td style="color:#78716c;">Denumire partener</td><td colspan="3">${xmlEscape(doc.tert || "—")}</td></tr>
+            <tr><td style="color:#78716c;">Mod</td><td colspan="3">${doc.modPlata === "numerar" ? "Numerar (casă)" : "Transfer bancar"}</td></tr>
+          </table>
+          <table class="doc">
+            <thead><tr><th>Art. bug. nr.</th><th>Denumire</th><th>Explicație</th><th style="text-align:right;">Sumă (lei)</th></tr></thead>
+            <tbody>
+              ${randuri}
+              <tr class="total-row"><td colspan="3">Total</td><td style="text-align:right;">${fmt(total)}</td></tr>
+              ${tipEtichetat === "Ordin de plată" ? `<tr class="total-row" style="background:#fef3c7;"><td colspan="3">Sold cumulat plăți (an ${doc.an})</td><td style="text-align:right;">${fmt(soldCumulatPlati)}</td></tr>` : ""}
+            </tbody>
+          </table>
+          <div class="footer-line">
+            <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
+            <span>Data tipăririi: ${azi}</span>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  win.document.write(`<html><head><title>${xmlEscape(tipEtichetat)}</title>${style}</head><body>${paginile}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
+// Versiune generică: tipărește orice tip de document (NRCD, Bon de consum, Proces-verbal, Corespondență),
+// pe baza unor câmpuri de antet simple + opțional un sub-tabel de linii.
+// Raport anual de sinteză — agregă date din TOATE modulele pentru anul selectat, într-un singur document.
+// Elementele de flux (venituri/cheltuieli/vânzări/bonuri/concesiuni noi/corespondență) sunt filtrate strict pe anul
+// respectiv; elementele de stoc/patrimoniu active reflectă starea curentă la data generării raportului (menționat explicit).
+function construiesteRaportAnualComplet(state, an) {
+  const opsAn = state.operatiuni.filter((op) => op.an === an);
+  const totalVenituri = opsAn.filter((op) => op.tip === "incasare" && state.conturi.find((c) => c.id === op.contId)?.clasa !== "viramente").reduce((s, op) => s + op.suma, 0);
+  const totalCheltuieli = opsAn.filter((op) => op.tip === "plata" && state.conturi.find((c) => c.id === op.contId)?.clasa !== "viramente" && !op.ajustare106).reduce((s, op) => s + op.suma, 0);
+
+  const executieBugetara = state.conturi
+    .filter((c) => c.clasa === "venit" || c.clasa === "cheltuiala")
+    .map((c) => {
+      const bugetat = (state.buget[c.id] || {})[an] || 0;
+      const realizat = opsAn.filter((op) => op.contId === c.id && !(op.contId === "106" && op.ajustare106)).reduce((s, op) => s + op.suma, 0);
+      return { simbol: c.simbol, denumire: c.denumire, bugetat, realizat };
+    })
+    .filter((r) => r.bugetat > 0 || r.realizat > 0);
+
+  const CONTURI_PANGAR_VENIT = Object.values(CATEGORII_PANGAR).flatMap((c) => [c.venitPropriu, c.venitTranzitoriu]);
+  const vanzariPangarAn = opsAn.filter((op) => CONTURI_PANGAR_VENIT.includes(op.contId)).reduce((s, op) => s + op.suma, 0);
+  const valoareStocPangarCurent = state.articole.reduce((s, a) => s + a.stoc * a.pretVanzare, 0);
+
+  const bonuriAn = state.bonuriConsum.filter((b) => b.an === an);
+  const valoareConsumAn = bonuriAn.reduce((s, b) => s + b.linii.reduce((s2, l) => s2 + l.valoare, 0), 0);
+
+  const bunuriActive = state.bunuriPatrimoniu.filter((b) => b.stare !== "casat");
+  const valoarePatrimoniuCurent = bunuriActive.reduce((s, b) => s + b.valoare, 0);
+  const bunuriCasateAn = state.bunuriPatrimoniu.filter((b) => b.stare === "casat" && b.dataCasare && yearOf(b.dataCasare) === an);
+
+  const concesiuniNoiAn = state.concesiuni.filter((c) => yearOf(c.istoric[0]?.data || c.dataInceput) === an);
+  const venitConcesiuniAn = opsAn.filter((op) => op.contId === "731.01.06").reduce((s, op) => s + op.suma, 0);
+  const concesiuniActiveCurent = state.concesiuni.filter((c) => !c.expirataDefinitiv);
+
+  const corespAn = state.corespondenta.filter((c) => c.an === an);
+  const intrariAn = corespAn.filter((c) => c.tip === "intrare");
+  const iesiriAn = corespAn.filter((c) => c.tip === "iesire");
+  const intrariNerezolvateAn = intrariAn.filter((c) => c.status === "in_lucru");
+
+  return {
+    an,
+    financiar: { totalVenituri, totalCheltuieli, excedent: totalVenituri - totalCheltuieli },
+    executieBugetara,
+    pangar: { vanzariAn: vanzariPangarAn, valoareStocCurent: valoareStocPangarCurent, produseActive: state.articole.length },
+    consumIntern: { numarBonuriAn: bonuriAn.length, valoareAn: valoareConsumAn },
+    patrimoniu: { numarBunuriActive: bunuriActive.length, valoareCurenta: valoarePatrimoniuCurent, casateAn: bunuriCasateAn.length },
+    cimitir: { concesiuniNoiAn: concesiuniNoiAn.length, concesiuniActiveCurent: concesiuniActiveCurent.length, venitAn: venitConcesiuniAn },
+    corespondenta: { intrariAn: intrariAn.length, iesiriAn: iesiriAn.length, nerezolvateAn: intrariNerezolvateAn.length },
+    exercitiuInchis: !!state.exercitiiFinanciare?.[an]?.inchis,
+  };
+}
+
+function printeazaRaportAnualComplet(raport, parohie) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const p = parohie || {};
+  const azi = fmtDataJurnal(todayISO());
+
+  const style = `
+    <style>
+      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      .pagina { padding: 0 8mm; page-break-after: always; }
+      .pagina:last-child { page-break-after: auto; }
+      h2 { color: #1F3864; font-size: 18px; border-bottom: 2px solid #1F3864; padding-bottom: 4px; margin-top: 24px; }
+      table.raport { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+      table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
+      table.raport th { background: #1F3864; color: white; font-weight: normal; }
+      .kpi { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+      .kpi div { border: 1px solid #d6d3d1; border-radius: 4px; padding: 8px 14px; flex: 1; min-width: 140px; }
+      .kpi .label { font-size: 12px; color: #78716c; text-transform: uppercase; }
+      .kpi .value { font-size: 16px; color: #1F3864; font-weight: bold; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+    </style>`;
+
+  const coperta = `
+    <div class="pagina">
+      <div style="text-align:center; margin-top:60px;">
+        <div style="width:70px;height:70px;border-radius:50%;background:#B8860B;margin:0 auto 16px;"></div>
+        <h1 style="color:#1F3864; font-size:26px;">Raport anual de sinteză — ${raport.an}</h1>
+        <p style="color:#78716c;">Toate modulele: Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență</p>
+      </div>
+      <table class="raport" style="margin-top:40px;">
+        <tr><td style="width:35%; color:#78716c;">Denumirea unității de cult</td><td>${xmlEscape(p.denumire)}</td></tr>
+        <tr><td style="color:#78716c;">Eparhia / Protoieria</td><td>${xmlEscape(p.eparhie)} / ${xmlEscape(p.protoierie)}</td></tr>
+        <tr><td style="color:#78716c;">Cod fiscal (CIF)</td><td>${xmlEscape(p.cif)}</td></tr>
+        <tr><td style="color:#78716c;">Nr. Registrul ANAF</td><td>${xmlEscape(p.nrAnaf)}</td></tr>
+        <tr><td style="color:#78716c;">Adresă</td><td>${xmlEscape([p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", "))}</td></tr>
+        <tr><td style="color:#78716c;">Preot Paroh</td><td>${xmlEscape(p.preotParoh)}</td></tr>
+        <tr><td style="color:#78716c;">Exercițiu financiar ${raport.an}</td><td>${raport.exercitiuInchis ? "Închis" : "Deschis"}</td></tr>
+      </table>
+    </div>`;
+
+  const paginaFinanciar = `
+    <div class="pagina">
+      <h2>Sinteză financiară — anul ${raport.an}</h2>
+      <div class="kpi">
+        <div><div class="label">Total venituri</div><div class="value">${fmt(raport.financiar.totalVenituri)} lei</div></div>
+        <div><div class="label">Total cheltuieli</div><div class="value">${fmt(raport.financiar.totalCheltuieli)} lei</div></div>
+        <div><div class="label">Excedent/deficit</div><div class="value">${fmt(raport.financiar.excedent)} lei</div></div>
+      </div>
+      <h2>Execuție bugetară</h2>
+      <table class="raport">
+        <thead><tr><th>Art. bug. nr.</th><th>Denumire</th><th style="text-align:right;">Bugetat</th><th style="text-align:right;">Realizat</th><th style="text-align:right;">Diferență</th></tr></thead>
+        <tbody>
+          ${raport.executieBugetara.map((r) => `<tr><td>${xmlEscape(r.simbol)}</td><td>${xmlEscape(r.denumire)}</td><td style="text-align:right;">${fmt(r.bugetat)}</td><td style="text-align:right;">${fmt(r.realizat)}</td><td style="text-align:right;">${fmt(r.bugetat - r.realizat)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  const paginaModule = `
+    <div class="pagina">
+      <h2>Pangar</h2>
+      <div class="kpi">
+        <div><div class="label">Vânzări din anul ${raport.an}</div><div class="value">${fmt(raport.pangar.vanzariAn)} lei</div></div>
+        <div><div class="label">Valoare stoc (curent)</div><div class="value">${fmt(raport.pangar.valoareStocCurent)} lei</div></div>
+        <div><div class="label">Produse active</div><div class="value">${raport.pangar.produseActive}</div></div>
+      </div>
+      <h2>Consum intern / Filantropie / Protocol</h2>
+      <div class="kpi">
+        <div><div class="label">Bonuri emise în ${raport.an}</div><div class="value">${raport.consumIntern.numarBonuriAn}</div></div>
+        <div><div class="label">Valoare consumată</div><div class="value">${fmt(raport.consumIntern.valoareAn)} lei</div></div>
+      </div>
+      <h2>Inventar &amp; Patrimoniu</h2>
+      <div class="kpi">
+        <div><div class="label">Bunuri active (curent)</div><div class="value">${raport.patrimoniu.numarBunuriActive}</div></div>
+        <div><div class="label">Valoare curentă</div><div class="value">${fmt(raport.patrimoniu.valoareCurenta)} lei</div></div>
+        <div><div class="label">Casate în ${raport.an}</div><div class="value">${raport.patrimoniu.casateAn}</div></div>
+      </div>
+      <h2>Cimitir Parohial</h2>
+      <div class="kpi">
+        <div><div class="label">Concesiuni noi în ${raport.an}</div><div class="value">${raport.cimitir.concesiuniNoiAn}</div></div>
+        <div><div class="label">Concesiuni active (curent)</div><div class="value">${raport.cimitir.concesiuniActiveCurent}</div></div>
+        <div><div class="label">Venit concesiuni ${raport.an}</div><div class="value">${fmt(raport.cimitir.venitAn)} lei</div></div>
+      </div>
+      <h2>Corespondență &amp; Arhivă</h2>
+      <div class="kpi">
+        <div><div class="label">Intrări în ${raport.an}</div><div class="value">${raport.corespondenta.intrariAn}</div></div>
+        <div><div class="label">Ieșiri în ${raport.an}</div><div class="value">${raport.corespondenta.iesiriAn}</div></div>
+        <div><div class="label">Nerezolvate</div><div class="value">${raport.corespondenta.nerezolvateAn}</div></div>
+      </div>
+      <div class="footer-line">
+        <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
+        <span>Data generării: ${azi}</span>
+      </div>
+    </div>`;
+
+  win.document.write(`<html><head><title>Raport anual de sinteză ${raport.an}</title>${style}</head><body>${coperta}${paginaFinanciar}${paginaModule}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
+function exportRaportAnualXLSX(raport, parohie) {
+  const wb = XLSX.utils.book_new();
+  const p = parohie || {};
+
+  const foaieInfo = XLSX.utils.aoa_to_sheet([
+    ["Raport anual de sinteză", raport.an],
+    ["Denumire", p.denumire || ""],
+    ["CIF", p.cif || ""],
+    ["Preot Paroh", p.preotParoh || ""],
+    ["Exercițiu financiar", raport.exercitiuInchis ? "Închis" : "Deschis"],
+    [],
+    ["Total venituri", raport.financiar.totalVenituri],
+    ["Total cheltuieli", raport.financiar.totalCheltuieli],
+    ["Excedent/deficit", raport.financiar.excedent],
+  ]);
+  XLSX.utils.book_append_sheet(wb, foaieInfo, "Sinteză");
+
+  const foaieBuget = XLSX.utils.aoa_to_sheet([
+    ["Art. bug. nr.", "Denumire", "Bugetat", "Realizat", "Diferență"],
+    ...raport.executieBugetara.map((r) => [r.simbol, r.denumire, r.bugetat, r.realizat, r.bugetat - r.realizat]),
+  ]);
+  XLSX.utils.book_append_sheet(wb, foaieBuget, "Execuție bugetară");
+
+  const foaieModule = XLSX.utils.aoa_to_sheet([
+    ["Modul", "Indicator", "Valoare"],
+    ["Pangar", `Vânzări ${raport.an}`, raport.pangar.vanzariAn],
+    ["Pangar", "Valoare stoc curent", raport.pangar.valoareStocCurent],
+    ["Consum intern", `Bonuri emise ${raport.an}`, raport.consumIntern.numarBonuriAn],
+    ["Consum intern", "Valoare consumată", raport.consumIntern.valoareAn],
+    ["Patrimoniu", "Bunuri active", raport.patrimoniu.numarBunuriActive],
+    ["Patrimoniu", "Valoare curentă", raport.patrimoniu.valoareCurenta],
+    ["Patrimoniu", `Casate ${raport.an}`, raport.patrimoniu.casateAn],
+    ["Cimitir", `Concesiuni noi ${raport.an}`, raport.cimitir.concesiuniNoiAn],
+    ["Cimitir", "Concesiuni active curent", raport.cimitir.concesiuniActiveCurent],
+    ["Cimitir", `Venit concesiuni ${raport.an}`, raport.cimitir.venitAn],
+    ["Corespondență", `Intrări ${raport.an}`, raport.corespondenta.intrariAn],
+    ["Corespondență", `Ieșiri ${raport.an}`, raport.corespondenta.iesiriAn],
+    ["Corespondență", "Nerezolvate", raport.corespondenta.nerezolvateAn],
+  ]);
+  XLSX.utils.book_append_sheet(wb, foaieModule, "Module");
+
+  XLSX.writeFile(wb, `Raport-anual-sinteza-${raport.an}.xlsx`);
+}
+
+function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const p = parohie || {};
+  const azi = fmtDataJurnal(todayISO());
+
+  const style = `
+    <style>
+      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      .pagina-doc { padding: 0 8mm; page-break-after: always; }
+      .pagina-doc:last-child { page-break-after: auto; }
+      table.doc { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+      table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
+      table.doc th { background: #1F3864; color: white; font-weight: normal; }
+      .total-row td { font-weight: bold; background: #f5f5f4; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+    </style>`;
+
+  const paginile = docs
+    .map((doc) => {
+      const antetRanduri = campuriAntet
+        .map((c) => `<tr><td style="width:30%; color:#78716c;">${xmlEscape(c.label)}</td><td colspan="${coloaneLinii ? coloaneLinii.length - 1 : 3}">${xmlEscape(c.value(doc))}</td></tr>`)
+        .join("");
+
+      let tabelLinii = "";
+      if (coloaneLinii && Array.isArray(doc.linii)) {
+        const capete = coloaneLinii.map((c) => `<th${c.right ? ' style="text-align:right;"' : ""}>${xmlEscape(c.label)}</th>`).join("");
+        const randuri = doc.linii
+          .map((l) => `<tr>${coloaneLinii.map((c) => `<td${c.right ? ' style="text-align:right;"' : ""}>${xmlEscape(c.value(l))}</td>`).join("")}</tr>`)
+          .join("");
+        const total = coloaneLinii.some((c) => c.total)
+          ? `<tr class="total-row">${coloaneLinii.map((c, i) => (i === coloaneLinii.length - 1 ? `<td style="text-align:right;">${xmlEscape(c.totalValue ? c.totalValue(doc) : "")}</td>` : i === 0 ? `<td colspan="${coloaneLinii.length - 1}">Total</td>` : "")).filter(Boolean).join("")}</tr>`
+          : "";
+        tabelLinii = `<table class="doc"><thead><tr>${capete}</tr></thead><tbody>${randuri}${total}</tbody></table>`;
+      }
+
+      return `
+        <div class="pagina-doc">
+          <div style="border:2px solid #1F3864; border-radius:4px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:18px; color:#1F3864; text-transform:uppercase; letter-spacing:0.5px;">${xmlEscape(tipEtichetat)}</span>
+            <span style="font-family: monospace; font-size:14px; color:#1F3864; font-weight:bold;">Nr. ${doc.nr}/${doc.an}</span>
+          </div>
+          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: ${xmlEscape(p.denumire)} &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
+          <table class="doc">${antetRanduri}</table>
+          ${tabelLinii}
+          <div class="footer-line">
+            <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
+            <span>Data tipăririi: ${azi}</span>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  win.document.write(`<html><head><title>${xmlEscape(tipEtichetat)}</title>${style}</head><body>${paginile}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
+function ExportMenu({ titlu, columns, rows, parohie }) {
+  const [open, setOpen] = useState(false);
+
+  function run(fn) {
+    fn(titlu, columns, rows, parohie);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative inline-block">
+      <Btn variant="ghost" onClick={() => setOpen((o) => !o)}>
+        <Download size={14} /> Generează raport <ChevronDown size={12} />
+      </Btn>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-20 py-1 min-w-[140px]">
+            <button onClick={() => run(exportPDF)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
+              <FileText size={14} className="text-rose-600" /> PDF
+            </button>
+            <button onClick={() => run(exportXLSX)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
+              <FileSpreadsheet size={14} className="text-emerald-700" /> XLSX
+            </button>
+            <button onClick={() => run(exportXML)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
+              <FileCode size={14} className="text-amber-700" /> XML
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------ Autentificare UI -------------------------------- */
+
+function PasswordChecklist({ rules }) {
+  const items = [
+    [rules.lungime, "minimum 8 caractere"],
+    [rules.mare, "cel puțin 1 literă mare"],
+    [rules.mica, "cel puțin 1 literă mică"],
+    [rules.cifra, "cel puțin 1 cifră"],
+    [rules.special, "cel puțin 1 caracter special"],
+  ];
+  return (
+    <ul className="flex flex-col gap-0.5 text-xs mt-1">
+      {items.map(([ok, label], i) => (
+        <li key={i} className={`flex items-center gap-1.5 ${ok ? "text-emerald-700" : "text-stone-400"}`}>
+          <Check size={12} className={ok ? "opacity-100" : "opacity-30"} />
+          {label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin }) {
+  const [pas, setPas] = useState("cif"); // "cif" | "login" | "setup" | "mfa-cod" | "mfa-recuperare"
+  const [cif, setCif] = useState("");
+  const [denumireParohie, setDenumireParohie] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [emailRecuperare, setEmailRecuperare] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const [verificand, setVerificand] = useState(false);
+  const [codMfa, setCodMfa] = useState("");
+  const [codRecuperareIntrodus, setCodRecuperareIntrodus] = useState("");
+
+  const { rules, valid } = validatePassword(password);
+
+  async function submitCif() {
+    setError("");
+    if (!cif.trim()) {
+      setError("Introduceți codul fiscal (CIF) al parohiei.");
+      return;
+    }
+    setVerificand(true);
+    try {
+      const parohie = await gasesteParohieDupaCif(cif.trim());
+      setPas(parohie ? "login" : "setup");
+    } catch (e) {
+      setError("Nu s-a putut verifica CIF-ul — reîncercați.");
+    } finally {
+      setVerificand(false);
+    }
+  }
+
+  async function submitLogin() {
+    setError("");
+    if (!username.trim() || !password) {
+      setError("Numele de utilizator și parola sunt obligatorii.");
+      return;
+    }
+    const rez = await onLogin(cif.trim(), username.trim(), password);
+    if (rez === "mfa") {
+      setError("");
+      setPas("mfa-cod");
+    } else if (!rez) {
+      setError("Cod fiscal (CIF), nume de utilizator sau parolă incorectă.");
+    }
+  }
+
+  async function submitMfaCod() {
+    setError("");
+    if (!/^\d{6}$/.test(codMfa.trim())) {
+      setError("Introduceți codul de 6 cifre din aplicația de autentificare.");
+      return;
+    }
+    const ok = await onVerifyMfa(codMfa.trim());
+    if (!ok) setError("Cod incorect — reîncercați.");
+  }
+
+  async function submitCodRecuperare() {
+    setError("");
+    if (!codRecuperareIntrodus.trim()) {
+      setError("Introduceți codul de recuperare tipărit.");
+      return;
+    }
+    const ok = await onRecoveryLogin(codRecuperareIntrodus.trim());
+    if (!ok) setError("Cod de recuperare invalid sau deja folosit.");
+  }
+
+  async function submitSetup() {
+    setError("");
+    if (!username.trim()) {
+      setError("Alegeți un nume de utilizator.");
+      return;
+    }
+    if (!valid) {
+      setError("Parola nu respectă politica minimă de securitate.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Cele două parole nu coincid.");
+      return;
+    }
+    if (!emailRecuperare.trim()) {
+      setError("Emailul e obligatoriu pentru contul de Administrator (recuperare parolă).");
+      return;
+    }
+    const res = await onSetup(cif.trim(), denumireParohie.trim(), username.trim(), password, emailRecuperare.trim());
+    if (res && res.ok === false) setError(res.error);
+  }
+
+  return (
+    <div className="min-h-screen bg-[#1F3864] flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-14 h-14 rounded-full bg-[#B8860B] flex items-center justify-center mb-3">
+            <Church size={26} className="text-white" />
+          </div>
+          <h1 className="font-serif text-2xl text-white">Parohia Erp</h1>
+          <p className="text-white/50 text-sm mt-0.5">
+            {pas === "cif" && "Identificare parohie"}
+            {pas === "login" && "Autentificare"}
+            {pas === "setup" && "Parohie nouă — creați contul de Administrator"}
+            {pas === "mfa-cod" && "Autentificare în doi pași"}
+            {pas === "mfa-recuperare" && "Cod de recuperare"}
+          </p>
+        </div>
+
+        <Card className="p-5 flex flex-col gap-3">
+          {pas === "cif" && (
+            <>
+              <Field label="Cod fiscal (CIF) — identifică parohia">
+                <div className="relative">
+                  <User size={14} className="absolute left-2.5 top-2.5 text-stone-400" />
+                  <input
+                    className={`${inputCls} w-full pl-8`}
+                    value={cif}
+                    onChange={(e) => setCif(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && submitCif()}
+                    placeholder="ex: 12345678"
+                    autoFocus
+                  />
+                </div>
+              </Field>
+              {error && (
+                <span className="text-rose-600 text-xs flex items-center gap-1">
+                  <AlertTriangle size={12} /> {error}
+                </span>
+              )}
+              <Btn variant="gold" onClick={submitCif} disabled={verificand} className="justify-center mt-1">
+                {verificand ? "Se verifică..." : "Continuă"}
+              </Btn>
+              {onDemo && (
+                <>
+                  <div className="flex items-center gap-2 text-[11px] text-stone-400 my-1">
+                    <span className="flex-1 h-px bg-stone-200" /> sau <span className="flex-1 h-px bg-stone-200" />
+                  </div>
+                  <Btn variant="ghost" onClick={onDemo} className="justify-center">
+                    Folosește o parohie fictivă (mediu de test)
+                  </Btn>
+                  <p className="text-[11px] text-stone-400 text-center">
+                    Încarcă contul de test (CIF {DEMO_CIF}), pentru explorarea aplicației.
+                  </p>
+                </>
+              )}
+            </>
+          )}
+
+          {pas === "login" && (
+            <>
+              <p className="text-xs text-stone-500">Parohie găsită — CIF {cif}</p>
+              <Field label="Nume de utilizator">
+                <input
+                  className={inputCls}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoFocus
+                />
+              </Field>
+              <Field label="Parolă">
+                <div className="relative">
+                  <Lock size={14} className="absolute left-2.5 top-2.5 text-stone-400" />
+                  <input
+                    type={showPw ? "text" : "password"}
+                    className={`${inputCls} w-full pl-8 pr-8`}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && submitLogin()}
+                  />
+                  <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600">
+                    {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </Field>
+              {error && (
+                <span className="text-rose-600 text-xs flex items-center gap-1">
+                  <AlertTriangle size={12} /> {error}
+                </span>
+              )}
+              <Btn variant="gold" onClick={submitLogin} className="justify-center mt-1">Autentificare</Btn>
+              <button type="button" onClick={() => { setPas("cif"); setError(""); }} className="text-[12px] text-stone-500 hover:text-[#1F3864] underline text-center mt-1">
+                Înapoi (alt CIF)
+              </button>
+            </>
+          )}
+
+          {pas === "mfa-cod" && (
+            <>
+              <p className="text-xs text-stone-500">
+                Parolă corectă — introdu codul de 6 cifre din aplicația de autentificare.
+              </p>
+              <Field label="Cod de 6 cifre">
+                <input
+                  className={`${inputCls} text-center tracking-widest text-lg`}
+                  value={codMfa}
+                  onChange={(e) => setCodMfa(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitMfaCod()}
+                  placeholder="123456"
+                  maxLength={6}
+                  autoFocus
+                />
+              </Field>
+              {error && (
+                <span className="text-rose-600 text-xs flex items-center gap-1">
+                  <AlertTriangle size={12} /> {error}
+                </span>
+              )}
+              <Btn variant="gold" onClick={submitMfaCod} className="justify-center mt-1">Confirmă</Btn>
+              <button type="button" onClick={() => { setPas("mfa-recuperare"); setError(""); }} className="text-[12px] text-stone-500 hover:text-[#1F3864] underline text-center mt-1">
+                Am pierdut telefonul — folosesc codul de recuperare
+              </button>
+            </>
+          )}
+
+          {pas === "mfa-recuperare" && (
+            <>
+              <p className="text-xs text-stone-500">
+                Introdu codul de recuperare tipărit, primit la activarea autentificării în
+                doi pași. Va fi anulat automat după folosire — va trebui să te reînrolezi
+                cu un telefon nou.
+              </p>
+              <Field label="Cod de recuperare">
+                <input
+                  className={`${inputCls} text-center tracking-widest font-mono`}
+                  value={codRecuperareIntrodus}
+                  onChange={(e) => setCodRecuperareIntrodus(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitCodRecuperare()}
+                  placeholder="XXXX-XXXX-XXXX"
+                  autoFocus
+                />
+              </Field>
+              {error && (
+                <span className="text-rose-600 text-xs flex items-center gap-1">
+                  <AlertTriangle size={12} /> {error}
+                </span>
+              )}
+              <Btn variant="gold" onClick={submitCodRecuperare} className="justify-center mt-1">Confirmă</Btn>
+              <button type="button" onClick={() => { setPas("mfa-cod"); setError(""); }} className="text-[12px] text-stone-500 hover:text-[#1F3864] underline text-center mt-1">
+                Am regăsit telefonul — înapoi la codul obișnuit
+              </button>
+            </>
+          )}
+
+          {pas === "setup" && (
+            <>
+              <p className="text-xs text-stone-500">
+                Nicio parohie cu CIF {cif} — acest cont devine automat Preot paroh/Administrator.
+              </p>
+              <Field label="Denumire parohie (opțional acum, se poate completa ulterior)">
+                <input className={inputCls} value={denumireParohie} onChange={(e) => setDenumireParohie(e.target.value)} />
+              </Field>
+              <Field label="Nume de utilizator (ales de dvs.)">
+                <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+              </Field>
+              <Field label="Parolă">
+                <input
+                  type={showPw ? "text" : "password"}
+                  className={inputCls}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+              <PasswordChecklist rules={rules} />
+              <Field label="Confirmare parolă">
+                <input
+                  type={showPw ? "text" : "password"}
+                  className={inputCls}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                />
+              </Field>
+              <Field label="Email (doar pentru recuperarea parolei proprii de Administrator)">
+                <input
+                  type="email"
+                  className={inputCls}
+                  value={emailRecuperare}
+                  onChange={(e) => setEmailRecuperare(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submitSetup()}
+                />
+              </Field>
+              {error && (
+                <span className="text-rose-600 text-xs flex items-center gap-1">
+                  <AlertTriangle size={12} /> {error}
+                </span>
+              )}
+              <Btn variant="gold" onClick={submitSetup} className="justify-center mt-1">Creează contul</Btn>
+              <button type="button" onClick={() => { setPas("cif"); setError(""); }} className="text-[12px] text-stone-500 hover:text-[#1F3864] underline text-center mt-1">
+                Înapoi (alt CIF)
+              </button>
+            </>
+          )}
+        </Card>
+
+        <p className="text-white/30 text-xs text-center mt-4">
+          Prototip · fiecare parohie are cont și date complet separate.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- Business logic ------------------------------ */
+
+function useDerived(state) {
+  return useMemo(() => {
+    const { operatiuni, conturi, articole } = state;
+    const contById = Object.fromEntries(conturi.map((c) => [c.id, c]));
+
+    let soldCasa = 0;
+    let soldBanca = 0;
+    let totalVenituri = 0;
+    let totalCheltuieli = 0;
+    const rulajPeCont = {}; // id -> {incasari, plati}
+
+    for (const op of operatiuni) {
+      const cont = contById[op.contId];
+      const semn = op.tip === "incasare" ? 1 : -1;
+      if (op.modPlata === "numerar") soldCasa += semn * op.suma;
+      else soldBanca += semn * op.suma;
+
+      if (!rulajPeCont[op.contId]) rulajPeCont[op.contId] = { incasari: 0, plati: 0 };
+      if (op.tip === "incasare") rulajPeCont[op.contId].incasari += op.suma;
+      else rulajPeCont[op.contId].plati += op.suma;
+
+      const eViramente = cont?.clasa === "viramente";
+      const eAjustare106Plata = op.contId === "106" && op.tip === "plata" && op.ajustare106;
+      if (!eViramente) {
+        if (op.tip === "incasare") totalVenituri += op.suma;
+        else if (!eAjustare106Plata) totalCheltuieli += op.suma;
+      }
+    }
+
+    const alerteStoc = [];
+    for (const art of articole) {
+      const prag = Math.max(PRAG_STOC_PROCENT * (art.stocReferinta || 0), PRAG_STOC_MINIM);
+      if (art.stoc === 0) {
+        alerteStoc.push({ tip: "epuizat", articol: art, mesaj: `Atenție! Pentru ${art.denumire}, stocul este epuizat!` });
+      } else if (art.stoc <= prag) {
+        alerteStoc.push({ tip: "scazut", articol: art, mesaj: `Atenție! Pentru ${art.denumire}, stocul este scăzut!` });
+      }
+    }
+
+    const alerteSold = [];
+    if (soldCasa < PRAG_SOLD) alerteSold.push(`Atenție! Soldul din casă este scăzut (<${PRAG_SOLD} RON)!`);
+    if (soldBanca < PRAG_SOLD) alerteSold.push(`Atenție! Soldul din bancă este scăzut (<${PRAG_SOLD} RON)!`);
+
+    const azi = new Date(todayISO());
+    const zilePeste60 = (dataFactura) => {
+      const diff = (azi - new Date(dataFactura)) / (1000 * 60 * 60 * 24);
+      return diff > 60;
+    };
+    const datoriiNeachitate = (state.datoriiFurnizori || []).filter((d) => d.status !== "achitata");
+    const datoriiPeste60 = datoriiNeachitate.filter((d) => zilePeste60(d.dataFactura));
+    const totalDatoriiCurente = datoriiNeachitate.reduce((sum, d) => sum + d.suma, 0);
+
+    return {
+      soldCasa, soldBanca, totalVenituri, totalCheltuieli, rulajPeCont, alerteStoc, alerteSold, contById,
+      datoriiNeachitate, datoriiPeste60, totalDatoriiCurente,
+    };
+  }, [state]);
+}
+
+const COUNTER_KEYS = {
+  incasare: "chitanta", plata: "ordinPlata", nrcd: "nrcd", bonConsum: "bonConsum", procesVerbal: "procesVerbal",
+  corespIntrare: "corespIntrare", corespIesire: "corespIesire",
+};
+const CATEGORII_ARHIVA = ["Financiar-contabil", "Patrimoniu", "Cimitir", "Corespondență oficială", "Alte categorii"];
+const TERMEN_RETENTIE_ANI = 50;
+const PRAG_BUN_VALOARE_MARE = 5000; // RON — peste acest prag: fotografiere obligatorie la intrare, aprobare suplimentară la casare
+const CATEGORII_PATRIMONIU = ["Obiecte de cult", "Mobilier", "Echipamente", "Clădiri", "Terenuri"];
+const STARI_BUN = { nou: "Nou", bun: "Bun", necesita_reparatii: "Necesită reparații", casat: "Casat" };
+
+const DURATE_CONCESIUNE = { "7": "7 ani", "25": "25 ani", vecie: "Pe veci" };
+
+function calculeazaDataExpirare(dataInceput, tipDurata) {
+  if (tipDurata === "vecie") return null;
+  const d = new Date(dataInceput);
+  d.setFullYear(d.getFullYear() + Number(tipDurata));
+  return d.toISOString().slice(0, 10);
+}
+
+// Termen legal: 90 de zile din anul calendaristic imediat următor expirării valabilității concesiunii.
+function calculeazaTermenLimitaSuccesori(dataExpirare) {
+  const anUrmator = new Date(dataExpirare).getFullYear() + 1;
+  const inceputAnUrmator = new Date(`${anUrmator}-01-01`);
+  inceputAnUrmator.setDate(inceputAnUrmator.getDate() + 90);
+  return inceputAnUrmator.toISOString().slice(0, 10);
+}
+
+function nextNumber(state, year, tip) {
+  const key = COUNTER_KEYS[tip] || tip;
+  const yearCounters = state.contoare[year] || {};
+  return (yearCounters[key] || 0) + 1;
+}
+
+// Previzualizare corectă a următorului număr, citită direct din operațiunile deja existente
+// (indiferent dacă au fost create prin contorul Supabase sau prin cel local) — folosită doar
+// ca afișaj informativ înainte de emitere; numărul REAL, definitiv, e mereu alocat la salvare.
+function previzualizeazaUrmatorulNumar(operatiuni, an, tip) {
+  const maxNr = operatiuni
+    .filter((op) => op.tip === tip && op.an === an)
+    .reduce((max, op) => Math.max(max, op.nr), 0);
+  return maxNr + 1;
+}
+
+function commitNumber(state, year, tip) {
+  const key = COUNTER_KEYS[tip] || tip;
+  const yearCounters = { ...(state.contoare[year] || {}) };
+  yearCounters[key] = (yearCounters[key] || 0) + 1;
+  return { ...state.contoare, [year]: yearCounters };
+}
+
+// O chitanță poate acoperi mai multe articole bugetare (conturi BVC) simultan — de ex. o vânzare pangar
+// generează venit tranzitoriu + venit propriu pe conturi diferite, sub același număr de chitanță.
+// Funcția întoarce operațiunile-linie și contoarele actualizate; apelantul le combină cu restul stării sale.
+function construiesteChitanta(state, { data, modPlata, tert, linii }) {
+  const year = yearOf(data);
+  const nr = nextNumber(state, year, "incasare");
+  const contoare = commitNumber(state, year, "incasare");
+  const operatiuniNoi = linii
+    .filter((l) => l.suma > 0)
+    .map((l) => ({
+      id: uid(), tip: "incasare", contId: l.contId, data, suma: l.suma,
+      modPlata, tert, explicatie: l.explicatie || "", nr, an: year,
+    }));
+  return { operatiuniNoi, contoare, nr, an: year };
+}
+
+// Analog pentru Ordin de plată: un singur document, mai multe linii pe conturi BVC diferite.
+function construiesteOrdinPlata(state, { data, modPlata, tert, linii }) {
+  const year = yearOf(data);
+  const nr = nextNumber(state, year, "plata");
+  const contoare = commitNumber(state, year, "plata");
+  const operatiuniNoi = linii
+    .filter((l) => l.suma > 0)
+    .map((l) => ({
+      id: uid(), tip: "plata", contId: l.contId, data, suma: l.suma,
+      modPlata, tert, explicatie: l.explicatie || "", nr, an: year,
+      ajustare106: l.contId === "106" ? !!l.ajustare106 : false,
+    }));
+  return { operatiuniNoi, contoare, nr, an: year };
+}
+
+// Închiderea exercițiului financiar: marchează anul ca închis (irevocabil) și anonimizează GDPR
+// numele donatorilor din toate încasările anului respectiv. Suma, data și contul BVC rămân neschimbate.
+// Închidere "moale" — reversibilă. NU anonimizează încă (anonimizarea are loc abia la închiderea
+// definitivă, 31.12.N+1). Un exercițiu închis moale poate fi redeschis oricând, până la acel termen.
+function inchideExercitiuFinanciar(state, an, tipInchidere) {
+  const exercitiiFinanciare = {
+    ...state.exercitiiFinanciare,
+    [an]: { ...(state.exercitiiFinanciare[an] || {}), inchis: true, dataInchidere: todayISO(), tipInchidere, inchisDefinitiv: false },
+  };
+  return { operatiuni: state.operatiuni, exercitiiFinanciare };
+}
+
+// Redeschidere: posibilă doar cât timp exercițiul NU e închis definitiv. Permite corectarea sau
+// adăugarea de documente legitime, apărute după termenul obișnuit de închidere.
+function redeschideExercitiuFinanciar(state, an) {
+  const info = state.exercitiiFinanciare[an];
+  if (!info?.inchis || info.inchisDefinitiv) return state.exercitiiFinanciare;
+  return {
+    ...state.exercitiiFinanciare,
+    [an]: { ...info, inchis: false, dataRedeschidere: todayISO() },
+  };
+}
+
+// Închidere definitivă, ireversibilă — declanșată automat la 31.12 al anului următor celui închis
+// moale. Abia acum se face anonimizarea GDPR a donatorilor. După acest moment, nimic din anul
+// respectiv nu mai poate fi editat, redeschis sau corectat, sub nicio formă.
+function inchideDefinitivExercitiuFinanciar(state, an) {
+  const operatiuni = state.operatiuni.map((op) => {
+    if (op.an === an && op.tip === "incasare" && op.tert) {
+      return { ...op, tert: "Donator anonimizat cf. GDPR" };
+    }
+    return op;
+  });
+  const exercitiiFinanciare = {
+    ...state.exercitiiFinanciare,
+    [an]: { ...state.exercitiiFinanciare[an], inchisDefinitiv: true, dataInchidereDefinitiva: todayISO() },
+  };
+  return { operatiuni, exercitiiFinanciare };
+}
+
+// Jurnal de audit: istoric read-only al acțiunilor semnificative (cine/ce/când). Nu acoperă exhaustiv fiecare
+// acțiune CRUD minoră din aplicație, ci evenimentele cu impact financiar/administrativ real.
+function inregistrareAudit(rol, actiune) {
+  const acum = new Date();
+  return { id: uid(), data: todayISO(), ora: acum.toTimeString().slice(0, 5), rol, actiune };
+}
+function adaugaAudit(state, rol, actiune) {
+  return [...(state.jurnalAudit || []), inregistrareAudit(rol, actiune)];
+}
+
+// Aplică renumerotările întoarse de backend (când un document nou, datat mai vechi decât altele
+// deja emise, forțează reordonarea cronologică a întregului set) pe toată starea locală deja
+// încărcată — altfel documentele afectate ar rămâne cu numărul vechi pe ecran, până la o repornire.
+function aplicaRenumerotari(s, renumerotari) {
+  if (!renumerotari || renumerotari.length === 0) return s;
+  const nrNouPeDocument = Object.fromEntries(renumerotari.map((r) => [r.documentId, r.nrNou]));
+  return {
+    ...s,
+    operatiuni: s.operatiuni.map((op) =>
+      op.documentId && nrNouPeDocument[op.documentId] !== undefined ? { ...op, nr: nrNouPeDocument[op.documentId] } : op
+    ),
+    miscariStoc: (s.miscariStoc || []).map((m) => {
+      if (!m.documentId || nrNouPeDocument[m.documentId] === undefined) return m;
+      const nrNou = nrNouPeDocument[m.documentId];
+      return { ...m, ...(m.nrNRCD !== undefined ? { nrNRCD: nrNou } : {}), ...(m.nrChitanta !== undefined ? { nrChitanta: nrNou } : {}) };
+    }),
+    datoriiFurnizori: (s.datoriiFurnizori || []).map((d) =>
+      d.documentId && nrNouPeDocument[d.documentId] !== undefined ? { ...d, nrNRCD: nrNouPeDocument[d.documentId] } : d
+    ),
+  };
+}
+
+/* ------------------------------ App -------------------------------------- */
+
+export default function ParohieERP() {
+  const [state, setState] = useState(null);
+  const [tab, setTab] = useState("dashboard");
+  const [loaded, setLoaded] = useState(false);
+
+  // Autentificare reală, pe server (Supabase Auth) — CIF + utilizator + parolă → rol fix,
+  // verificat de server, nu auto-ales. `session` rămâne CIF-ul (compatibil cu load/save state
+  // existent); `contActiv` ține username/rol/parohieId, obținute la logare.
+  const [authLoaded, setAuthLoaded] = useState(false);
+  const [session, setSession] = useState(null); // CIF curent logat, sau null
+  const [contActiv, setContActiv] = useState(null); // { cif, username, rol, parohieId } | null
+  const [modAdaugaParohie, setModAdaugaParohie] = useState(false);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [rolActiv, setRolActiv] = useState(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
+  // Vezi parohieDateLocale.js: câteva bucăți din stare (Date parohie, exerciții
+  // financiare, jurnal audit, tarife cimitir, conturi, contoare, Consum intern,
+  // bonuri consum) nu au propriile tabele Supabase — sunt ținute într-o singură
+  // coloană JSONB pe `parohii`. `dateLocaleIncarcate` e o gardă anti-cursă: nu
+  // pornim auto-salvarea acestor câmpuri înainte de a confirma că prima citire
+  // din Supabase s-a terminat, altfel am putea suprascrie date reale cu starea
+  // goală inițială (emptyState()).
+  const [dateLocaleIncarcate, setDateLocaleIncarcate] = useState(false);
+  const [showSecuritate, setShowSecuritate] = useState(false);
+  const [showAdminMfaUnlock, setShowAdminMfaUnlock] = useState(false);
+  // Login în 2 pași (parolă → TOTP): ține datele contului deja validat prin parolă,
+  // cât timp așteptăm codul din aplicația de autentificare (sau codul de recuperare).
+  const [mfaPendingAuth, setMfaPendingAuth] = useState(null); // { cif, username, rol, parohieId, factorId } | null
+  // După folosirea codului de recuperare, forțăm reînrolarea imediată (contul rămâne
+  // fără al doilea factor până atunci) — deschide automat ecranul de Securitate la login.
+  const [forteazaReinrolareMfa, setForteazaReinrolareMfa] = useState(false);
+
+  const authCurent = contActiv; // { cif, username, rol, parohieId } — folosit pentru afișare (username, rol)
+
+  useEffect(() => {
+    // La încărcarea aplicației, verificăm dacă mai există o sesiune Supabase activă (utilizatorul
+    // nu trebuie să se re-logheze de fiecare dată când redeschide aplicația).
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        const { data: profil } = await supabase
+          .from("utilizatori")
+          .select("parohie_id, rol, username, parohii(cif)")
+          .eq("id", data.session.user.id)
+          .maybeSingle();
+        if (profil) {
+          setContActiv({ id: data.session.user.id, cif: profil.parohii?.cif, username: profil.username, rol: profil.rol, parohieId: profil.parohie_id });
+          setSession(profil.parohii?.cif);
+          setRolActiv(ROL_DB_LA_LOCAL[profil.rol] || profil.rol);
+        }
+      }
+      setAuthLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    // Fără nicio persistență locală: starea pornește mereu goală, în memorie — datele reale
+    // vin exclusiv din Supabase, prin efectul de mai jos ("Module migrate pe Supabase").
+    if (session) {
+      setState(emptyState());
+      setLoaded(true);
+      setDateLocaleIncarcate(false);
+    }
+  }, [session]);
+
+  // Module migrate pe Supabase: absolut toate — Prevederi bugetare, Registru Jurnal, Pangar,
+  // Parteneri, Cimitir, Patrimoniu, Corespondență & Arhivă. Nimic nu mai rămâne local; nu există
+  // niciun efect de auto-salvare locală — orice scriere se face direct în Supabase, la momentul
+  // acțiunii (vezi funcțiile din supabaseData.js apelate de fiecare tab în parte).
+  useEffect(() => {
+    if (!loaded || !contActiv?.parohieId) return;
+    (async () => {
+      try {
+        const [prevederiSupabase, operatiuniSupabase, articolePangarSupabase, miscariStocPangarSupabase, datoriiFurnizoriSupabase, partenerSupabase, locuriSupabase, concesiuniSupabase, persoaneSupabase, bunuriPatrimoniuSupabase, corespondentaSupabase, arhivaSupabase, inventarieriSupabase, dateLocaleSupabase] = await Promise.all([
+          getToatePrevederile(contActiv.parohieId),
+          getOperatiuni(contActiv.parohieId),
+          getArticolePangar(contActiv.parohieId),
+          getMiscariStocPangar(contActiv.parohieId),
+          getDatoriiFurnizori(contActiv.parohieId),
+          getParteneri(contActiv.parohieId),
+          getLocuriInhumare(contActiv.parohieId),
+          getConcesiuni(contActiv.parohieId),
+          getPersoaneInhumate(contActiv.parohieId),
+          getBunuriPatrimoniu(contActiv.parohieId),
+          getCorespondenta(contActiv.parohieId),
+          getArhiva(contActiv.parohieId),
+          getInventarieriPatrimoniu(contActiv.parohieId),
+          getDateLocaleParohie(contActiv.parohieId),
+        ]);
+        // Reconcilierea automată (care copia orice produs local lipsă în Supabase) a fost
+        // eliminată — a fost utilă o singură dată, la migrarea inițială, dar ulterior a început
+        // să recreeze produse fantomă șterse manual, ori de câte ori memoria locală a browserului
+        // (nesincronizată încă) mai păstra un cod vechi. Supabase e acum singura sursă de adevăr
+        // pentru nomenclatorul Pangar — orice produs nou se creează exclusiv prin "Produs nou".
+        setState((s) => ({
+          ...s,
+          prevederiBugetare: prevederiSupabase,
+          buget: construiesteBugetDinPrevederi(prevederiSupabase),
+          operatiuni: operatiuniSupabase,
+          articole: articolePangarSupabase.length > 0 ? articolePangarSupabase : s.articole,
+          miscariStoc: articolePangarSupabase.length > 0 ? miscariStocPangarSupabase : s.miscariStoc,
+          datoriiFurnizori: articolePangarSupabase.length > 0 ? datoriiFurnizoriSupabase : s.datoriiFurnizori,
+          parteneri: partenerSupabase,
+          locuriInhumare: locuriSupabase.length > 0 ? locuriSupabase : s.locuriInhumare,
+          concesiuni: locuriSupabase.length > 0 ? concesiuniSupabase : s.concesiuni,
+          persoaneInhumate: locuriSupabase.length > 0 ? persoaneSupabase : s.persoaneInhumate,
+          bunuriPatrimoniu: bunuriPatrimoniuSupabase.length > 0 ? bunuriPatrimoniuSupabase : s.bunuriPatrimoniu,
+          corespondenta: corespondentaSupabase.length > 0 ? corespondentaSupabase : s.corespondenta,
+          arhiva: arhivaSupabase.length > 0 ? arhivaSupabase : s.arhiva,
+          inventarieriPatrimoniu: inventarieriSupabase.length > 0 ? inventarieriSupabase : s.inventarieriPatrimoniu,
+          // Câmpuri ținute în date_locale (vezi parohieDateLocale.js) — suprascriem doar dacă
+          // Supabase chiar are ceva salvat pentru fiecare cheie în parte (un cont nou, fără nimic
+          // salvat încă, păstrează implicit valorile din emptyState()).
+          parohie: dateLocaleSupabase.parohie || s.parohie,
+          exercitiiFinanciare: dateLocaleSupabase.exercitiiFinanciare || s.exercitiiFinanciare,
+          jurnalAudit: dateLocaleSupabase.jurnalAudit || s.jurnalAudit,
+          tarifeCimitir: dateLocaleSupabase.tarifeCimitir || s.tarifeCimitir,
+          conturi: dateLocaleSupabase.conturi || s.conturi,
+          contoare: dateLocaleSupabase.contoare || s.contoare,
+          articoleConsumIntern: dateLocaleSupabase.articoleConsumIntern || s.articoleConsumIntern,
+          miscariConsumIntern: dateLocaleSupabase.miscariConsumIntern || s.miscariConsumIntern,
+          bonuriConsum: dateLocaleSupabase.bonuriConsum || s.bonuriConsum,
+          dataCreareInstanta: dateLocaleSupabase.dataCreareInstanta || s.dataCreareInstanta,
+        }));
+        setDateLocaleIncarcate(true);
+      } catch (e) {
+        console.error("Eroare la încărcarea datelor din Supabase:", e);
+      }
+    })();
+  }, [loaded, contActiv?.parohieId]);
+
+  // Auto-salvare, cu debounce, a bucăților ținute în date_locale (vezi mai sus) — singurul loc din
+  // aplicație unde mai există un echivalent al vechii auto-salvări locale, dar scris direct în
+  // Supabase. Restul stării (documente, Pangar, Cimitir etc.) se salvează deja punctual, la fiecare
+  // acțiune, prin funcțiile dedicate din supabaseData.js — nu trebuie repetat aici.
+  useEffect(() => {
+    if (!loaded || !dateLocaleIncarcate || !state || !contActiv?.parohieId) return;
+    const timeoutId = setTimeout(() => {
+      salveazaDateLocaleParohie(contActiv.parohieId, {
+        parohie: state.parohie,
+        exercitiiFinanciare: state.exercitiiFinanciare,
+        jurnalAudit: state.jurnalAudit,
+        tarifeCimitir: state.tarifeCimitir,
+        conturi: state.conturi,
+        contoare: state.contoare,
+        articoleConsumIntern: state.articoleConsumIntern,
+        miscariConsumIntern: state.miscariConsumIntern,
+        bonuriConsum: state.bonuriConsum,
+        dataCreareInstanta: state.dataCreareInstanta,
+      }).catch((e) => console.error("Eroare la salvarea datelor parohiei:", e));
+    }, 600);
+    return () => clearTimeout(timeoutId);
+  }, [
+    state?.parohie, state?.exercitiiFinanciare, state?.jurnalAudit, state?.tarifeCimitir,
+    state?.conturi, state?.contoare, state?.articoleConsumIntern, state?.miscariConsumIntern,
+    state?.bonuriConsum, state?.dataCreareInstanta, loaded, dateLocaleIncarcate, contActiv?.parohieId,
+  ]);
+
+  // Închidere automată: dacă am trecut de 31.03 al anului curent, exercițiul anului precedent
+  // trebuie închis (dacă nu a fost deja închis manual până atunci) — DAR doar dacă anul respectiv
+  // a avut efectiv activitate (operațiuni sau prevederi bugetare validate). O parohie nou creată,
+  // aflată încă în reconstituirea anului precedent, nu trebuie "închisă" automat pe un an gol.
+  useEffect(() => {
+    if (!loaded || !state) return;
+    const azi0 = new Date();
+    const anCurent0 = azi0.getFullYear();
+    const luna0 = azi0.getMonth() + 1;
+    const anDeInchis = anCurent0 - 1;
+    const areActivitate =
+      state.operatiuni.some((op) => op.an === anDeInchis) || !!state.prevederiBugetare?.[anDeInchis];
+    if (luna0 > 3 && areActivitate && !state.exercitiiFinanciare?.[anDeInchis]?.inchis) {
+      const { operatiuni, exercitiiFinanciare } = inchideExercitiuFinanciar(state, anDeInchis, "automata");
+      setState((s) => ({ ...s, operatiuni, exercitiiFinanciare }));
+    }
+  }, [loaded, state?.exercitiiFinanciare]);
+
+  // Închidere DEFINITIVĂ, automată: orice exercițiu închis moale (inchis: true), dar nu încă definitiv,
+  // devine ireversibil la 31.12 al anului următor celui închis — abia acum se anonimizează GDPR.
+  // Termenul e ancorat la MAX(an+1, anCreareCont+1): niciodată mai devreme decât "anul creării
+  // contului + 1", altfel o reconstituire retroactivă (ex. introduci acum date din 2020) s-ar
+  // închide definitiv aproape instant, fără nicio fereastră reală de corecție.
+  useEffect(() => {
+    if (!loaded || !state) return;
+    const azi0 = new Date();
+    const anCreareCont = state.dataCreareInstanta ? new Date(state.dataCreareInstanta).getFullYear() : azi0.getFullYear();
+    Object.entries(state.exercitiiFinanciare || {}).forEach(([anStr, info]) => {
+      const an = Number(anStr);
+      if (!info.inchis || info.inchisDefinitiv) return;
+      const anTermen = Math.max(an + 1, anCreareCont + 1);
+      const termenDefinitiv = new Date(`${anTermen}-12-31T23:59:59`);
+      if (azi0 > termenDefinitiv) {
+        const { operatiuni, exercitiiFinanciare } = inchideDefinitivExercitiuFinanciar(state, an);
+        setState((s) => ({
+          ...s, operatiuni, exercitiiFinanciare,
+          jurnalAudit: adaugaAudit(s, "Sistem", `Închidere definitivă automată a exercițiului ${an} (termen 31.12.${anTermen} depășit) — donatori anonimizați GDPR.`),
+        }));
+      }
+    });
+  }, [loaded, state?.exercitiiFinanciare, state?.dataCreareInstanta]);
+  // Reparație unică: dacă anul precedent a fost deja închis automat de versiunea anterioară a acestei
+  // reguli — greșit, fără nicio activitate reală în spate — anulăm acea închidere, ca reconstituirea
+  // datelor pentru anul respectiv să rămână posibilă.
+  useEffect(() => {
+    if (!loaded || !state) return;
+    const anDeInchis = new Date().getFullYear() - 1;
+    const info = state.exercitiiFinanciare?.[anDeInchis];
+    if (!info?.inchis || info.tipInchidere !== "automata") return;
+    const areActivitate =
+      state.operatiuni.some((op) => op.an === anDeInchis) || !!state.prevederiBugetare?.[anDeInchis];
+    if (!areActivitate) {
+      setState((s) => {
+        const exercitiiFinanciare = { ...s.exercitiiFinanciare };
+        delete exercitiiFinanciare[anDeInchis];
+        return { ...s, exercitiiFinanciare };
+      });
+    }
+  }, [loaded, state?.exercitiiFinanciare]);
+
+  // Reparație unică: conturile create înainte de introducerea câmpului dataCreareInstanta nu-l au
+  // încă — îl completăm cu data curentă, ca punct de plecare corect pentru termenul individual al
+  // excepției de reconstituire a anilor anteriori.
+  useEffect(() => {
+    if (!loaded || !state || state.dataCreareInstanta) return;
+    setState((s) => ({ ...s, dataCreareInstanta: todayISO() }));
+  }, [loaded, state?.dataCreareInstanta]);
+
+  // Eliberare automată: dacă termenul legal de 90 zile pentru identificarea succesorilor a trecut
+  // fără reînnoire, locul revine "disponibil pentru concesionare".
+  useEffect(() => {
+    if (!loaded || !state || !state.concesiuni?.length) return;
+    const azi0 = todayISO();
+    let modificat = false;
+    const concesiuni = state.concesiuni.map((c) => {
+      if (c.expirataDefinitiv || !c.dataExpirare) return c;
+      const termenLimita = calculeazaTermenLimitaSuccesori(c.dataExpirare);
+      if (azi0 > termenLimita) {
+        modificat = true;
+        return { ...c, expirataDefinitiv: true };
+      }
+      return c;
+    });
+    if (modificat) {
+      const locuriEliberate = new Set(concesiuni.filter((c) => c.expirataDefinitiv).map((c) => c.locId));
+      const locuriInhumare = state.locuriInhumare.map((l) =>
+        locuriEliberate.has(l.id) ? { ...l, stare: "disponibil" } : l
+      );
+      setState((s) => ({ ...s, concesiuni, locuriInhumare }));
+    }
+  }, [loaded, state?.concesiuni]);
+
+  const derived = useDerived(state || emptyState());
+
+  // Creare parohie nouă — apelează Edge Function-ul "creeaza-utilizator" (fără tokenAdmin, deci
+  // acest prim cont devine automat "preot"/Administrator), apoi logare automată.
+  async function handleSetup(cif, denumireParohie, username, password, emailRecuperare) {
+    const rezultat = await creeazaCont({ cif, denumireParohie, username, parola: password, rol: "preot", emailRecuperare });
+    if (!rezultat.ok) return { ok: false, error: rezultat.error };
+    const rezLogare = await logare(cif, username, password);
+    if (!rezLogare.ok) return { ok: false, error: rezLogare.error };
+    const { data: userData } = await supabase.auth.getUser();
+    setContActiv({ id: userData?.user?.id, cif, username: rezLogare.username, rol: rezLogare.rol, parohieId: rezLogare.parohieId });
+    setSession(cif);
+    setRolActiv(ROL_DB_LA_LOCAL[rezLogare.rol] || rezLogare.rol);
+    setModAdaugaParohie(false);
+    return { ok: true };
+  }
+
+  async function handleDemo() {
+    const rezultat = await logare(DEMO_CIF, "preot", DEMO_PASSWORD);
+    if (!rezultat.ok) {
+      console.error("Eroare la logarea în mediul demo:", rezultat.error);
+      return;
+    }
+    const { data: userData } = await supabase.auth.getUser();
+    setContActiv({ id: userData?.user?.id, cif: DEMO_CIF, username: rezultat.username, rol: rezultat.rol, parohieId: rezultat.parohieId });
+    setSession(DEMO_CIF);
+    setRolActiv(ROL_DB_LA_LOCAL[rezultat.rol] || rezultat.rol);
+    setModAdaugaParohie(false);
+  }
+
+  async function handleResetDemo() {
+    const fresh = seedDemoState();
+    setState(fresh);
+  }
+
+  // Login în 2 pași: parola e verificată de `logare()` ca înainte (stabilește sesiunea
+  // Supabase la nivel "aal1"). Dacă acest cont are un factor TOTP activ, NU acordăm încă
+  // accesul în aplicație — cerem codul din aplicația de autentificare (a doua treaptă,
+  // "aal2"). Doar apoi finalizăm intrarea. Întoarce: true (login complet, fără MFA),
+  // "mfa" (parolă corectă, se așteaptă codul TOTP), sau false (CIF/utilizator/parolă greșite).
+  async function handleLogin(cif, username, password) {
+    const rezultat = await logare(cif, username, password);
+    if (!rezultat.ok) return false;
+
+    let factori = [];
+    try {
+      factori = await listeazaFactoriMFA();
+    } catch (e) {
+      console.error("Eroare la verificarea factorilor MFA:", e);
+      // Nu blocăm accesul dacă verificarea în sine eșuează tehnic — doar dacă există
+      // efectiv un factor activ și codul e greșit.
+    }
+
+    if (factori && factori.length > 0) {
+      setMfaPendingAuth({
+        cif, username: rezultat.username, rol: rezultat.rol,
+        parohieId: rezultat.parohieId, factorId: factori[0].id,
+      });
+      return "mfa";
+    }
+
+    setContActiv({ cif, username: rezultat.username, rol: rezultat.rol, parohieId: rezultat.parohieId });
+    setSession(cif);
+    setRolActiv(ROL_DB_LA_LOCAL[rezultat.rol] || rezultat.rol);
+    return true;
+  }
+
+  async function finalizeazaLoginDupaMfa() {
+    if (!mfaPendingAuth) return;
+    const { cif, username, rol, parohieId } = mfaPendingAuth;
+    const { data: userData } = await supabase.auth.getUser();
+    setContActiv({ id: userData?.user?.id, cif, username, rol, parohieId });
+    setSession(cif);
+    setRolActiv(ROL_DB_LA_LOCAL[rol] || rol);
+    setMfaPendingAuth(null);
+  }
+
+  async function handleVerifyMfa(cod6cifre) {
+    if (!mfaPendingAuth) return false;
+    try {
+      await verificaLoginTOTP(mfaPendingAuth.factorId, cod6cifre);
+      await finalizeazaLoginDupaMfa();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function handleRecoveryLogin(codRecuperare) {
+    if (!mfaPendingAuth) return false;
+    try {
+      await foloseesteCodRecuperare(codRecuperare);
+      // Codul de recuperare a șters factorul TOTP pierdut pe server — contul e acum
+      // fără al doilea factor, exact ca un cont care nu s-a înrolat niciodată.
+      await finalizeazaLoginDupaMfa();
+      setForteazaReinrolareMfa(true);
+      setShowSecuritate(true);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function handleLogout() {
+    delogare();
+    setSession(null);
+    setContActiv(null);
+    setState(null);
+    setLoaded(false);
+    setDateLocaleIncarcate(false);
+    setTab("dashboard");
+    setRolActiv(null);
+    setShowLogoutConfirm(false);
+    setModAdaugaParohie(false);
+    setMfaPendingAuth(null);
+    setForteazaReinrolareMfa(false);
+    setShowSecuritate(false);
+    setShowAdminMfaUnlock(false);
+  }
+
+  if (!authLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#1F3864] text-white/60 text-sm">
+        Se încarcă...
+      </div>
+    );
+  }
+
+  if (!session) {
+    if (!authLoaded) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#1F3864] text-white/60 text-sm">
+          Se verifică sesiunea...
+        </div>
+      );
+    }
+    return (
+      <LoginScreen
+        onSetup={handleSetup}
+        onLogin={handleLogin}
+        onDemo={handleDemo}
+        onVerifyMfa={handleVerifyMfa}
+        onRecoveryLogin={handleRecoveryLogin}
+      />
+    );
+  }
+
+  if (!state) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAF8F3] text-stone-500 text-sm">
+        Se încarcă...
+      </div>
+    );
+  }
+
+  const azi = new Date();
+  const anCurent = azi.getFullYear();
+  const luna = azi.getMonth() + 1;
+  const zi = azi.getDate();
+  const prevederiAnCurentValidate = !!state.prevederiBugetare?.[anCurent]?.validat;
+
+  // Creare partener nou — folosit peste tot unde apare selecția de partener (Chitanță, Ordin
+  // de plată, Furnizor NRCD), ca toate să împartă aceeași bază de date, unică.
+  async function adaugaPartener(payload) {
+    const nou = await creeazaPartener(contActiv.parohieId, payload);
+    setState((s) => ({ ...s, parteneri: [...s.parteneri, nou] }));
+    return nou;
+  }
+
+  async function valideazaPrevederi(an, linii) {
+    await salveazaPrevederiBugetare(contActiv.parohieId, an, linii);
+    setState((s) => {
+      const buget = { ...s.buget };
+      for (const l of linii) {
+        buget[l.contId] = { ...(buget[l.contId] || {}), [an]: l.suma };
+      }
+      return {
+        ...s,
+        buget,
+        prevederiBugetare: {
+          ...s.prevederiBugetare,
+          [an]: { validat: true, dataValidare: todayISO(), linii },
+        },
+      };
+    });
+  }
+
+  // Blocaj obligatoriu, la prima accesare: datele de identificare ale parohiei trebuie completate
+  // înainte de orice altceva — apar pe toate rapoartele/documentele exportate ulterior.
+  if (!state.parohie?.denumire) {
+    return (
+      <div className="min-h-screen bg-[#FAF8F3] flex items-center justify-center p-4">
+        <div className="w-full max-w-3xl">
+          <ProfilParohieTab state={state} setState={setState} obligatoriu />
+        </div>
+      </div>
+    );
+  }
+
+  // Blocaj obligatoriu: de la 01.01.N, aplicația nu poate fi folosită până la validarea prevederilor bugetare ale anului curent.
+  if (!prevederiAnCurentValidate) {
+    return (
+      <div className="min-h-screen bg-[#1F3864] flex items-center justify-center p-4">
+        <PrevederiBugetareForm
+          conturi={state.conturi}
+          an={anCurent}
+          obligatoriu
+          onValidate={(linii) => valideazaPrevederi(anCurent, linii)}
+          onClose={undefined}
+        />
+      </div>
+    );
+  }
+
+  if (!rolActiv) {
+    // Nu ar trebui să se întâmple în flux normal (rolul e stabilit direct la logare) — plasă de
+    // siguranță, în loc să lase aplicația să pice pe ROLURI[null].
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAF8F3] text-stone-500 text-sm">
+        Se încarcă rolul contului...
+      </div>
+    );
+  }
+
+  const permisiuni = ROLURI[rolActiv];
+  const NAV_TOATE = [
+    { id: "dashboard", label: "Tablou de bord", icon: Church },
+    { id: "operatiuni", label: "Registru Jurnal", icon: BookOpen },
+    { id: "pangar", label: "Pangar", icon: Flame },
+    { id: "consumintern", label: "Consum intern & Filantropie", icon: HeartHandshake },
+    { id: "patrimoniu", label: "Inventar & Patrimoniu", icon: Gem },
+    { id: "cimitir", label: "Cimitir Parohial", icon: Cross },
+    { id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText },
+    { id: "rapoarte", label: "Rapoarte", icon: FileBarChart },
+    { id: "profil", label: "Date parohie", icon: Building2 },
+  ];
+  const NAV = NAV_TOATE.filter((n) => permisiuni.tabs.includes(n.id) && (n.id !== "cimitir" || state.parohie?.areCimitir));
+  const tabActiv = permisiuni.tabs.includes(tab) ? tab : NAV[0].id;
+
+  return (
+    <div className="h-screen bg-[#FAF8F3] text-stone-800 flex font-sans overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-60 bg-[#1F3864] text-white flex flex-col shrink-0">
+        <div className="flex items-center gap-2 px-5 py-5 border-b border-white/10">
+          <div className="w-8 h-8 rounded-full bg-[#B8860B] flex items-center justify-center shrink-0">
+            <Church size={16} className="text-white" />
+          </div>
+          <div>
+            <div className="font-serif text-base leading-tight">
+              {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
+            </div>
+            <div className="text-[11px] text-white/50 leading-tight">
+              {session === DEMO_CIF
+                ? "mediu de test · date fictive"
+                : ([state.parohie?.localitate, state.parohie?.judet].filter(Boolean).join(", ") || "prototip · multi-parohie, izolat pe cont")}
+            </div>
+          </div>
+        </div>
+        <nav className="flex-1 py-3 overflow-y-auto">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => setTab(n.id)}
+              className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors ${
+                tabActiv === n.id
+                  ? "bg-white/10 text-white border-r-2 border-[#B8860B]"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              <n.icon size={16} />
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        {session === DEMO_CIF && (
+          <div className="px-5 py-2.5 border-t border-white/10">
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="w-full flex items-center justify-center gap-1.5 text-[11px] text-[#B8860B] hover:text-white border border-[#B8860B]/40 hover:bg-[#B8860B]/20 rounded-md py-1.5 transition-colors"
+            >
+              <RotateCcw size={12} /> Resetează mediul de test
+            </button>
+          </div>
+        )}
+        <div className="px-5 py-2.5 border-t border-white/10">
+          <span className="text-[11px] text-white/50">Rol activ: <span className="text-white/80">{permisiuni.label}</span></span>
+        </div>
+        <div className="px-5 py-3 border-t border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+              <User size={12} className="text-white/70" />
+            </div>
+            <span className="text-xs text-white/70 truncate">CIF {session}</span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button title="Jurnal de audit" onClick={() => setShowAudit(true)} className="text-white/50 hover:text-white p-1">
+              <ClipboardCheck size={14} />
+            </button>
+            {rolActiv === "preot_paroh" && (
+              <button title="Deblocare 2FA utilizatori" onClick={() => setShowAdminMfaUnlock(true)} className="text-white/50 hover:text-white p-1">
+                <Unlock size={14} />
+              </button>
+            )}
+            <button title="Securitate (autentificare în doi pași)" onClick={() => setShowSecuritate(true)} className="text-white/50 hover:text-white p-1">
+              <ShieldCheck size={14} />
+            </button>
+            <button title="Schimbă parola" onClick={() => setShowChangePw(true)} className="text-white/50 hover:text-white p-1">
+              <KeyRound size={14} />
+            </button>
+            <button title="Ieșire din cont" onClick={() => setShowLogoutConfirm(true)} className="text-white/50 hover:text-white p-1">
+              <LogOut size={14} />
+            </button>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-white/10 text-[11px] text-white/40 leading-snug">
+          Modul curent: Contabilitate &amp; Pangar.
+          <br />
+          Module viitoare: Inventar, Cimitir, Corespondență.
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-6xl mx-auto p-6">
+          {tabActiv === "dashboard" && (
+            <Dashboard
+              state={state}
+              setState={setState}
+              derived={derived}
+              setTab={setTab}
+              permisiuni={permisiuni}
+              parohieId={contActiv.parohieId}
+              prevederiInfo={{
+                inFereastra: (luna === 11 && zi >= 15) || luna === 12,
+                anUrmator: anCurent + 1,
+                validatUrmator: !!state.prevederiBugetare?.[anCurent + 1]?.validat,
+                onValidat: (linii) => valideazaPrevederi(anCurent + 1, linii),
+              }}
+              inchidereInfo={{
+                anDeInchis: anCurent - 1,
+                inchis: !!state.exercitiiFinanciare?.[anCurent - 1]?.inchis,
+                inFereastraManuala: luna >= 1 && luna <= 3,
+                inFereastraAlerta: luna === 3 && zi >= 15,
+                onInchide: async (an) => {
+                  const excedent = soldCasaBancaLaData(state.operatiuni, `${an}-12-31`);
+                  const rezultat = await seteazaExcedentReportat(contActiv.parohieId, an + 1, excedent);
+                  setState((s) => {
+                    const { operatiuni, exercitiiFinanciare } = inchideExercitiuFinanciar(s, an, "manuala");
+                    const idsAtinse = new Set(rezultat.operatiuniActualizate.map((o) => o.id));
+                    const operatiuniFinale = [...operatiuni.filter((op) => !idsAtinse.has(op.id)), ...rezultat.operatiuniActualizate];
+                    return { ...s, operatiuni: operatiuniFinale, exercitiiFinanciare };
+                  });
+                },
+              }}
+            />
+          )}
+          {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} />}
+          {tabActiv === "conturi" && <ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} />}
+          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} />}
+          {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
+          {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
+          {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
+          {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
+          {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} />}
+          {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
+        </div>
+      </main>
+
+      {showChangePw && (
+        <ChangePasswordModal
+          auth={authCurent}
+          onClose={() => setShowChangePw(false)}
+          onChanged={() => setShowChangePw(false)}
+        />
+      )}
+
+      {showResetConfirm && (
+        <Modal title="Resetează mediul de test" onClose={() => setShowResetConfirm(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-stone-600">
+              Sigur vrei să resetezi mediul de test? Toate modificările făcute (operațiuni, conturi noi, articole,
+              vânzări) vor fi <span className="font-medium text-rose-700">șterse ireversibil</span> și înlocuite cu
+              datele inițiale de test.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setShowResetConfirm(false)}>Anulează</Btn>
+              <Btn
+                variant="danger"
+                onClick={async () => {
+                  await handleResetDemo();
+                  setShowResetConfirm(false);
+                }}
+              >
+                <RotateCcw size={14} /> Da, resetează
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {showLogoutConfirm && (
+        <Modal title="Ieșire din cont" onClose={() => setShowLogoutConfirm(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-stone-600">
+              Sigur vrei să ieși din cont? Toate modificările sunt deja salvate — la următoarea autentificare vei găsi
+              datele exact așa cum le-ai lăsat.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setShowLogoutConfirm(false)}>Anulează</Btn>
+              <Btn variant="danger" onClick={handleLogout}>
+                <LogOut size={14} /> Da, ieși din cont
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {showAudit && (
+        <AuditModal jurnalAudit={state.jurnalAudit || []} onClose={() => setShowAudit(false)} />
+      )}
+
+      {showSecuritate && (
+        <SecuritateModal
+          fortatReinrolare={forteazaReinrolareMfa}
+          onClose={() => {
+            setShowSecuritate(false);
+            setForteazaReinrolareMfa(false);
+          }}
+        />
+      )}
+
+      {showAdminMfaUnlock && (
+        <AdminMfaUnlockModal
+          parohieId={contActiv.parohieId}
+          utilizatorPropriuId={contActiv.id}
+          onClose={() => setShowAdminMfaUnlock(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ChangePasswordModal({ auth, onClose, onChanged }) {
+  const [parolaVeche, setParolaVeche] = useState("");
+  const [parolaNoua, setParolaNoua] = useState("");
+  const [confirmare, setConfirmare] = useState("");
+  const [error, setError] = useState("");
+  const { rules, valid } = validatePassword(parolaNoua);
+
+  async function submit() {
+    setError("");
+    if (!valid) {
+      setError("Parola nouă nu respectă politica minimă de securitate.");
+      return;
+    }
+    if (parolaNoua !== confirmare) {
+      setError("Cele două parole noi nu coincid.");
+      return;
+    }
+    // Reautentificare cu parola veche, ca verificare — apoi actualizăm efectiv parola.
+    const rezVerificare = await logare(auth.cif, auth.username, parolaVeche);
+    if (!rezVerificare.ok) {
+      setError("Parola veche este incorectă.");
+      return;
+    }
+    const { error: errUpdate } = await supabase.auth.updateUser({ password: parolaNoua });
+    if (errUpdate) {
+      setError("Eroare la schimbarea parolei — reîncercați.");
+      return;
+    }
+    onChanged();
+  }
+
+  return (
+    <Modal title="Schimbă parola" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Parola actuală">
+          <input type="password" className={inputCls} value={parolaVeche} onChange={(e) => setParolaVeche(e.target.value)} />
+        </Field>
+        <Field label="Parola nouă">
+          <input type="password" className={inputCls} value={parolaNoua} onChange={(e) => setParolaNoua(e.target.value)} />
+        </Field>
+        <PasswordChecklist rules={rules} />
+        <Field label="Confirmare parolă nouă">
+          <input type="password" className={inputCls} value={confirmare} onChange={(e) => setConfirmare(e.target.value)} />
+        </Field>
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit}>Salvează parola nouă</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------- Securitate (2FA / TOTP) ------------------------ */
+
+// Ecranul de auto-administrare a autentificării în doi pași, pentru propriul cont.
+// `fortatReinrolare`: deschis automat, imediat după folosirea unui cod de recuperare —
+// contul rămâne fără al doilea factor până se reînrolează, deci sărim direct la pasul
+// de înrolare și explicăm clar ce s-a întâmplat.
+function SecuritateModal({ onClose, fortatReinrolare }) {
+  const [verificand, setVerificand] = useState(true);
+  const [factorActiv, setFactorActiv] = useState(null); // { id, friendly_name } | null
+  const [pas, setPas] = useState("status"); // "status" | "inrolare-qr" | "inrolare-cod" | "cod-recuperare-afisat" | "dezactivare-confirm"
+  const [inrolare, setInrolare] = useState(null); // { factorId, qrCodeSvg, secret }
+  const [codConfirmare, setCodConfirmare] = useState("");
+  const [codRecuperareAfisat, setCodRecuperareAfisat] = useState("");
+  const [amNotat, setAmNotat] = useState(false);
+  const [error, setError] = useState("");
+  const [seProceseaza, setSeProceseaza] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const factori = await listeazaFactoriMFA();
+        if (factori && factori.length > 0) {
+          setFactorActiv(factori[0]);
+          setPas("status");
+        } else if (fortatReinrolare) {
+          await porneesteInrolarea();
+        }
+      } catch (e) {
+        setError("Nu s-a putut verifica starea autentificării în doi pași.");
+      } finally {
+        setVerificand(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function porneesteInrolarea() {
+    setError("");
+    setSeProceseaza(true);
+    try {
+      const rez = await inceapeInrolareTOTP();
+      setInrolare(rez);
+      setPas("inrolare-qr");
+    } catch (e) {
+      setError(e.message || "Eroare la pornirea înrolării.");
+    } finally {
+      setSeProceseaza(false);
+    }
+  }
+
+  async function confirmaInrolarea() {
+    setError("");
+    if (!/^\d{6}$/.test(codConfirmare.trim())) {
+      setError("Introduceți codul de 6 cifre din aplicația de autentificare.");
+      return;
+    }
+    setSeProceseaza(true);
+    try {
+      await confirmaInrolareTOTP(inrolare.factorId, codConfirmare.trim());
+      // Imediat după confirmare, generăm codul de recuperare — o singură dată, afișat acum.
+      const cod = await genereazaCodRecuperare();
+      setCodRecuperareAfisat(cod);
+      setPas("cod-recuperare-afisat");
+    } catch (e) {
+      setError("Cod incorect — verificați aplicația de autentificare și reîncercați.");
+    } finally {
+      setSeProceseaza(false);
+    }
+  }
+
+  async function dezactiveaza() {
+    setError("");
+    setSeProceseaza(true);
+    try {
+      await dezactiveazaTOTP(factorActiv.id);
+      setFactorActiv(null);
+      setPas("status");
+    } catch (e) {
+      setError("Eroare la dezactivare — reîncercați.");
+    } finally {
+      setSeProceseaza(false);
+    }
+  }
+
+  return (
+    <Modal title="Securitate — autentificare în doi pași" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        {fortatReinrolare && pas !== "cod-recuperare-afisat" && (
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800 flex items-start gap-2">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            Ai folosit codul de recuperare — contul tău a rămas fără autentificare în doi
+            pași. Te rugăm să te reînrolezi acum, cu telefonul nou.
+          </div>
+        )}
+
+        {verificand && <p className="text-sm text-stone-500">Se verifică...</p>}
+
+        {!verificand && pas === "status" && (
+          <>
+            {factorActiv ? (
+              <>
+                <div className="flex items-center gap-2 text-emerald-700 text-sm">
+                  <ShieldCheck size={16} /> Autentificare în doi pași <span className="font-medium">activă</span>
+                </div>
+                <p className="text-xs text-stone-500">
+                  La fiecare autentificare, pe lângă parolă, ți se va cere un cod din
+                  aplicația de autentificare (Google Authenticator, Microsoft
+                  Authenticator, Authy sau similar).
+                </p>
+                <Btn variant="danger" onClick={() => setPas("dezactivare-confirm")} className="justify-center">
+                  Dezactivează
+                </Btn>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-stone-500 text-sm">
+                  <Smartphone size={16} /> Autentificare în doi pași <span className="font-medium">inactivă</span>
+                </div>
+                <p className="text-xs text-stone-500">
+                  Recomandat: activează autentificarea în doi pași pentru protecție
+                  suplimentară a contului, mai ales dacă gestionezi bani sau documente
+                  oficiale ale parohiei.
+                </p>
+                <Btn variant="gold" onClick={porneesteInrolarea} disabled={seProceseaza} className="justify-center">
+                  {seProceseaza ? "Se pregătește..." : "Activează autentificarea în doi pași"}
+                </Btn>
+              </>
+            )}
+          </>
+        )}
+
+        {pas === "dezactivare-confirm" && (
+          <>
+            <p className="text-sm text-stone-600">
+              Sigur vrei să dezactivezi autentificarea în doi pași? Contul va rămâne
+              protejat doar de parolă.
+            </p>
+            {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setPas("status")}>Anulează</Btn>
+              <Btn variant="danger" onClick={dezactiveaza} disabled={seProceseaza}>
+                {seProceseaza ? "Se dezactivează..." : "Da, dezactivează"}
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {pas === "inrolare-qr" && inrolare && (
+          <>
+            <p className="text-sm text-stone-600">
+              Scanează codul QR de mai jos cu aplicația de autentificare (Google
+              Authenticator, Microsoft Authenticator, Authy sau similar):
+            </p>
+            <div
+              className="flex justify-center bg-white p-3 rounded-md border border-stone-200"
+              dangerouslySetInnerHTML={{ __html: inrolare.qrCodeSvg }}
+            />
+            <details className="text-xs text-stone-500">
+              <summary className="cursor-pointer">Nu poți scana codul? Introdu manual</summary>
+              <p className="mt-1 font-mono break-all bg-stone-50 p-2 rounded">{inrolare.secret}</p>
+            </details>
+            <Field label="Cod de 6 cifre din aplicație">
+              <input
+                className={inputCls}
+                value={codConfirmare}
+                onChange={(e) => setCodConfirmare(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && confirmaInrolarea()}
+                placeholder="123456"
+                maxLength={6}
+                autoFocus
+              />
+            </Field>
+            {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={onClose} disabled={fortatReinrolare}>Anulează</Btn>
+              <Btn variant="gold" onClick={confirmaInrolarea} disabled={seProceseaza}>
+                {seProceseaza ? "Se verifică..." : "Confirmă"}
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {pas === "cod-recuperare-afisat" && (
+          <>
+            <div className="flex items-center gap-2 text-emerald-700 text-sm">
+              <ShieldCheck size={16} /> Autentificare în doi pași activată
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+              <p className="text-xs text-amber-800 font-medium flex items-center gap-1.5 mb-2">
+                <Printer size={13} /> Codul tău de recuperare — se afișează O SINGURĂ DATĂ:
+              </p>
+              <p className="font-mono text-lg text-center tracking-wider bg-white rounded p-2 border border-amber-200">
+                {codRecuperareAfisat}
+              </p>
+            </div>
+            <p className="text-xs text-stone-600">
+              Tipărește acest cod și păstrează-l fizic în <span className="font-medium">două locații
+              separate</span> (ex. acasă și la biserică). Îl vei folosi doar dacă pierzi
+              telefonul cu care te-ai înrolat și nu mai poți genera codul obișnuit.
+            </p>
+            <label className="flex items-center gap-2 text-xs text-stone-600">
+              <input type="checkbox" checked={amNotat} onChange={(e) => setAmNotat(e.target.checked)} />
+              Am notat/tipărit codul și l-am păstrat în două locații separate
+            </label>
+            <Btn variant="gold" onClick={onClose} disabled={!amNotat} className="justify-center">
+              Am terminat
+            </Btn>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Deblocare MFA de către Administrator (alt utilizator) --------------- */
+
+function AdminMfaUnlockModal({ parohieId, utilizatorPropriuId, onClose }) {
+  const [utilizatori, setUtilizatori] = useState([]);
+  const [seIncarca, setSeIncarca] = useState(true);
+  const [proceseazaId, setProceseazaId] = useState(null);
+  const [mesaj, setMesaj] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const { data, error: errQuery } = await supabase
+        .from("utilizatori")
+        .select("id, username, rol")
+        .eq("parohie_id", parohieId);
+      if (errQuery) {
+        setError("Nu s-a putut încărca lista de utilizatori.");
+      } else {
+        setUtilizatori((data || []).filter((u) => u.id !== utilizatorPropriuId));
+      }
+      setSeIncarca(false);
+    })();
+  }, [parohieId, utilizatorPropriuId]);
+
+  async function reseteaza(utilizatorId) {
+    setError("");
+    setMesaj("");
+    setProceseazaId(utilizatorId);
+    try {
+      const rez = await reseteazaMfaUtilizator(utilizatorId);
+      setMesaj(rez.mesaj || "Autentificarea în doi pași a fost resetată pentru acest utilizator.");
+    } catch (e) {
+      setError(e.message || "Eroare la resetare — reîncercați.");
+    } finally {
+      setProceseazaId(null);
+    }
+  }
+
+  return (
+    <Modal title="Deblocare 2FA — alți utilizatori ai parohiei" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Folosește această opțiune doar când un coleg din parohie și-a pierdut telefonul
+          cu care era înrolat și nu are la îndemână codul de recuperare tipărit. Resetarea
+          șterge autentificarea în doi pași a acelui cont — se va putea reînrola imediat,
+          cu un telefon nou, la următorul login.
+        </p>
+        {seIncarca && <p className="text-sm text-stone-500">Se încarcă...</p>}
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        {mesaj && <span className="text-emerald-700 text-xs flex items-center gap-1"><Check size={12} /> {mesaj}</span>}
+        {!seIncarca && utilizatori.length === 0 && (
+          <p className="text-sm text-stone-500">Niciun alt utilizator în această parohie.</p>
+        )}
+        <div className="flex flex-col gap-2">
+          {utilizatori.map((u) => (
+            <div key={u.id} className="flex items-center justify-between border border-stone-200 rounded-md px-3 py-2">
+              <div className="text-sm">
+                <span className="font-medium">{u.username}</span>
+                <span className="text-stone-400 text-xs ml-2">{ROLURI[ROL_DB_LA_LOCAL[u.rol] || u.rol]?.label || u.rol}</span>
+              </div>
+              <Btn variant="danger" onClick={() => reseteaza(u.id)} disabled={proceseazaId === u.id}>
+                {proceseazaId === u.id ? "Se resetează..." : "Resetează 2FA"}
+              </Btn>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end mt-2">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+/* ------------------------------ Dashboard -------------------------------- */
+
+function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, prevederiInfo, inchidereInfo }) {
+  const { soldCasa, soldBanca, totalVenituri, totalCheltuieli, alerteStoc, alerteSold, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
+  const excedent = totalVenituri - totalCheltuieli;
+  const [achitareFor, setAchitareFor] = useState(null);
+  const [showPrevederiUrmator, setShowPrevederiUrmator] = useState(false);
+  const [showPrevederiPrecedent, setShowPrevederiPrecedent] = useState(false);
+  const [showInchidere, setShowInchidere] = useState(false);
+  const [showInchidereExceptie, setShowInchidereExceptie] = useState(false);
+
+  const anCurentDash = new Date().getFullYear();
+  const anPrecedent = anCurentDash - 1;
+  // Anul de reconstituit e implicit anul precedent (2025), dar poate fi schimbat liber de
+  // utilizator la orice an mai vechi — pentru cazul unei parohii reconstituite din 2020, 2018 etc.
+  const [anReconstituire, setAnReconstituire] = useState(anPrecedent);
+  const anReconstituireInfo = state.exercitiiFinanciare?.[anReconstituire];
+  const anCreareContDash = state.dataCreareInstanta ? new Date(state.dataCreareInstanta).getFullYear() : anCurentDash;
+  const termenInchidereDefinitiva = Math.max(anReconstituire + 1, anCreareContDash + 1);
+  const anReconstituireInchis = !!anReconstituireInfo?.inchis;
+  const anReconstituireInchisDefinitiv = !!anReconstituireInfo?.inchisDefinitiv;
+  const anReconstituireInchisMoale = anReconstituireInchis && !anReconstituireInchisDefinitiv;
+  const anReconstituireValid = Number.isInteger(anReconstituire) && anReconstituire > 1900;
+
+  const azi = new Date(todayISO());
+  const zileVechime = (dataFactura) => Math.floor((azi - new Date(dataFactura)) / (1000 * 60 * 60 * 24));
+
+  async function achitaDatorie(datorieId, modPlata, data) {
+    const datorie = (state.datoriiFurnizori || []).find((d) => d.id === datorieId);
+    const explicatie = `Achitare factură ${datorie.nrFactura} (NRCD nr. ${datorie.nrNRCD}/${datorie.anNRCD || yearOf(datorie.dataFactura)})`;
+    const linii = (datorie.liniiAchizitie && datorie.liniiAchizitie.length > 0)
+      ? datorie.liniiAchizitie.map((l) => ({ contId: CATEGORII_PANGAR[l.categorieBVC]?.achizitie || datorie.contId, suma: l.suma, modPlata, explicatie }))
+      : [{ contId: datorie.contId || CATEGORII_PANGAR[datorie.categorieBVC]?.achizitie, suma: datorie.suma, modPlata, explicatie }];
+    const rezultat = await salveazaDocument(parohieId, {
+      tip: "plata",
+      data,
+      tert: datorie.furnizor,
+      documentSursaId: datorie.documentId || null,
+      linii,
+    });
+    if (datorie.documentId) {
+      await marcheazaNRCDAchitat(datorie.documentId);
+    }
+    setState((s) => ({
+      ...s,
+      operatiuni: [...s.operatiuni, ...rezultat.operatiuniNoi],
+      datoriiFurnizori: (s.datoriiFurnizori || []).filter((d) => d.id !== datorieId),
+    }));
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header>
+        <h1 className="font-serif text-2xl text-[#1F3864]">Tablou de bord</h1>
+        <p className="text-sm text-stone-500">Situația curentă a parohiei, la {fmtDataJurnal(todayISO())}.</p>
+      </header>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Sold casă" value={`${fmt(soldCasa)} RON`} tone={soldCasa < PRAG_SOLD ? "bad" : "good"} />
+        <StatCard label="Sold bancă" value={`${fmt(soldBanca)} RON`} tone={soldBanca < PRAG_SOLD ? "bad" : "good"} />
+        <StatCard label="Total venituri" value={`${fmt(totalVenituri)} RON`} tone="neutral" />
+        <StatCard label="Total cheltuieli" value={`${fmt(totalCheltuieli)} RON`} tone="neutral" />
+      </div>
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-stone-600">Excedent / deficit (Venituri − Cheltuieli)</span>
+          <span className={`font-serif text-xl tabular-nums ${excedent >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+            {excedent >= 0 ? "+" : ""}
+            {fmt(excedent)} RON
+          </span>
+        </div>
+      </Card>
+
+      {!permisiuni.citireOnly && prevederiInfo?.inFereastra && !prevederiInfo?.validatUrmator && (
+        <Card className="p-4 border-[#B8860B]/40 bg-[#B8860B]/10 flex items-center justify-between">
+          <span className="text-sm text-[#8a6a2f]">
+            Este necesară completarea Prevederilor bugetare pentru anul {prevederiInfo.anUrmator} (fereastra 15.11 – 31.12).
+          </span>
+          <Btn variant="gold" onClick={() => setShowPrevederiUrmator(true)}>Completează acum</Btn>
+        </Card>
+      )}
+
+      {!permisiuni.citireOnly && (
+        <Card className="p-4 border-sky-300 bg-sky-50 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-sm text-sky-800">
+              Prevederi bugetare — introdu sau corectează liber, pentru orice an (trecut, curent sau viitor deja
+              validat), cât timp exercițiul acelui an nu e închis definitiv.
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <input
+                type="number"
+                className={`${inputCls} w-24`}
+                value={anReconstituire}
+                onChange={(e) => setAnReconstituire(Number(e.target.value))}
+              />
+              <Btn
+                variant="gold"
+                disabled={!anReconstituireValid || anReconstituireInchisDefinitiv}
+                onClick={() => setShowPrevederiPrecedent(true)}
+              >
+                Prevederi {anReconstituire}
+              </Btn>
+            </div>
+          </div>
+          {!anReconstituireValid && (
+            <span className="text-xs text-rose-700">Anul trebuie să fie un an valid (după 1900).</span>
+          )}
+          {anReconstituireValid && anReconstituireInchisDefinitiv && (
+            <span className="text-xs text-rose-700">
+              Exercițiul financiar {anReconstituire} este închis definitiv (din {anReconstituireInfo?.dataInchidereDefinitiva})
+              — nu mai poate fi corectat sau redeschis, sub nicio formă.
+            </span>
+          )}
+          {anReconstituireValid && anReconstituireInchisMoale && (
+            <div className="flex items-center justify-between gap-3 flex-wrap border-t border-sky-200 pt-2 mt-1">
+              <span className="text-xs text-sky-700">
+                Exercițiul {anReconstituire} e închis (din {anReconstituireInfo?.dataInchidere}), dar nu definitiv — dacă
+                apare un document legitim pentru acest an, îl poți redeschide oricând, până la 31.12.{termenInchidereDefinitiva}.
+              </span>
+              <Btn
+                variant="gold"
+                onClick={() => setState((s) => ({ ...s, exercitiiFinanciare: redeschideExercitiuFinanciar(s, anReconstituire) }))}
+              >
+                Redeschide exercițiul {anReconstituire}
+              </Btn>
+            </div>
+          )}
+          {anReconstituireValid && !anReconstituireInchis && (
+            <div className="flex items-center justify-between gap-3 flex-wrap border-t border-sky-200 pt-2 mt-1">
+              <span className="text-xs text-sky-700">
+                Când reconstituirea anului {anReconstituire} e completă, îl poți închide (moale, reversibil) oricând, fără
+                să mai aștepți fereastra obișnuită de ianuarie–martie.
+              </span>
+              <Btn variant="danger" onClick={() => setShowInchidereExceptie(true)}>
+                Închide exercițiul {anReconstituire}
+              </Btn>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {!permisiuni.citireOnly && inchidereInfo && !inchidereInfo.inchis && inchidereInfo.inFereastraAlerta && (
+        <Card className="p-4 border-rose-300 bg-rose-50 flex items-center justify-between">
+          <span className="text-sm text-rose-800">
+            Este necesară închiderea exercițiului financiar {inchidereInfo.anDeInchis}. Sistemul va închide automat la
+            31.03.{inchidereInfo.anDeInchis + 1}, ora 23:59.
+          </span>
+          <Btn variant="danger" onClick={() => setShowInchidere(true)}>Închide acum</Btn>
+        </Card>
+      )}
+
+      {!permisiuni.citireOnly && inchidereInfo && !inchidereInfo.inchis && inchidereInfo.inFereastraManuala && !inchidereInfo.inFereastraAlerta && (
+        <Card className="p-3 flex items-center justify-between">
+          <span className="text-xs text-stone-500">
+            Exercițiul financiar {inchidereInfo.anDeInchis} poate fi închis oricând până la 31.03.{inchidereInfo.anDeInchis + 1}.
+          </span>
+          <Btn variant="ghost" onClick={() => setShowInchidere(true)}>Închide exercițiul {inchidereInfo.anDeInchis}</Btn>
+        </Card>
+      )}
+
+      {(alerteSold.length > 0 || alerteStoc.length > 0) && (
+        <Card className="p-4 border-amber-300 bg-amber-50/60">
+          <div className="flex items-center gap-2 mb-3 text-amber-800 font-medium text-sm">
+            <AlertTriangle size={16} /> Situații care necesită atenție
+          </div>
+          <ul className="flex flex-col gap-2">
+            {alerteSold.map((msg, i) => (
+              <li key={`s${i}`} className="text-sm text-amber-900 flex items-center justify-between">
+                <span>{msg}</span>
+                <button className="text-xs underline text-[#1F3864]" onClick={() => setTab("operatiuni")}>
+                  Vezi registrul
+                </button>
+              </li>
+            ))}
+            {alerteStoc.map((a, i) => (
+              <li key={`p${i}`} className="text-sm text-amber-900 flex items-center justify-between">
+                <span>{a.mesaj}</span>
+                <button className="text-xs underline text-[#1F3864]" onClick={() => setTab("pangar")}>
+                  Vezi pangar
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {alerteSold.length === 0 && alerteStoc.length === 0 && datoriiNeachitate.length === 0 && (
+        <Card className="p-4 text-sm text-stone-500">Nicio alertă activă în acest moment.</Card>
+      )}
+
+      {datoriiNeachitate.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-stone-700">Datorii curente către furnizori</span>
+            <span className="text-sm tabular-nums text-stone-500">Total: {fmt(totalDatoriiCurente)} RON</span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                <th className="px-2 py-1.5">Furnizor</th>
+                <th className="px-2 py-1.5">Factură</th>
+                <th className="px-2 py-1.5 text-right">Sumă</th>
+                <th className="px-2 py-1.5 text-right">Vechime</th>
+                <th className="px-2 py-1.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {datoriiNeachitate.map((d) => {
+                const vechime = zileVechime(d.dataFactura);
+                const veche = vechime > 60;
+                return (
+                  <tr key={d.id} className="border-b border-stone-100">
+                    <td className="px-2 py-1.5">{d.furnizor}</td>
+                    <td className="px-2 py-1.5 text-stone-500">{d.nrFactura} (NRCD {d.nrNRCD})</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(d.suma)}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${veche ? "text-rose-700 bg-rose-50" : "text-stone-500 bg-stone-100"}`}>
+                        {vechime} zile{veche ? " — peste 60!" : ""}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      {!permisiuni.citireOnly && <Btn variant="gold" onClick={() => setAchitareFor(d)}>Achită</Btn>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {achitareFor && (
+        <AchitareDatorieModal
+          datorie={achitareFor}
+          onClose={() => setAchitareFor(null)}
+          onSave={async (modPlata, data) => { await achitaDatorie(achitareFor.id, modPlata, data); setAchitareFor(null); }}
+        />
+      )}
+
+      {showPrevederiUrmator && (
+        <PrevederiBugetareForm
+          conturi={state.conturi}
+          an={prevederiInfo.anUrmator}
+          onValidate={(linii) => { prevederiInfo.onValidat(linii); setShowPrevederiUrmator(false); }}
+          onClose={() => setShowPrevederiUrmator(false)}
+        />
+      )}
+
+      {showPrevederiPrecedent && (
+        <PrevederiBugetareForm
+          conturi={state.conturi}
+          an={anReconstituire}
+          modCorectie
+          liniiInitiale={state.prevederiBugetare?.[anReconstituire]?.linii || []}
+          onValidate={async (linii) => {
+            await salveazaPrevederiBugetare(contActiv.parohieId, anReconstituire, linii);
+            setState((s) => ({
+              ...s,
+              buget: linii.reduce((b, l) => ({ ...b, [l.contId]: { ...(b[l.contId] || {}), [anReconstituire]: l.suma } }), { ...s.buget }),
+              prevederiBugetare: {
+                ...s.prevederiBugetare,
+                [anReconstituire]: { validat: true, dataValidare: todayISO(), linii },
+              },
+            }));
+            setShowPrevederiPrecedent(false);
+          }}
+          onClose={() => setShowPrevederiPrecedent(false)}
+        />
+      )}
+
+      {showInchidere && inchidereInfo && (
+        <InchidereExercitiuModal
+          an={inchidereInfo.anDeInchis}
+          excedent={soldCasaBancaLaData(state.operatiuni, `${inchidereInfo.anDeInchis}-12-31`)}
+          onConfirm={async () => { await inchidereInfo.onInchide(inchidereInfo.anDeInchis); setShowInchidere(false); }}
+          onClose={() => setShowInchidere(false)}
+        />
+      )}
+
+      {showInchidereExceptie && (
+        <InchidereExercitiuModal
+          an={anReconstituire}
+          excedent={soldCasaBancaLaData(state.operatiuni, `${anReconstituire}-12-31`)}
+          onConfirm={async () => {
+            const excedent = soldCasaBancaLaData(state.operatiuni, `${anReconstituire}-12-31`);
+            const rezultat = await seteazaExcedentReportat(contActiv.parohieId, anReconstituire + 1, excedent);
+            setState((s) => {
+              const { operatiuni, exercitiiFinanciare } = inchideExercitiuFinanciar(s, anReconstituire, "manuala-exceptie");
+              const idsAtinse = new Set(rezultat.operatiuniActualizate.map((o) => o.id));
+              const operatiuniFinale = [...operatiuni.filter((op) => !idsAtinse.has(op.id)), ...rezultat.operatiuniActualizate];
+              return { ...s, operatiuni: operatiuniFinale, exercitiiFinanciare };
+            });
+            setShowInchidereExceptie(false);
+          }}
+          onClose={() => setShowInchidereExceptie(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------ Operațiuni -------------------------------- */
+
+function AchitareDatorieModal({ datorie, onClose, onSave }) {
+  const [modPlata, setModPlata] = useState("transfer");
+  const [data, setData] = useState(todayISO());
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    setSalvand(true);
+    try {
+      await onSave(modPlata, data);
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea plății. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Achitare datorie — ${datorie.furnizor}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Card className="p-3 bg-stone-50 text-xs flex flex-col gap-1">
+          <div className="flex justify-between"><span>Factură</span><span>{datorie.nrFactura} (NRCD {datorie.nrNRCD})</span></div>
+          <div className="flex justify-between font-medium"><span>Sumă de plată</span><span className="tabular-nums">{fmt(datorie.suma)} RON</span></div>
+        </Card>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data plății">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Mod de plată">
+            <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
+              <option value="numerar">Numerar (casă)</option>
+              <option value="transfer">Transfer bancar</option>
+            </select>
+          </Field>
+        </div>
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă plata"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function InchidereExercitiuModal({ an, excedent, onConfirm, onClose }) {
+  const [pas, setPas] = useState("intrebare"); // "intrebare" | "gdpr" | "excedent"
+  const [salvand, setSalvand] = useState(false);
+  const [eroare, setEroare] = useState("");
+
+  if (pas === "intrebare") {
+    return (
+      <Modal title="Închiderea exercițiului financiar" onClose={onClose}>
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-stone-600">
+            Atenție! Este necesară închiderea exercițiului financiar precedent. Sistemul va închide automat
+            exercițiul financiar {an} la data de 31.03.{an + 1}, ora 23:59. Doriți să procedați la închiderea
+            exercițiului financiar acum?
+          </p>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" onClick={onClose}>Nu acum...</Btn>
+            <Btn variant="gold" onClick={() => setPas("gdpr")}>Da.</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (pas === "excedent" && excedent) {
+    async function confirmaFinal() {
+      setSalvand(true);
+      setEroare("");
+      try {
+        await onConfirm();
+      } catch (e) {
+        setEroare(e.message || "Eroare la salvarea excedentului reportat. Încearcă din nou.");
+      } finally {
+        setSalvand(false);
+      }
+    }
+    return (
+      <Modal title={`Excedent reportat — Chitanța nr. 1/${an + 1}`} onClose={() => setPas("gdpr")}>
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-stone-600">
+            La închiderea exercițiului {an}, soldurile de mai jos se reportează automat, ca linii separate, în
+            Chitanța nr. 1/{an + 1} — fără să fie nevoie să le introduci manual.
+          </p>
+          <Card className="p-3 bg-stone-50 flex flex-col gap-1 text-sm">
+            <div className="flex justify-between"><span className="text-stone-500">Excedent Casă (numerar) la 31.12.{an}</span><span className="font-medium tabular-nums">{fmt(excedent.soldCasa)} RON</span></div>
+            <div className="flex justify-between"><span className="text-stone-500">Excedent Bancă (transfer) la 31.12.{an}</span><span className="font-medium tabular-nums">{fmt(excedent.soldBanca)} RON</span></div>
+          </Card>
+          {eroare && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroare}</span>}
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" onClick={() => setPas("gdpr")} disabled={salvand}>Înapoi</Btn>
+            <Btn variant="danger" onClick={confirmaFinal} disabled={salvand}>{salvand ? "Se salvează..." : "Confirm închiderea și excedentul"}</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={`Confirmare — Închidere exercițiu financiar ${an}`} onClose={() => setPas("intrebare")}>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>
+            Atenție! Închiderea exercițiului financiar {an} blochează introducerea de noi documente pentru acest an.
+            E o închidere <strong>reversibilă</strong> — poate fi redeschisă oricând, dacă apare un document legitim,
+            până la <strong>31.12.{an + 1}</strong>. Abia la acel termen, dacă nu a fost redeschis, exercițiul devine
+            definitiv, ireversibil, și se aplică anonimizarea datelor personale ale donatorilor, conform GDPR.
+          </span>
+        </p>
+        <div className="flex justify-end gap-2">
+          <Btn variant="ghost" onClick={() => setPas("intrebare")}>Înapoi</Btn>
+          <Btn variant="danger" onClick={() => (excedent ? setPas("excedent") : onConfirm())}>
+            {excedent ? "Continuă" : "Confirm închiderea"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Formatul unic de afișare a datei, peste tot în aplicație (tabele, documente, rapoarte): ZZ/LL/AAAA.
+function fmtDataJurnal(iso) {
+  const [an, luna, zi] = iso.split("-");
+  return `${zi}.${luna}.${an}`;
+}
+
+function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener }) {
+  const [showChitanta, setShowChitanta] = useState(false);
+  const [showOP, setShowOP] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [browseTip, setBrowseTip] = useState(null); // null | "incasare" | "plata"
+
+  // Fiecare nume nou folosit vreodată la o Chitanță devine automat sugestie pentru viitor —
+  // nu necesită o bază de date separată, se extrage direct din chitanțele deja emise.
+  const donatoriIstorici = useMemo(
+    () => [...new Set(state.operatiuni.filter((op) => op.tip === "incasare" && op.tert).map((op) => op.tert))].sort(),
+    [state.operatiuni]
+  );
+  // Ultima Serie+Număr de pe chitanțier folosită — pentru continuarea automată a numerotării
+  // fizice, în interiorul aceluiași volum de 50.
+  const ultimaSerieNumarChitanta = useMemo(() => {
+    const cuIdentificare = state.operatiuni.filter((op) => op.tip === "incasare" && op.serie && op.numarIdentificare);
+    if (cuIdentificare.length === 0) return null;
+    return cuIdentificare.reduce((max, op) => (op.numarIdentificare > max.numarIdentificare ? op : max));
+  }, [state.operatiuni]);
+
+  function addOperatiune(op) {
+    const year = yearOf(op.data);
+    const nr = nextNumber(state, year, op.tip);
+    const contoare = commitNumber(state, year, op.tip);
+    const record = { ...op, id: uid(), nr, an: year };
+    setState((s) => ({ ...s, operatiuni: [...s.operatiuni, record], contoare }));
+  }
+
+  // Numerotarea reală (nr, an) e acum atribuită atomic pe server (funcția SQL get_next_number),
+  // nu mai local — evită coliziuni dacă același cont e folosit simultan din mai multe locuri.
+  // Scrierea în Supabase se face ÎNAINTEA actualizării stării locale: dacă serverul refuză
+  // (rețea, validare), starea locală rămâne neschimbată, în loc să pară că a mers.
+  async function addChitanta({ data, modPlata, tert, linii, serie, numarIdentificare }) {
+    const { operatiuniNoi, nr, an, renumerotari } = await salveazaDocument(parohieId, {
+      tip: "incasare",
+      data,
+      tert,
+      modPlata,
+      linii,
+      serie,
+      numarIdentificare,
+    });
+    const total = linii.reduce((sum, l) => sum + l.suma, 0);
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, renumerotari);
+      return {
+        ...sPatched,
+        operatiuni: [...sPatched.operatiuni, ...operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Chitanță nr. ${nr}/${an} emisă — ${fmt(total)} lei${tert ? " (" + tert + ")" : ""}`),
+      };
+    });
+  }
+
+  async function addOrdinPlata({ data, modPlata, tert, linii }) {
+    const { operatiuniNoi, nr, an, renumerotari } = await salveazaDocument(parohieId, {
+      tip: "plata",
+      data,
+      tert,
+      modPlata,
+      linii,
+    });
+    const total = linii.reduce((sum, l) => sum + l.suma, 0);
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, renumerotari);
+      return {
+        ...sPatched,
+        operatiuni: [...sPatched.operatiuni, ...operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ordin de plată nr. ${nr}/${an} emis — ${fmt(total)} lei${tert ? " (" + tert + ")" : ""}`),
+      };
+    });
+  }
+
+  // Jurnalul se afișează cronologic ascendent (cea mai veche operațiune prima), cu solduri progresive
+  // — STRICT pe un singur an fiscal deodată; amestecarea anilor într-un singur jurnal e interzisă.
+  // La egalitate de dată, se păstrează ordinea de introducere (ordinea din array).
+  const aniDisponibili = useMemo(() => {
+    const ani = new Set(state.operatiuni.map((op) => op.an));
+    ani.add(yearOf(todayISO())); // anul curent e mereu selectabil, chiar dacă nu are încă operațiuni
+    return [...ani].sort((a, b) => b - a);
+  }, [state.operatiuni]);
+  const [anSelectat, setAnSelectat] = useState(yearOf(todayISO()));
+
+  const randuri = useMemo(() => {
+    const operatiuniAn = state.operatiuni.filter((op) => op.an === anSelectat);
+    // Criteriu 1: cronologic ascendent (cel mai vechi primul).
+    // Criteriu 2, la egalitate de dată: întâi toate încasările (ordonate crescător după nr.
+    // chitanței), apoi toate plățile (ordonate crescător după nr. ordinului de plată).
+    const indexate = operatiuniAn.map((op, idx) => ({ op, idx }));
+    indexate.sort((a, b) => {
+      if (a.op.data !== b.op.data) return a.op.data < b.op.data ? -1 : 1;
+      if (a.op.tip !== b.op.tip) return a.op.tip === "incasare" ? -1 : 1;
+      if (a.op.nr !== b.op.nr) return a.op.nr - b.op.nr;
+      return a.idx - b.idx;
+    });
+
+    // Criteriu 3: soldurile actualizate pe fiecare linie respectă exact această ordine.
+    let soldCasa = 0;
+    let soldBanca = 0;
+    return indexate.map(({ op }, i) => {
+      const semn = op.tip === "incasare" ? 1 : -1;
+      const eCasa = op.modPlata === "numerar";
+      if (eCasa) soldCasa += semn * op.suma;
+      else soldBanca += semn * op.suma;
+      const cont = derived.contById[op.contId];
+      return {
+        op,
+        cont,
+        eCasa,
+        soldCasa,
+        soldBanca,
+        soldFinal: soldCasa + soldBanca,
+        nrCrt: i + 1,
+        cautCont: cont ? cont.simbol : op.contId,
+        cautPartener: op.tert || "",
+        cautExplicatie: op.explicatie || cont?.denumire || "",
+      };
+    });
+  }, [state.operatiuni, anSelectat, derived.contById]);
+
+  const configColoaneJurnal = useMemo(() => ({
+    data: { get: (r) => r.op.data },
+    nrChitanta: { get: (r) => (r.op.tip === "incasare" ? r.op.nr : "") },
+    nrOP: { get: (r) => (r.op.tip === "plata" ? r.op.nr : "") },
+    cont: { get: (r) => r.cautCont },
+    partener: { get: (r) => r.cautPartener },
+    explicatie: { get: (r) => r.cautExplicatie },
+    incasare: { get: (r) => (r.op.tip === "incasare" ? r.op.suma : 0) },
+    plata: { get: (r) => (r.op.tip === "plata" ? r.op.suma : 0) },
+    sursa: { get: (r) => (r.eCasa ? "Casă" : "Bancă") },
+  }), []);
+  const { filtre: filtreColoane, setFiltre: setFiltreColoane, procesate: randuriProcesate, sugestiiPentru } =
+    useFiltrareColoane(randuri, configColoaneJurnal);
+
+  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, filtrate, totalFiltrate } =
+    useTabelFiltrat(randuriProcesate, ["cautCont", "cautPartener", "cautExplicatie"], 20);
+
+  const totalIncasariAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "incasare" ? r.op.suma : 0), 0);
+  const totalPlatiAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "plata" ? r.op.suma : 0), 0);
+
+  const coloaneJurnal = [
+    { key: "nr", label: "Nr. crt." },
+    { key: "data", label: "Data operațiunii" },
+    { key: "nrChitanta", label: "Nr. chitanță" },
+    { key: "nrOP", label: "Nr. OP" },
+    { key: "artBug", label: "Art. bug. nr." },
+    { key: "partener", label: "Denumire partener" },
+    { key: "explicatie", label: "Explicație" },
+    { key: "incasare", label: "Încasare (lei)" },
+    { key: "plata", label: "Plată (lei)" },
+    { key: "sursa", label: "Sursa/Destinație" },
+    { key: "soldFinal", label: "Sold final" },
+    { key: "soldBanca", label: "Sold Bancă" },
+    { key: "soldCasa", label: "Sold Casă" },
+  ];
+  const randuriExportJurnal = randuri.map((r) => ({
+    nr: r.nrCrt,
+    data: fmtDataJurnal(r.op.data),
+    nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}/${r.op.an}` : "",
+    nrOP: r.op.tip === "plata" ? `${r.op.nr}/${r.op.an}` : "",
+    artBug: r.cont ? r.cont.simbol : r.op.contId,
+    partener: r.op.tert || "",
+    explicatie: r.op.explicatie || r.cont?.denumire || "",
+    incasare: r.op.tip === "incasare" ? fmt(r.op.suma) : "",
+    plata: r.op.tip === "plata" ? fmt(r.op.suma) : "",
+    sursa: r.eCasa ? "Casă" : "Bancă",
+    soldFinal: fmt(r.soldFinal),
+    soldBanca: fmt(r.soldBanca),
+    soldCasa: fmt(r.soldCasa),
+  }));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-2xl text-[#1F3864]">Jurnal de Venituri și Cheltuieli</h1>
+          <p className="text-sm text-stone-500">
+            Document generat automat, read-only — nu poate fi modificat sau șters direct. Se completează exclusiv prin
+            emiterea unei Chitanțe sau a unui Ordin de plată. Fiecare exercițiu financiar se afișează separat.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Field label="An">
+            <select className={inputCls} value={anSelectat} onChange={(e) => setAnSelectat(Number(e.target.value))}>
+              {aniDisponibili.map((an) => <option key={an} value={an}>{an}</option>)}
+            </select>
+          </Field>
+          <Btn variant="ghost" onClick={() => setTab("conturi")}>
+            <Landmark size={15} /> Articole bugetare
+          </Btn>
+          {!permisiuni.citireOnly && (
+            <Btn variant="verde" onClick={() => setShowChitanta(true)}>
+              <ArrowDownCircle size={15} /> Chitanță
+            </Btn>
+          )}
+          <Btn variant="ghost" onClick={() => setBrowseTip("incasare")}>
+            <FileText size={14} /> Chitanțe emise
+          </Btn>
+          {!permisiuni.citireOnly && permisiuni.poateEmiteOP && (
+            <Btn variant="primary" onClick={() => setShowOP(true)}>
+              <ArrowUpCircle size={15} /> Ordin de plată
+            </Btn>
+          )}
+          <Btn variant="ghost" onClick={() => setBrowseTip("plata")}>
+            <FileText size={14} /> Ordine de plată emise
+          </Btn>
+          {!permisiuni.citireOnly && (
+            <Btn variant="ghost" onClick={() => setShowTransfer(true)}>
+              <ArrowLeftRight size={15} /> Transfer casă/bancă
+            </Btn>
+          )}
+          <ExportMenu titlu="Jurnal de Venituri si Cheltuieli" columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
+        </div>
+      </header>
+
+      <Card className="overflow-x-auto">
+        <BaraCautarePaginare
+          cautare={cautare} onCautare={setCautare}
+          pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
+          totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
+        />
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-2 py-2">Nr. crt.</th>
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} />
+              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} />
+              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} />
+              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} />
+              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2 py-2 align-bottom text-right" />
+              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2 py-2 align-bottom text-right" />
+              <AntetFiltrabil cheie="sursa" eticheta="Sursa plății / Destinația încasării" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} />
+              <th className="px-2 py-2 text-right">Sold final</th>
+              <th className="px-2 py-2 text-right">Sold „Bancă”</th>
+              <th className="px-2 py-2 text-right">Sold „Casă”</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="bg-stone-50 font-semibold border-b-2 border-stone-300">
+              <td colSpan={7} className="px-2 py-2 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
+              <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
+              <td className="px-2 py-2 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
+              <td colSpan={4}></td>
+            </tr>
+            {afisate.length === 0 && (
+              <tr>
+                <td colSpan={13} className="px-3 py-6 text-center text-stone-400">
+                  Nicio operațiune găsită.
+                </td>
+              </tr>
+            )}
+            {afisate.map((r) => (
+              <tr key={r.op.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <td className="px-2 py-1.5 tabular-nums text-stone-500">{r.nrCrt}</td>
+                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
+                <td className="px-2 py-1.5 tabular-nums text-stone-500">
+                  {r.op.tip === "incasare" ? (
+                    <div className="flex flex-col">
+                      <span>{r.op.nr}</span>
+                      {r.op.serie && r.op.numarIdentificare && (
+                        <span className="text-xs text-stone-400 font-mono">{r.op.serie} {r.op.numarIdentificare}</span>
+                      )}
+                    </div>
+                  ) : "—"}
+                </td>
+                <td className="px-2 py-1.5 tabular-nums text-stone-500">{r.op.tip === "plata" ? r.op.nr : "—"}</td>
+                <td className="px-2 py-1.5 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
+                <td className="px-2 py-1.5">{r.op.tert || "—"}</td>
+                <td className="px-2 py-1.5 text-stone-500">{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
+                  {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-rose-700">
+                  {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
+                </td>
+                <td className="px-2 py-1.5">{r.eCasa ? "Casă" : "Bancă"}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {showChitanta && (
+        <ChitantaForm
+          conturi={state.conturi}
+          exercitiiFinanciare={state.exercitiiFinanciare}
+          previewNr={previzualizeazaUrmatorulNumar(state.operatiuni, yearOf(todayISO()), "incasare")}
+          parteneri={parteneri}
+          onCreatPartener={onCreatPartener}
+          donatoriIstorici={donatoriIstorici}
+          ultimaSerieNumar={ultimaSerieNumarChitanta}
+          onClose={() => setShowChitanta(false)}
+          onSave={async (payload) => {
+            await addChitanta(payload);
+            setShowChitanta(false);
+          }}
+        />
+      )}
+
+      {showOP && (
+        <OrdinPlataForm
+          conturi={state.conturi}
+          derived={derived}
+          exercitiiFinanciare={state.exercitiiFinanciare}
+          previewNr={previzualizeazaUrmatorulNumar(state.operatiuni, yearOf(todayISO()), "plata")}
+          parteneri={parteneri}
+          onCreatPartener={onCreatPartener}
+          eparhie={state.parohie?.eparhie}
+          protoierie={state.parohie?.protoierie}
+          onClose={() => setShowOP(false)}
+          onSave={async (payload) => {
+            await addOrdinPlata(payload);
+            setShowOP(false);
+          }}
+        />
+      )}
+
+      {showTransfer && (
+        <TransferForm
+          conturi={state.conturi}
+          onClose={() => setShowTransfer(false)}
+          onSave={(ops) => {
+            ops.forEach(addOperatiune);
+            if (ops.length > 0) {
+              setState((s) => ({ ...s, jurnalAudit: adaugaAudit(s, permisiuni.label, `Transfer casă/bancă — ${fmt(ops[0].suma)} lei`) }));
+            }
+            setShowTransfer(false);
+          }}
+        />
+      )}
+
+      {browseTip && (
+        <DocumentBrowserModal
+          tip={browseTip}
+          operatiuni={state.operatiuni}
+          contById={derived.contById}
+          derived={derived}
+          conturi={state.conturi}
+          exercitiiFinanciare={state.exercitiiFinanciare}
+          permisiuni={permisiuni}
+          setState={setState}
+          parohie={state.parohie}
+          parohieId={parohieId}
+          miscariStoc={state.miscariStoc}
+          onClose={() => setBrowseTip(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Formular Partener nou — aceleași câmpuri obligatorii ca la "Date parohie": Denumire, CUI/CIF,
+// Adresă/Sediu social, IBAN, E-mail, Telefon, Reprezentant legal, Funcția.
+function PartenerForm({ denumireInitiala, onClose, onSave }) {
+  const [denumire, setDenumire] = useState(denumireInitiala || "");
+  const [cuiCif, setCuiCif] = useState("");
+  const [adresa, setAdresa] = useState("");
+  const [iban, setIban] = useState("");
+  const [email, setEmail] = useState("");
+  const [telefon, setTelefon] = useState("");
+  const [reprezentantLegal, setReprezentantLegal] = useState("");
+  const [functie, setFunctie] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    const lipsa = [];
+    if (!denumire.trim()) lipsa.push("Denumirea");
+    if (!cuiCif.trim()) lipsa.push("CUI/CIF");
+    if (!adresa.trim()) lipsa.push("Adresa/Sediul social");
+    if (!iban.trim()) lipsa.push("Cont bancar (IBAN)");
+    if (!email.trim()) lipsa.push("E-mail");
+    if (!telefon.trim()) lipsa.push("Telefon");
+    if (!reprezentantLegal.trim()) lipsa.push("Reprezentant legal");
+    if (!functie.trim()) lipsa.push("Funcția");
+    if (lipsa.length > 0) {
+      setError(`Completează, te rog: ${lipsa.join(", ")}.`);
+      return;
+    }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({
+        denumire: denumire.trim(), cuiCif: cuiCif.trim(), adresa: adresa.trim(), iban: iban.trim(),
+        email: email.trim(), telefon: telefon.trim(), reprezentantLegal: reprezentantLegal.trim(), functie: functie.trim(),
+      });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea partenerului. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Partener nou" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <Field label="Denumire">
+          <input className={inputCls} value={denumire} onChange={(e) => setDenumire(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="CUI/CIF"><input className={inputCls} value={cuiCif} onChange={(e) => setCuiCif(e.target.value)} /></Field>
+          <Field label="Cont bancar (IBAN)"><input className={inputCls} value={iban} onChange={(e) => setIban(e.target.value)} /></Field>
+        </div>
+        <Field label="Adresa/Sediul social">
+          <input className={inputCls} value={adresa} onChange={(e) => setAdresa(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="E-mail"><input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          <Field label="Telefon"><input className={inputCls} value={telefon} onChange={(e) => setTelefon(e.target.value)} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Reprezentant legal"><input className={inputCls} value={reprezentantLegal} onChange={(e) => setReprezentantLegal(e.target.value)} /></Field>
+          <Field label="Funcția"><input className={inputCls} value={functie} onChange={(e) => setFunctie(e.target.value)} /></Field>
+        </div>
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează partenerul"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Selector de partener, reutilizat peste tot (Chitanță, Ordin de plată, Furnizor NRCD) — sugestii
+// din baza de date pe măsură ce se tastează; dacă textul introdus nu corespunde exact niciunui
+// partener existent, la ieșirea din câmp se cere confirmare explicită înainte de a-l crea nou.
+function SelectorPartener({ value, onChange, parteneri, onCreatPartener, label, id, strict = true, autoCreeaza = false, sugestiiSuplimentare = [] }) {
+  const [numeInAsteptare, setNumeInAsteptare] = useState(null);
+  const [showPartenerNou, setShowPartenerNou] = useState(false);
+  const listaId = `parteneri-${id || "implicit"}`;
+
+  async function handleBlur() {
+    const v = (value || "").trim();
+    if (!v) return;
+    const exista = parteneri.some((p) => p.denumire.toLowerCase() === v.toLowerCase());
+    if (exista) return;
+    if (strict) {
+      setNumeInAsteptare(v);
+    } else if (autoCreeaza && onCreatPartener) {
+      // Completare liberă, dar fiecare nume nou devine automat Partener real, în tăcere —
+      // fără avertisment, fără să ceară CUI/IBAN acum; rămâne disponibil ca sugestie de atunci încolo.
+      try {
+        await onCreatPartener({ denumire: v, cuiCif: "", adresa: "", iban: "", email: "", telefon: "", reprezentantLegal: "", functie: "" });
+      } catch (e) {
+        console.error("Nu am putut crea automat partenerul:", e);
+      }
+    }
+  }
+
+  return (
+    <>
+      <Field label={label || "Denumire partener"}>
+        <input
+          list={listaId} className={inputCls} value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={handleBlur}
+        />
+        <datalist id={listaId}>
+          {sugestiiSuplimentare.map((s) => <option key={`extra-${s}`} value={s} />)}
+          {parteneri.map((p) => <option key={p.id} value={p.denumire} />)}
+        </datalist>
+      </Field>
+
+      {numeInAsteptare && !showPartenerNou && (
+        <Modal title="Partener nou" onClose={() => setNumeInAsteptare(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-stone-600">
+              ATENȚIE! Acest partener („{numeInAsteptare}") nu se află în baza de date. Doriți să îl introduceți ca Partener nou?
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => { onChange(""); setNumeInAsteptare(null); }}>Nu</Btn>
+              <Btn variant="ghost" onClick={() => setNumeInAsteptare(null)}>Anulează</Btn>
+              <Btn variant="gold" onClick={() => setShowPartenerNou(true)}>Da</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {showPartenerNou && (
+        <PartenerForm
+          denumireInitiala={numeInAsteptare}
+          onClose={() => { setShowPartenerNou(false); setNumeInAsteptare(null); }}
+          onSave={async (payload) => {
+            const nou = await onCreatPartener(payload);
+            onChange(nou.denumire);
+            setShowPartenerNou(false);
+            setNumeInAsteptare(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+
+function DocumentHeader({ tip, nr, an, serie, numarIdentificare }) {
+  return (
+    <div className="border-2 border-[#1F3864] rounded-md px-4 py-3 mb-1 flex items-center justify-between bg-[#1F3864]/5">
+      <span className="font-serif text-lg text-[#1F3864] tracking-wide uppercase">{tip}</span>
+      <div className="text-right">
+        <div className="font-mono text-sm text-[#1F3864] font-semibold">Nr. {nr}/{an}</div>
+        {serie && numarIdentificare && (
+          <div className="font-mono text-xs text-stone-500">Serie {serie} nr. {numarIdentificare}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PrevederiBugetareForm({ conturi, an, obligatoriu, modCorectie, liniiInitiale, onValidate, onClose }) {
+  const [linii, setLinii] = useState(
+    liniiInitiale && liniiInitiale.length
+      ? liniiInitiale.map((l) => ({ id: uid(), contId: l.contId, suma: String(l.suma) }))
+      : [{ id: uid(), contId: "", suma: "" }]
+  );
+  const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [salvand, setSalvand] = useState(false);
+
+  const conturiRelevante = conturi.filter((c) => c.clasa === "venit" || c.clasa === "cheltuiala");
+
+  function conturiDisponibilePentru(linieId) {
+    const folosite = new Set(linii.filter((l) => l.id !== linieId && l.contId).map((l) => l.contId));
+    return conturiRelevante.filter((c) => !folosite.has(c.id));
+  }
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), contId: "", suma: "" }]);
+  }
+
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  const subtotalVenituri = linii.reduce((sum, l) => {
+    const cont = conturi.find((c) => c.id === l.contId);
+    return cont?.clasa === "venit" ? sum + (Number(l.suma) || 0) : sum;
+  }, 0);
+  const subtotalCheltuieli = linii.reduce((sum, l) => {
+    const cont = conturi.find((c) => c.id === l.contId);
+    return cont?.clasa === "cheltuiala" ? sum + (Number(l.suma) || 0) : sum;
+  }, 0);
+  const soldFinal = subtotalVenituri - subtotalCheltuieli;
+
+  function cerereValidare() {
+    if (linii.some((l) => !l.contId)) {
+      setError("Fiecare linie trebuie să aibă un articol bugetar selectat.");
+      return;
+    }
+    if (linii.some((l) => !l.suma || Number(l.suma) <= 0)) {
+      setError("Fiecare linie trebuie să aibă o sumă prevăzută validă, mai mare ca 0.");
+      return;
+    }
+    setError("");
+    setConfirming(true);
+  }
+
+  async function confirmaDefinitiv() {
+    setSalvand(true);
+    try {
+      await onValidate(linii.map((l) => ({ contId: l.contId, suma: Number(l.suma) })));
+    } catch (e) {
+      setConfirming(false);
+      setError(e.message || "Eroare la salvarea prevederilor bugetare. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  if (confirming) {
+    return (
+      <Modal title="Confirmare — Prevederi bugetare ireversibile" onClose={() => setConfirming(false)}>
+        <div className="flex flex-col gap-4">
+          <Card className="p-3 bg-stone-50 text-xs flex flex-col gap-1">
+            <div className="flex justify-between"><span>Total venituri prevăzute</span><span className="tabular-nums font-medium">{fmt(subtotalVenituri)} lei</span></div>
+            <div className="flex justify-between"><span>Total cheltuieli prevăzute</span><span className="tabular-nums font-medium">{fmt(subtotalCheltuieli)} lei</span></div>
+            <div className="flex justify-between font-semibold border-t border-stone-200 pt-1 mt-1"><span>Sold final prevăzut</span><span className="tabular-nums">{fmt(soldFinal)} lei</span></div>
+          </Card>
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>
+              {modCorectie ? (
+                <>
+                  Aceasta este o <strong>corecție excepțională</strong> a Prevederilor bugetare pentru anul {an} (an
+                  precedent, aflat încă în reconstituire). Poți reveni oricând asupra acestor valori, cât timp
+                  exercițiul financiar {an} nu este închis definitiv.
+                </>
+              ) : (
+                <>
+                  Atenție! După validare, formularul „Prevederi bugetare pentru anul {an}” devine <strong>read-only, ireversibil</strong> —
+                  nu va mai putea fi modificat sau șters.
+                </>
+              )}
+            </span>
+          </p>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" onClick={() => setConfirming(false)} disabled={salvand}>Înapoi, mai verific</Btn>
+            <Btn variant="danger" onClick={confirmaDefinitiv} disabled={salvand}>{salvand ? "Se salvează..." : "Confirm definitiv"}</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={modCorectie ? `Corecție — Prevederi bugetare pentru anul ${an}` : `Prevederi bugetare pentru anul ${an}`} onClose={obligatoriu ? undefined : onClose} wide>
+      <div className="flex flex-col gap-3">
+        {obligatoriu && (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>
+              Completarea și validarea acestui formular este obligatorie pentru a putea continua utilizarea aplicației
+              în anul {an}.
+            </span>
+          </p>
+        )}
+        {modCorectie && (
+          <p className="text-sm text-sky-800 bg-sky-50 border border-sky-200 rounded-md p-3 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>
+              Poți introduce sau corecta liber prevederile bugetare pentru anul {an}, cât timp exercițiul financiar
+              {" "}{an} nu este închis definitiv.
+            </span>
+          </p>
+        )}
+        <p className="text-xs text-stone-500">
+          Introduceți suma prevăzută pentru fiecare articol bugetar. Denumirea se completează automat după selectarea
+          articolului. Adăugați câte linii sunt necesare.
+        </p>
+
+        <div className="flex flex-col gap-2">
+          {linii.map((l, i) => {
+            const contSelectat = conturi.find((c) => c.id === l.contId);
+            return (
+              <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-3">
+                  <Field label={`Art. bugetar nr. (linia ${i + 1})`}>
+                    <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinie(l.id, { contId: e.target.value })}>
+                      <option value="">— selectați —</option>
+                      {conturiDisponibilePentru(l.id).map((c) => (
+                        <option key={c.id} value={c.id}>{c.simbol}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="col-span-5">
+                  <Field label="Denumire articol bugetar">
+                    <input className={`${inputCls} bg-stone-100 text-stone-500`} value={contSelectat?.denumire || ""} disabled readOnly />
+                  </Field>
+                </div>
+                <div className="col-span-3">
+                  <Field label="Sumă prevăzută (lei)">
+                    <input type="number" step="0.01" className={inputCls} value={l.suma} onChange={(e) => actualizeazaLinie(l.id, { suma: e.target.value })} placeholder="0.00" />
+                  </Field>
+                </div>
+                <div className="col-span-1 flex justify-center pb-1.5">
+                  <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </Card>
+            );
+          })}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă articol bugetar
+          </Btn>
+        </div>
+
+        <Card className="p-3 bg-stone-50 text-sm flex flex-col gap-1">
+          <div className="flex justify-between"><span className="text-stone-600">Subtotal venituri</span><span className="tabular-nums">{fmt(subtotalVenituri)} lei</span></div>
+          <div className="flex justify-between"><span className="text-stone-600">Subtotal cheltuieli</span><span className="tabular-nums">{fmt(subtotalCheltuieli)} lei</span></div>
+          <div className="flex justify-between font-semibold border-t border-stone-200 pt-1 mt-1">
+            <span>Sold final</span>
+            <span className={`tabular-nums ${soldFinal >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{fmt(soldFinal)} lei</span>
+          </div>
+        </Card>
+
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+
+        <div className="flex justify-end gap-2 mt-2">
+          {!obligatoriu && <Btn variant="ghost" onClick={onClose}>Anulează</Btn>}
+          <Btn variant="gold" onClick={cerereValidare}>Validează prevederile</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ChitantaForm({ conturi, exercitiiFinanciare, previewNr, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [modPlataImplicit, setModPlataImplicit] = useState("numerar"); // valoare implicită pentru linii noi
+  const [tert, setTert] = useState("");
+  const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "numerar" }]);
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  // Chitanțiere de 50 de chitanțe/volum: la fiecare prag (1, 51, 101, 151...), utilizatorul TREBUIE
+  // să introducă Seria+Numărul real, de pe chitanța fizică — pentru restul, se continuă automat.
+  const inceputVolumNou = (previewNr - 1) % 50 === 0;
+  const [serie, setSerie] = useState(inceputVolumNou ? "" : (ultimaSerieNumar?.serie || ""));
+  const [numarIdentificare, setNumarIdentificare] = useState(
+    inceputVolumNou ? "" : (ultimaSerieNumar ? String(ultimaSerieNumar.numarIdentificare + 1) : "")
+  );
+
+  // Contul 581 (viramente interne) e exclus intenționat de aici — se creează exclusiv prin
+  // butonul dedicat "Transfer casă/bancă", care generează ambele părți simetrice, sincron.
+  // Selectarea lui manuală aici ar putea genera o singură parte a transferului, dezechilibrat.
+  const conturiFiltrate = conturi.filter((c) => c.clasa !== "cheltuiala" && c.clasa !== "viramente");
+  const an = yearOf(data);
+  const totalGeneral = linii.reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), contId: "", suma: "", explicatie: "", modPlata: modPlataImplicit }]);
+  }
+
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  function validate() {
+    if (inceputVolumNou && (!serie.trim() || !numarIdentificare)) {
+      setError("Aceasta e prima chitanță dintr-un chitanțier nou (nr. de gestiune " + previewNr + ") — introdu Seria și Numărul real, de pe chitanța fizică.");
+      return false;
+    }
+    if (!data) {
+      setError("Data este obligatorie.");
+      return false;
+    }
+    if (exercitiiFinanciare?.[an]?.inchis) {
+      setError(`Exercițiul financiar ${an} este închis. Corectarea unei erori din acest an se face exclusiv prin ajustare pe contul 106, în anul curent.`);
+      return false;
+    }
+    if (linii.some((l) => !l.contId)) {
+      setError("Fiecare linie trebuie să aibă un articol bugetar selectat.");
+      return false;
+    }
+    if (linii.some((l) => !l.suma || Number(l.suma) <= 0)) {
+      setError("Fiecare linie trebuie să aibă o sumă validă, mai mare ca 0.");
+      return false;
+    }
+    if (totalGeneral <= 0) {
+      setError("Suma totală a chitanței trebuie să fie mai mare ca 0.");
+      return false;
+    }
+    setError("");
+    return true;
+  }
+
+  async function submit() {
+    if (!validate()) return;
+    setSalvand(true);
+    try {
+      await onSave({
+        data, tert: tert.trim(), modPlata: modPlataImplicit,
+        linii: linii.map((l) => ({ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie.trim(), modPlata: l.modPlata })),
+        serie: serie.trim(), numarIdentificare: numarIdentificare ? Number(numarIdentificare) : null,
+      });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea chitanței. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Emitere document nou" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <DocumentHeader tip="Chitanță" nr={previewNr} an={an} />
+        <p className="text-xs text-stone-500">
+          O chitanță poate acoperi mai multe articole bugetare simultan, chiar cu surse diferite (ex. o linie încasată
+          în numerar și alta prin bancă). Adăugați câte linii sunt necesare; suma totală se calculează automat.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Sursa încasării implicită (pentru linii noi)">
+            <select className={inputCls} value={modPlataImplicit} onChange={(e) => setModPlataImplicit(e.target.value)}>
+              <option value="numerar">Numerar (casă)</option>
+              <option value="transfer">Transfer bancar</option>
+            </select>
+          </Field>
+        </div>
+
+        {inceputVolumNou ? (
+          <Card className="p-3 border-amber-300 bg-amber-50">
+            <p className="text-xs text-amber-800 mb-2 flex items-start gap-1.5">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              Aceasta e prima chitanță dintr-un chitanțier nou (nr. de gestiune {previewNr}) — introdu Seria și
+              Numărul real, tipărite pe chitanța fizică. Următoarele 49 se vor completa automat.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Serie (de pe chitanțier)">
+                <input className={inputCls} value={serie} onChange={(e) => setSerie(e.target.value)} />
+              </Field>
+              <Field label="Număr (de pe chitanțier)">
+                <input type="number" className={inputCls} value={numarIdentificare} onChange={(e) => setNumarIdentificare(e.target.value)} />
+              </Field>
+            </div>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Serie (de pe chitanțier)">
+              <input className={inputCls} value={serie} onChange={(e) => setSerie(e.target.value)} />
+              <span className="text-xs text-stone-400">Completată automat, continuând chitanțierul curent — modificabilă dacă e nevoie.</span>
+            </Field>
+            <Field label="Număr (de pe chitanțier)">
+              <input type="number" className={inputCls} value={numarIdentificare} onChange={(e) => setNumarIdentificare(e.target.value)} />
+            </Field>
+          </div>
+        )}
+
+        <SelectorPartener
+          id="chitanta" label="Denumire partener (donator/terț, opțional — poate rămâne anonim)"
+          value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
+          sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
+        />
+
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Defalcare pe articole bugetare</div>
+          {linii.map((l, i) => (
+            <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-4">
+                <Field label={`Articol bugetar nr. (linia ${i + 1})`}>
+                  <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinie(l.id, { contId: e.target.value })}>
+                    <option value="">— selectați —</option>
+                    {conturiFiltrate.map((c) => (
+                      <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="Sumă (lei)">
+                  <input type="number" step="0.01" className={inputCls} value={l.suma} onChange={(e) => actualizeazaLinie(l.id, { suma: e.target.value })} placeholder="0.00" />
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="Sursă">
+                  <select className={inputCls} value={l.modPlata} onChange={(e) => actualizeazaLinie(l.id, { modPlata: e.target.value })}>
+                    <option value="numerar">Casă</option>
+                    <option value="transfer">Bancă</option>
+                  </select>
+                </Field>
+              </div>
+              <div className="col-span-3">
+                <Field label="Explicație">
+                  <input className={inputCls} value={l.explicatie} onChange={(e) => actualizeazaLinie(l.id, { explicatie: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-1 flex justify-center pb-1.5">
+                <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </Card>
+          ))}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă articol bugetar
+          </Btn>
+        </div>
+
+        <Card className="p-3 bg-stone-50 flex items-center justify-between">
+          <span className="text-sm font-medium text-stone-600">Total chitanță</span>
+          <span className="font-serif text-lg text-[#1F3864] tabular-nums">{fmt(totalGeneral)} lei</span>
+        </Card>
+
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="verde" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Emite chitanța"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, previewNr, parteneri, onCreatPartener, eparhie, protoierie, onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [modPlataImplicit, setModPlataImplicit] = useState("transfer"); // valoare implicită pentru linii noi
+  const [tert, setTert] = useState("");
+  const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "transfer", ajustare106: false }]);
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  // La fel ca la Chitanță: 581 e exclus, se folosește exclusiv prin "Transfer casă/bancă".
+  const conturiFiltrate = conturi.filter((c) => (c.clasa !== "venit" || c.id === "106") && c.clasa !== "viramente");
+  const an = yearOf(data);
+  const totalGeneral = linii.reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
+  // Totalul se verifică separat pe fiecare sursă — o linie pe Casă nu poate fi acoperită de
+  // fonduri din Bancă, și invers, chiar dacă totalul general ar părea suficient.
+  const totalCasa = linii.filter((l) => l.modPlata === "numerar").reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
+  const totalBanca = linii.filter((l) => l.modPlata === "transfer").reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
+
+  // Articolele bugetare 655.01 (cotă Eparhie) și 655.02 (cotă Protoierie) au un singur
+  // partener posibil, determinat automat de contul ales — nu se mai completează manual.
+  const are655_01 = linii.some((l) => l.contId === "655.01");
+  const are655_02 = linii.some((l) => l.contId === "655.02");
+  const conflict655 = are655_01 && are655_02;
+  const partenerFortat = are655_01 ? eparhie : are655_02 ? protoierie : null;
+
+  useEffect(() => {
+    if (partenerFortat) {
+      setTert(partenerFortat);
+    } else {
+      setTert((t) => (t === eparhie || t === protoierie ? "" : t));
+    }
+  }, [partenerFortat, eparhie, protoierie]);
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), contId: "", suma: "", explicatie: "", modPlata: modPlataImplicit, ajustare106: false }]);
+  }
+
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  function validate() {
+    if (!data) {
+      setError("Data este obligatorie.");
+      return false;
+    }
+    if (conflict655) {
+      setError("Articolele 655.01 (cotă Eparhie) și 655.02 (cotă Protoierie) nu pot fi combinate în același ordin de plată — au parteneri diferiți. Emiteți două ordine separate.");
+      return false;
+    }
+    if (are655_01 && !eparhie) {
+      setError("Eparhia nu e completată în Date parohie — completeaz-o acolo înainte de a emite plata pe contul 655.01.");
+      return false;
+    }
+    if (are655_02 && !protoierie) {
+      setError("Protoieria nu e completată în Date parohie — completeaz-o acolo înainte de a emite plata pe contul 655.02.");
+      return false;
+    }
+    if (exercitiiFinanciare?.[an]?.inchis) {
+      setError(`Exercițiul financiar ${an} este închis. Corectarea unei erori din acest an se face exclusiv prin ajustare pe contul 106, în anul curent.`);
+      return false;
+    }
+    if (linii.some((l) => !l.contId)) {
+      setError("Fiecare linie trebuie să aibă un articol bugetar selectat.");
+      return false;
+    }
+    if (linii.some((l) => !l.suma || Number(l.suma) <= 0)) {
+      setError("Fiecare linie trebuie să aibă o sumă validă, mai mare ca 0.");
+      return false;
+    }
+    if (totalGeneral <= 0) {
+      setError("Suma totală a ordinului de plată trebuie să fie mai mare ca 0.");
+      return false;
+    }
+    if (totalCasa > derived.soldCasa) {
+      setError(`Sold insuficient în Casă! Sold disponibil: ${fmt(derived.soldCasa)} RON, iar liniile pe Casă însumează ${fmt(totalCasa)} RON.`);
+      return false;
+    }
+    if (totalBanca > derived.soldBanca) {
+      setError(`Sold insuficient în Bancă! Sold disponibil: ${fmt(derived.soldBanca)} RON, iar liniile pe Bancă însumează ${fmt(totalBanca)} RON.`);
+      return false;
+    }
+    setError("");
+    return true;
+  }
+
+  async function submit() {
+    if (!validate()) return;
+    setSalvand(true);
+    try {
+      await onSave({
+        data, tert: tert.trim(), modPlata: modPlataImplicit,
+        linii: linii.map((l) => ({
+          contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie.trim(), modPlata: l.modPlata,
+          ajustare106: l.contId === "106" ? l.ajustare106 : false,
+        })),
+      });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea ordinului de plată. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Emitere document nou" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <DocumentHeader tip="Ordin de plată" nr={previewNr} an={an} />
+        <p className="text-xs text-stone-500">
+          Un ordin de plată poate acoperi mai multe articole bugetare simultan, chiar cu destinații diferite (ex. o
+          linie din Casă și alta din Bancă). Adăugați câte linii sunt necesare; suma totală se calculează automat.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Destinația plății implicită (pentru linii noi)">
+            <select className={inputCls} value={modPlataImplicit} onChange={(e) => setModPlataImplicit(e.target.value)}>
+              <option value="numerar">Numerar (casă)</option>
+              <option value="transfer">Transfer bancar</option>
+            </select>
+          </Field>
+        </div>
+
+        {partenerFortat ? (
+          <Field label="Denumire partener (beneficiarul plății) — determinat automat de articolul bugetar">
+            <input className={inputCls} value={partenerFortat} disabled />
+            <span className="text-xs text-stone-400">
+              {are655_01 ? "Contul 655.01 (cotă Eparhie) are un singur partener posibil: Eparhia." : "Contul 655.02 (cotă Protoierie) are un singur partener posibil: Protoieria."}
+            </span>
+          </Field>
+        ) : (
+          <SelectorPartener
+            id="op" label="Denumire partener (beneficiarul plății)"
+            value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener}
+          />
+        )}
+
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Defalcare pe articole bugetare</div>
+          {linii.map((l, i) => (
+            <Card key={l.id} className="p-3 flex flex-col gap-2">
+              <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-4">
+                  <Field label={`Articol bugetar nr. (linia ${i + 1})`}>
+                    <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinie(l.id, { contId: e.target.value })}>
+                      <option value="">— selectați —</option>
+                      {conturiFiltrate.map((c) => (
+                        <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="col-span-2">
+                  <Field label="Sumă (lei)">
+                    <input type="number" step="0.01" className={inputCls} value={l.suma} onChange={(e) => actualizeazaLinie(l.id, { suma: e.target.value })} placeholder="0.00" />
+                  </Field>
+                </div>
+                <div className="col-span-2">
+                  <Field label="Destinație">
+                    <select className={inputCls} value={l.modPlata} onChange={(e) => actualizeazaLinie(l.id, { modPlata: e.target.value })}>
+                      <option value="numerar">Casă</option>
+                      <option value="transfer">Bancă</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="col-span-3">
+                  <Field label="Explicație">
+                    <input className={inputCls} value={l.explicatie} onChange={(e) => actualizeazaLinie(l.id, { explicatie: e.target.value })} />
+                  </Field>
+                </div>
+                <div className="col-span-1 flex justify-center pb-1.5">
+                  <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+              {l.contId === "106" && (
+                <label className="flex items-center gap-2 text-xs text-stone-600 bg-stone-50 border border-stone-200 rounded-md p-2">
+                  <input type="checkbox" checked={l.ajustare106} onChange={(e) => actualizeazaLinie(l.id, { ajustare106: e.target.checked })} />
+                  Linie de ajustare a contului 106 (surplus constatat) — exclusă din Total plăți-cheltuieli.
+                </label>
+              )}
+            </Card>
+          ))}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă articol bugetar
+          </Btn>
+        </div>
+
+        <Card className="p-3 bg-stone-50 flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-stone-600">Total ordin de plată</span>
+            <span className="font-serif text-lg text-[#1F3864] tabular-nums">{fmt(totalGeneral)} lei</span>
+          </div>
+          {totalCasa > 0 && (
+            <div className="flex items-center justify-between text-xs text-stone-500">
+              <span>din care din Casă (sold disponibil: {fmt(derived.soldCasa)} lei)</span>
+              <span className={totalCasa > derived.soldCasa ? "text-rose-600 font-medium" : ""}>{fmt(totalCasa)} lei</span>
+            </div>
+          )}
+          {totalBanca > 0 && (
+            <div className="flex items-center justify-between text-xs text-stone-500">
+              <span>din care din Bancă (sold disponibil: {fmt(derived.soldBanca)} lei)</span>
+              <span className={totalBanca > derived.soldBanca ? "text-rose-600 font-medium" : ""}>{fmt(totalBanca)} lei</span>
+            </div>
+          )}
+        </Card>
+
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Emite ordinul de plată"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function TransferForm({ onClose, onSave }) {
+  const [directie, setDirectie] = useState("casa-banca");
+  const [data, setData] = useState(todayISO());
+  const [suma, setSuma] = useState("");
+  const [error, setError] = useState("");
+
+  function submit() {
+    const sumaNum = Number(suma);
+    if (!suma || isNaN(sumaNum) || sumaNum <= 0) {
+      setError("Introduceți o sumă validă, mai mare ca 0.");
+      return;
+    }
+    const iesModPlata = directie === "casa-banca" ? "numerar" : "transfer";
+    const intModPlata = directie === "casa-banca" ? "transfer" : "numerar";
+    onSave([
+      { tip: "plata", contId: "581", data, suma: sumaNum, modPlata: iesModPlata, tert: "", explicatie: "Viramente interne — depunere/ridicare" },
+      { tip: "incasare", contId: "581", data, suma: sumaNum, modPlata: intModPlata, tert: "", explicatie: "Viramente interne — depunere/ridicare" },
+    ]);
+  }
+
+  return (
+    <Modal title="Transfer intern casă ↔ bancă (cont 581)" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Generează automat două înregistrări pe contul 581, cu sold net zero. Nu afectează Total venituri/cheltuieli.
+        </p>
+        <Field label="Direcție">
+          <select className={inputCls} value={directie} onChange={(e) => setDirectie(e.target.value)}>
+            <option value="casa-banca">Depunere: din Casă → în Bancă</option>
+            <option value="banca-casa">Ridicare: din Bancă → în Casă</option>
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Sumă (RON)" error={error}>
+            <input type="number" step="0.01" className={inputCls} value={suma} onChange={(e) => setSuma(e.target.value)} />
+          </Field>
+        </div>
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit}>Salvează transferul</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Conturi BVC -------------------------------- */
+
+function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
+
+  function addCont(c) {
+    setState((s) => ({ ...s, conturi: [...s.conturi, { ...c, id: c.simbol }] }));
+  }
+
+  function updateCont(id, patch) {
+    setState((s) => ({
+      ...s,
+      conturi: s.conturi.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }));
+  }
+
+  function deleteCont(c) {
+    const rulaj = derived.rulajPeCont[c.id] || { incasari: 0, plati: 0 };
+    if (c.special) {
+      setDeleteError(`Contul ${c.simbol} este special și obligatoriu — nu poate fi șters.`);
+      return;
+    }
+    if (rulaj.incasari > 0 || rulaj.plati > 0) {
+      setDeleteError(`Contul ${c.simbol} are operațiuni înregistrate — nu poate fi șters, doar redenumit dacă e nevoie.`);
+      return;
+    }
+    setState((s) => ({ ...s, conturi: s.conturi.filter((x) => x.id !== c.id) }));
+  }
+
+  const clasaLabel = { venit: "Venit", cheltuiala: "Cheltuială", viramente: "Viramente interne" };
+  const clasaTone = { venit: "text-emerald-700 bg-emerald-50", cheltuiala: "text-rose-700 bg-rose-50", viramente: "text-stone-500 bg-stone-100" };
+  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, totalFiltrate } =
+    useTabelFiltrat(state.conturi, ["simbol", "denumire"], 15);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <Btn variant="ghost" onClick={() => setTab("operatiuni")} className="mb-2">
+            <BookOpen size={14} /> Înapoi la Registru Jurnal
+          </Btn>
+          <h1 className="font-serif text-2xl text-[#1F3864]">Nomenclator articole bugetare</h1>
+          <p className="text-sm text-stone-500">Buget de Venituri și Cheltuieli — un singur nomenclator, simbol + denumire.</p>
+        </div>
+        <Btn variant="primary" onClick={() => setShowForm(true)} disabled={permisiuni.citireOnly} className={permisiuni.citireOnly ? "hidden" : ""}>
+          <Plus size={15} /> Articol bugetar nou
+        </Btn>
+      </header>
+
+      {deleteError && (
+        <Card className="p-3 border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
+          <span className="flex items-center gap-2"><AlertTriangle size={14} /> {deleteError}</span>
+          <button onClick={() => setDeleteError(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+        </Card>
+      )}
+
+      <Card className="overflow-x-auto">
+        <BaraCautarePaginare
+          cautare={cautare} onCautare={setCautare}
+          pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
+          totalFiltrate={totalFiltrate} placeholder="Caută simbol sau denumire..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Simbol</th>
+              <th className="px-3 py-2">Denumire</th>
+              <th className="px-3 py-2">Clasă</th>
+              <th className="px-3 py-2 text-right">Rulaj încasări</th>
+              <th className="px-3 py-2 text-right">Rulaj plăți</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {afisate.map((c) => {
+              const rulaj = derived.rulajPeCont[c.id] || { incasari: 0, plati: 0 };
+              return (
+                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 font-medium tabular-nums">{c.simbol}</td>
+                  <td className="px-3 py-2">
+                    {c.denumire} {c.special && <span className="ml-1 text-[10px] text-[#B8860B] border border-[#B8860B]/40 rounded px-1 py-0.5">special</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${clasaTone[c.clasa]}`}>{clasaLabel[c.clasa]}</span>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(rulaj.incasari)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(rulaj.plati)}</td>
+                  <td className="px-3 py-2">
+                    {!permisiuni.citireOnly && (
+                      <div className="flex gap-1 justify-end">
+                        <button title="Editează" onClick={() => setEditing(c)} className="text-stone-400 hover:text-[#1F3864] p-1">
+                          <Pencil size={13} />
+                        </button>
+                        <button title="Șterge" onClick={() => deleteCont(c)} className="text-stone-300 hover:text-rose-600 p-1">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {showForm && (
+        <ContForm
+          existente={state.conturi}
+          onClose={() => setShowForm(false)}
+          onSave={(c) => {
+            addCont(c);
+            setShowForm(false);
+          }}
+        />
+      )}
+
+      {editing && (
+        <ContForm
+          existente={state.conturi}
+          editing={editing}
+          onClose={() => setEditing(null)}
+          onSave={(patch) => {
+            updateCont(editing.id, patch);
+            setEditing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ContForm({ existente, editing, onClose, onSave }) {
+  const [simbol, setSimbol] = useState(editing?.simbol || "");
+  const [denumire, setDenumire] = useState(editing?.denumire || "");
+  const [clasa, setClasa] = useState(editing?.clasa || "venit");
+  const [error, setError] = useState("");
+  const isSpecial = editing?.special;
+
+  function submit() {
+    if (!simbol.trim() || !denumire.trim()) {
+      setError("Simbolul și denumirea sunt obligatorii.");
+      return;
+    }
+    const duplicat = existente.some((c) => c.simbol === simbol.trim() && c.id !== editing?.id);
+    if (duplicat) {
+      setError("Există deja un cont cu acest simbol.");
+      return;
+    }
+    if (editing) {
+      onSave({ simbol: simbol.trim(), denumire: denumire.trim(), clasa: isSpecial ? editing.clasa : clasa });
+    } else {
+      onSave({ simbol: simbol.trim(), denumire: denumire.trim(), clasa });
+    }
+  }
+
+  return (
+    <Modal title={editing ? `Editează articolul ${editing.simbol}` : "Articol bugetar nou"} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Simbol">
+          <input className={inputCls} value={simbol} onChange={(e) => setSimbol(e.target.value)} placeholder="ex: 710" disabled={isSpecial} />
+        </Field>
+        <Field label="Denumire">
+          <input className={inputCls} value={denumire} onChange={(e) => setDenumire(e.target.value)} />
+        </Field>
+        <Field label="Clasă">
+          <select className={inputCls} value={clasa} onChange={(e) => setClasa(e.target.value)} disabled={isSpecial}>
+            <option value="venit">Venit</option>
+            <option value="cheltuiala">Cheltuială</option>
+            {isSpecial && <option value="viramente">Viramente interne</option>}
+          </select>
+        </Field>
+        {isSpecial && (
+          <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+            Acesta este un cont special obligatoriu — simbolul și clasa nu pot fi modificate, doar denumirea.
+          </p>
+        )}
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit}>Salvează</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Pangar -------------------------------- */
+
+function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener }) {
+  const [showArticol, setShowArticol] = useState(false);
+  const [variantaFor, setVariantaFor] = useState(null);
+  const [showReceptieNRCD, setShowReceptieNRCD] = useState(false);
+  const [showNomenclator, setShowNomenclator] = useState(false);
+  const [modNomenclator, setModNomenclator] = useState("lista"); // "lista" | "galerie"
+  const [showVanzare, setShowVanzare] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [showNRCD, setShowNRCD] = useState(false);
+  // Aceeași sursă de sugestii ca la Chitanța generală — orice nume folosit vreodată la o
+  // încasare (inclusiv vânzările Pangar) devine sugestie pentru viitor.
+  const donatoriIstorici = useMemo(
+    () => [...new Set(state.operatiuni.filter((op) => op.tip === "incasare" && op.tert).map((op) => op.tert))].sort(),
+    [state.operatiuni]
+  );
+  const [editReceptieFor, setEditReceptieFor] = useState(null);
+  const [editVanzareFor, setEditVanzareFor] = useState(null);
+
+  function nextSeq(s) {
+    return (s.articole.reduce((max, a) => Math.max(max, a.seq || 0), 0)) + 1;
+  }
+
+  async function addArticol(a, fotografie) {
+    const cod = buildCod(a.bazaCod, a.pretAchizitie, a.pretVanzare);
+    if (state.articole.some((x) => x.cod === cod)) {
+      setNotice(`Codul ${cod} există deja în nomenclator — nu se pot crea coduri duplicate.`);
+      return;
+    }
+    const seq = nextSeq(state);
+    let articolNou = await creeazaArticolPangar(parohieId, { ...a, cod, seq });
+    if (fotografie) {
+      const imagineUrl = await incarcaImagineProdusPangar(parohieId, articolNou.id, fotografie);
+      articolNou = { ...articolNou, imagineUrl };
+    }
+    setState((s) => ({ ...s, articole: [...s.articole, articolNou] }));
+  }
+
+  // Recepție NRCD cu linii multiple — mai multe produse diferite, pe aceeași factură,
+  // exact ca la o factură reală. `linii` = [{ articolId, cantitate }, ...].
+  async function receptieNRCD(linii, opts) {
+    const rezultat = await receptioneazaPangar(parohieId, {
+      linii, data: opts.data, furnizor: opts.furnizor, nrFactura: opts.nrFactura,
+      plataAcum: opts.plataAcum, modPlata: opts.modPlata, dataScadenta: opts.dataScadenta,
+      categoriiPangar: CATEGORII_PANGAR,
+    });
+    const denumiri = linii
+      .map((l) => state.articole.find((a) => a.id === l.articolId)?.cod)
+      .filter(Boolean)
+      .join(", ");
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        articole: sPatched.articole.map((a) => {
+          const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+          return patch ? { ...a, stoc: patch.stoc, stocReferinta: patch.stocReferinta } : a;
+        }),
+        miscariStoc: [...sPatched.miscariStoc, ...rezultat.miscariNoi],
+        operatiuni: [...sPatched.operatiuni, ...rezultat.operatiuniPlata],
+        datoriiFurnizori: rezultat.datorieNoua ? [...(sPatched.datoriiFurnizori || []), rezultat.datorieNoua] : (sPatched.datoriiFurnizori || []),
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `NRCD nr. ${rezultat.nrNRCD}/${rezultat.anNRCD} — recepție ${denumiri} (${opts.furnizor})`),
+      };
+    });
+  }
+
+  // Editare recepție: cantitate/dată/furnizor/factură/scadență/mod plată — direct pe document,
+  // fără document suplimentar. Blocată dacă noua cantitate ar duce stocul sub 0 (deja vândut).
+  async function editeazaReceptie(miscareId, opts) {
+    const miscare = state.miscariStoc.find((m) => m.id === miscareId);
+    if (!miscare || miscare.tip !== "intrare") return;
+    const anNou = yearOf(opts.data);
+    if (anNou !== yearOf(miscare.data)) {
+      setNotice(`Nu poți muta recepția în alt an prin editare — rămâi în ${yearOf(miscare.data)}.`);
+      return;
+    }
+    if (state.exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+      setNotice(`Exercițiul financiar ${anNou} este închis definitiv — needitabil.`);
+      return;
+    }
+    const rezultat = await editeazaReceptiePangar(miscareId, {
+      data: opts.data, cantitate: opts.cantitate, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataScadenta: opts.dataScadenta,
+    });
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => (a.id === miscare.articolId ? { ...a, ...rezultat.articolActualizat } : a)),
+      miscariStoc: s.miscariStoc.map((m) => (m.id === miscareId ? { ...m, ...rezultat.miscareActualizata, furnizor: opts.furnizor, nrFactura: opts.nrFactura } : m)),
+      datoriiFurnizori: (s.datoriiFurnizori || []).map((d) =>
+        d.nrNRCD === miscare.nrNRCD ? { ...d, suma: rezultat.miscareActualizata.valoareAchizitie, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataFactura: opts.data, dataScadenta: opts.dataScadenta } : d
+      ),
+      operatiuni: s.operatiuni.map((op) => (op.tip === "plata" && op.nrNRCD === miscare.nrNRCD ? {
+        ...op, suma: rezultat.miscareActualizata.valoareAchizitie, tert: opts.furnizor, data: opts.data,
+      } : op)),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare recepție NRCD nr. ${miscare.nrNRCD}/${anNou}`),
+    }));
+  }
+
+  // Vânzare FIFO completă: stocul, chitanța și mișcările de ieșire se citesc/scriu direct din
+  // Supabase (sursă de adevăr), nu mai din starea locală — elimină riscul din trecut, când o
+  // vânzare părea reușită dar dispărea la următoarea repornire a aplicației.
+  async function vanzareMultipla(linii, data, tert, modPlata) {
+    const rezultat = await vanzareFIFOPangar(parohieId, {
+      linii, data, tert, modPlata, categoriiPangar: CATEGORII_PANGAR,
+    });
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        articole: sPatched.articole.map((a) => {
+          const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+          return patch ? { ...a, stoc: patch.stocNou } : a;
+        }),
+        miscariStoc: [...sPatched.miscariStoc, ...rezultat.miscariNoi],
+        operatiuni: [...sPatched.operatiuni, ...rezultat.operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Vânzare pangar — ${linii.length} ${linii.length === 1 ? "produs" : "produse"}, ${fmt(rezultat.totalVanzare)} lei`),
+      };
+    });
+  }
+
+  // Editare vânzare FIFO: restituie stocul din vânzarea veche, apoi reface consumul FIFO cu noile
+  // date, păstrând ACELAȘI nr de chitanță (nu emite un document nou). Blocată dacă stocul disponibil
+  // nu acoperă noua cantitate, sau dacă se încearcă mutarea în alt an.
+  async function editeazaVanzare(nrChitanta, anChitanta, opts) {
+    const iesiriVechi = state.miscariStoc.filter((m) => m.tip === "iesire" && m.nrChitanta === nrChitanta && m.anChitanta === anChitanta);
+    if (iesiriVechi.length === 0) return;
+    const anNou = yearOf(opts.data);
+    if (anNou !== anChitanta) {
+      setNotice(`Nu poți muta vânzarea în alt an prin editare — rămâi în ${anChitanta}.`);
+      return;
+    }
+    if (state.exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+      setNotice(`Exercițiul financiar ${anNou} este închis definitiv — needitabil.`);
+      return;
+    }
+    const documentId = iesiriVechi[0].documentId;
+    let rezultat;
+    try {
+      rezultat = await editeazaVanzarePangar(documentId, {
+        cantitate: opts.cantitate, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, categoriiPangar: CATEGORII_PANGAR,
+      });
+    } catch (e) {
+      setNotice(e.message || "Eroare la editarea vânzării. Încearcă din nou.");
+      return;
+    }
+    const idsVechi = new Set(iesiriVechi.map((m) => m.id));
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => {
+        const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+        return patch ? { ...a, stoc: patch.stocNou } : a;
+      }),
+      miscariStoc: [...s.miscariStoc.filter((m) => !idsVechi.has(m.id)), ...rezultat.miscariNoi],
+      operatiuni: [
+        ...s.operatiuni.filter((op) => !(op.tip === "incasare" && op.nr === nrChitanta && op.an === anChitanta)),
+        ...rezultat.operatiuniNoi,
+      ],
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare vânzare pangar — chitanță nr. ${nrChitanta}/${anChitanta}`),
+    }));
+  }
+
+  // Grupare pe bazaCod, pentru vederea agregată FIFO
+  const grupuri = useMemo(() => {
+    const map = new Map();
+    for (const a of state.articole) {
+      if (!map.has(a.bazaCod)) map.set(a.bazaCod, []);
+      map.get(a.bazaCod).push(a);
+    }
+    return Array.from(map.entries()).map(([bazaCod, coduri]) => {
+      const sortate = [...coduri].sort((x, y) => x.seq - y.seq);
+      const stocTotal = sortate.reduce((sum, a) => sum + a.stoc, 0);
+      const valoareTotal = sortate.reduce((sum, a) => sum + a.stoc * a.pretVanzare, 0);
+      const referintaTotal = sortate.reduce((sum, a) => sum + (a.stocReferinta || 0), 0);
+      const imagineUrl = sortate.find((a) => a.imagineUrl)?.imagineUrl || null;
+      const prag = Math.max(PRAG_STOC_PROCENT * (referintaTotal || 0), PRAG_STOC_MINIM);
+      const stareLabel = stocTotal === 0 ? "Epuizat" : stocTotal <= prag ? "Scăzut" : "OK";
+      return { bazaCod, denumire: sortate[0].denumire, um: sortate[0].um, coduri: sortate, stocTotal, valoareTotal, referintaTotal, imagineUrl, stareLabel };
+    });
+  }, [state.articole]);
+
+  const configColoanePangar = useMemo(() => ({
+    produs: { get: (g) => g.denumire },
+    stoc: { get: (g) => g.stocTotal },
+    valoare: { get: (g) => g.valoareTotal },
+    coduri: { get: (g) => g.coduri.length },
+    stare: { get: (g) => g.stareLabel },
+  }), []);
+  const { filtre: filtrePangar, setFiltre: setFiltrePangar, procesate: grupuriProcesate, sugestiiPentru: sugestiiPangar } =
+    useFiltrareColoane(grupuri, configColoanePangar);
+
+  const articoleSortate = useMemo(() => [...state.articole].sort((a, b) => a.seq - b.seq), [state.articole]);
+  const { cautare: cautareCod, setCautare: setCautareCod, pagina: paginaCod, setPagina: setPaginaCod, totalPagini: totalPaginiCod, afisate: coduriAfisate, totalFiltrate: totalCoduriFiltrate } =
+    useTabelFiltrat(articoleSortate, ["cod", "denumire", "bazaCod"], 15);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-2xl text-[#1F3864]">Pangar</h1>
+          <p className="text-sm text-stone-500">
+            Nomenclator cu cod imutabil: Nume.Cost.Preț. Vânzarea aplică regula FIFO — se consumă întâi cel mai vechi cod cu stoc disponibil.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Btn variant="ghost" onClick={() => setShowNomenclator((v) => !v)}>
+            {showNomenclator ? "Ascunde nomenclatorul" : "Vezi nomenclatorul"}
+          </Btn>
+          <Btn variant="ghost" onClick={() => setShowNRCD(true)}>
+            <FileText size={14} /> Note de Recepție (NRCD)
+          </Btn>
+          {!permisiuni.citireOnly && (
+            <>
+              <Btn variant="verde" onClick={() => setShowReceptieNRCD(true)}>
+                <FileText size={15} /> Recepție marfă (NRCD)
+              </Btn>
+              <Btn variant="gold" onClick={() => setShowVanzare(true)} disabled={state.articole.every((a) => a.stoc === 0)}>
+                <ArrowDownCircle size={15} /> Vânzare
+              </Btn>
+              <Btn variant="primary" onClick={() => setShowArticol(true)}>
+                <Plus size={15} /> Produs nou
+              </Btn>
+            </>
+          )}
+        </div>
+      </header>
+
+      {notice && (
+        <Card className="p-3 border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
+          <span className="flex items-center gap-2"><AlertTriangle size={14} /> {notice}</span>
+          <button onClick={() => setNotice(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+        </Card>
+      )}
+
+      {showNomenclator && (
+        <>
+          <div className="flex gap-2">
+            <Btn variant={modNomenclator === "lista" ? "primary" : "ghost"} onClick={() => setModNomenclator("lista")}>Listă</Btn>
+            <Btn variant={modNomenclator === "galerie" ? "primary" : "ghost"} onClick={() => setModNomenclator("galerie")}>Galerie</Btn>
+          </div>
+
+          {modNomenclator === "galerie" && (
+            <Card className="p-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {grupuri.map((g) => (
+                  <div key={g.bazaCod} className="border border-stone-200 rounded-lg overflow-hidden bg-white flex flex-col">
+                    <div className="aspect-square bg-stone-100 flex items-center justify-center overflow-hidden">
+                      {g.imagineUrl ? (
+                        <img src={g.imagineUrl} alt={g.denumire} className="w-full h-full object-cover" />
+                      ) : (
+                        <Flame size={28} className="text-stone-300" />
+                      )}
+                    </div>
+                    <div className="p-2 flex flex-col gap-1">
+                      <div className="text-sm font-medium text-stone-700 leading-snug">{g.denumire}</div>
+                      <div className="text-xs text-stone-500">Stoc total: {g.stocTotal} {g.um}</div>
+                      <div className="text-xs text-stone-400">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"} FIFO</div>
+                    </div>
+                  </div>
+                ))}
+                {grupuri.length === 0 && (
+                  <p className="col-span-full text-center text-stone-400 py-6 text-sm">Niciun produs în nomenclator încă.</p>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {modNomenclator === "lista" && (
+            <>
+          <Card className="overflow-x-auto">
+            <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Produse (vedere agregată, FIFO)</div>
+            <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <AntetFiltrabil cheie="produs" eticheta="Produs" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("produs")} />
+              <AntetFiltrabil cheie="stoc" eticheta="Stoc total" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stoc")} className="px-3 py-2 align-bottom text-right" />
+              <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-2 align-bottom text-right" />
+              <AntetFiltrabil cheie="coduri" eticheta="Coduri active" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("coduri")} />
+              <AntetFiltrabil cheie="stare" eticheta="Stare" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stare")} />
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {grupuriProcesate.map((g) => {
+              const stareCls =
+                g.stareLabel === "Epuizat" ? "text-rose-700 bg-rose-50"
+                : g.stareLabel === "Scăzut" ? "text-amber-700 bg-amber-50"
+                : "text-emerald-700 bg-emerald-50";
+              return (
+                <tr key={g.bazaCod} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs font-mono">({g.bazaCod})</span></td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium">{g.stocTotal} {g.um}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(g.valoareTotal)}</td>
+                  <td className="px-3 py-2 text-xs text-stone-500">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"}</td>
+                  <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareCls}`}>{g.stareLabel}</span></td>
+                  <td className="px-3 py-2">
+                    {!permisiuni.citireOnly && (
+                      <Btn variant="ghost" onClick={() => setVariantaFor(g.coduri[g.coduri.length - 1])}>Preț nou</Btn>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Coduri individuale (istoric prețuri)</div>
+        <BaraCautarePaginare
+          cautare={cautareCod} onCautare={setCautareCod}
+          pagina={paginaCod} totalPagini={totalPaginiCod} onPagina={setPaginaCod}
+          totalFiltrate={totalCoduriFiltrate} placeholder="Caută cod sau denumire..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Cod (nomenclator)</th>
+              <th className="px-3 py-2 text-right">Cost</th>
+              <th className="px-3 py-2 text-right">Preț vânzare</th>
+              <th className="px-3 py-2 text-right">Stoc pe cod</th>
+              <th className="px-3 py-2 text-right">Ordine FIFO</th>
+            </tr>
+          </thead>
+          <tbody>
+            {coduriAfisate.map((a) => (
+              <tr key={a.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <td className="px-3 py-2 font-mono text-xs font-medium text-[#1F3864]">{a.cod}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-stone-500">{fmt(a.pretAchizitie)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fmt(a.pretVanzare)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium">{a.stoc}</td>
+                <td className="px-3 py-2 text-right text-xs text-stone-400">#{a.seq}{a.stoc === 0 ? " (epuizat)" : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+            </>
+          )}
+        </>
+      )}
+
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
+          Recepții recente — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">NRCD</th>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Cod</th>
+              <th className="px-3 py-2 text-right">Cantitate</th>
+              <th className="px-3 py-2 text-right">Valoare</th>
+              <th className="px-3 py-2">Furnizor</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...state.miscariStoc].filter((m) => m.tip === "intrare").sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 10).map((m) => {
+              const art = state.articole.find((a) => a.id === m.articolId);
+              const anInchisDefinitiv = !!state.exercitiiFinanciare?.[yearOf(m.data)]?.inchisDefinitiv;
+              return (
+                <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 tabular-nums">{m.nrNRCD}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(m.data)}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{m.cantitate}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(m.valoareAchizitie)}</td>
+                  <td className="px-3 py-2 text-stone-500">{m.furnizor}</td>
+                  <td className="px-3 py-2">
+                    {anInchisDefinitiv ? (
+                      <span className="text-xs text-stone-400">Închis definitiv</span>
+                    ) : (
+                      !permisiuni.citireOnly && <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
+          Vânzări recente — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Chitanță</th>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Cod bază</th>
+              <th className="px-3 py-2 text-right">Cantitate</th>
+              <th className="px-3 py-2 text-right">Valoare</th>
+              <th className="px-3 py-2">Terț</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.values(
+              [...state.miscariStoc].filter((m) => m.tip === "iesire" && m.nrChitanta).reduce((acc, m) => {
+                const key = `${m.anChitanta}-${m.nrChitanta}`;
+                if (!acc[key]) acc[key] = { nrChitanta: m.nrChitanta, anChitanta: m.anChitanta, data: m.data, cantitate: 0, valoare: 0, articolId: m.articolId };
+                acc[key].cantitate += m.cantitate;
+                acc[key].valoare += m.valoareTotala;
+                return acc;
+              }, {})
+            ).sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 10).map((v) => {
+              const art = state.articole.find((a) => a.id === v.articolId);
+              const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
+              const anInchisDefinitiv = !!state.exercitiiFinanciare?.[v.anChitanta]?.inchisDefinitiv;
+              return (
+                <tr key={`${v.anChitanta}-${v.nrChitanta}`} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 tabular-nums">{v.nrChitanta}/{v.anChitanta}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(v.data)}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{art?.bazaCod || "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{v.cantitate}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(v.valoare)}</td>
+                  <td className="px-3 py-2 text-stone-500">{opChit?.tert || "—"}</td>
+                  <td className="px-3 py-2">
+                    {anInchisDefinitiv ? (
+                      <span className="text-xs text-stone-400">Închis definitiv</span>
+                    ) : (
+                      !permisiuni.citireOnly && (
+                        <Btn variant="gold" onClick={() => setEditVanzareFor({ ...v, tert: opChit?.tert || "", modPlata: opChit?.modPlata || "numerar" })}>
+                          Modifică
+                        </Btn>
+                      )
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {editReceptieFor && (
+        <ReceptieEditForm
+          miscare={editReceptieFor}
+          onClose={() => setEditReceptieFor(null)}
+          onSave={async (opts) => { await editeazaReceptie(editReceptieFor.id, opts); setEditReceptieFor(null); }}
+        />
+      )}
+
+      {editVanzareFor && (
+        <VanzareEditForm
+          vanzare={editVanzareFor}
+          onClose={() => setEditVanzareFor(null)}
+          onSave={async (opts) => { await editeazaVanzare(editVanzareFor.nrChitanta, editVanzareFor.anChitanta, opts); setEditVanzareFor(null); }}
+        />
+      )}
+
+      {showArticol && (
+        <ArticolForm onClose={() => setShowArticol(false)} onSave={async (a, foto) => { await addArticol(a, foto); setShowArticol(false); }} />
+      )}
+      {variantaFor && (
+        <ArticolForm
+          variantaDin={variantaFor}
+          onClose={() => setVariantaFor(null)}
+          onSave={async (a, foto) => { await addArticol(a, foto); setVariantaFor(null); }}
+        />
+      )}
+      {showReceptieNRCD && (
+        <ReceptieNRCDForm
+          articole={state.articole}
+          parteneri={parteneri}
+          onCreatPartener={onCreatPartener}
+          furnizoriAutorizati={[state.parohie?.eparhie, state.parohie?.protoierie].filter(Boolean)}
+          onClose={() => setShowReceptieNRCD(false)}
+          onSave={async (linii, opts) => { await receptieNRCD(linii, opts); setShowReceptieNRCD(false); }}
+        />
+      )}
+      {showVanzare && (
+        <VanzareMultiplaForm
+          grupuri={grupuri}
+          previewNr={previzualizeazaUrmatorulNumar(state.operatiuni, yearOf(todayISO()), "incasare")}
+          parteneri={parteneri}
+          onCreatPartener={onCreatPartener}
+          donatoriIstorici={donatoriIstorici}
+          onClose={() => setShowVanzare(false)}
+          onSave={async (linii, data, tert, modPlata) => { await vanzareMultipla(linii, data, tert, modPlata); setShowVanzare(false); }}
+        />
+      )}
+      {showNRCD && (
+        <DocumentBrowserGeneric
+          tipEtichetat="Notă de Recepție și Constatare de Diferențe (NRCD)"
+          documente={state.miscariStoc
+            .filter((m) => m.nrNRCD)
+            .map((m) => ({
+              nr: m.nrNRCD, an: yearOf(m.data), data: m.data, furnizor: m.furnizor, nrFactura: m.nrFactura,
+              articol: state.articole.find((a) => a.id === m.articolId)?.cod || m.articolId,
+              cantitate: m.cantitate, valoareAchizitie: m.valoareAchizitie,
+            }))
+            .sort((a, b) => (a.an !== b.an ? a.an - b.an : a.nr - b.nr))}
+          campuriAntet={[
+            { label: "Data recepției", value: (d) => fmtDataJurnal(d.data) },
+            { label: "Furnizor", value: (d) => d.furnizor },
+            { label: "Nr. factură furnizor", value: (d) => d.nrFactura },
+            { label: "Articol recepționat", value: (d) => d.articol },
+            { label: "Cantitate", value: (d) => String(d.cantitate) },
+            { label: "Valoare (cost achiziție)", value: (d) => `${fmt(d.valoareAchizitie)} lei` },
+          ]}
+          parohie={state.parohie}
+          onClose={() => setShowNRCD(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ArticolForm({ variantaDin, onClose, onSave }) {
+  const [bazaCod, setBazaCod] = useState(variantaDin?.bazaCod || "");
+  const [denumire, setDenumire] = useState(variantaDin?.denumire || "");
+  const [um, setUm] = useState(variantaDin?.um || "buc");
+  const [pretAchizitie, setPretAchizitie] = useState("");
+  const [pretVanzare, setPretVanzare] = useState("");
+  const [categorieBVC, setCategorieBVC] = useState(variantaDin?.categorieBVC || "lumanari");
+  const [fotografie, setFotografie] = useState(null);
+  const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [salvand, setSalvand] = useState(false);
+
+  const codPreview = bazaCod && pretAchizitie && pretVanzare ? buildCod(bazaCod, pretAchizitie, pretVanzare) : null;
+
+  function validate() {
+    if (!bazaCod.trim() || !denumire.trim() || !um.trim() || !pretAchizitie || !pretVanzare) {
+      setError("Toate câmpurile sunt obligatorii.");
+      return false;
+    }
+    if (/[.\s]/.test(bazaCod.trim())) {
+      // punctul e permis ca separator intern al acronimului (ex: LUM.P.100B) — doar spațiile sunt interzise
+    }
+    if (/\s/.test(bazaCod.trim())) {
+      setError("Codul de bază (acronimul) nu poate conține spații.");
+      return false;
+    }
+    return true;
+  }
+
+  function cerereValidare() {
+    setError("");
+    if (!validate()) return;
+    setConfirming(true);
+  }
+
+  async function confirmaDefinitiv() {
+    setSalvand(true);
+    try {
+      await onSave({
+        bazaCod: bazaCod.trim().toUpperCase(),
+        denumire: denumire.trim(),
+        um: um.trim(),
+        pretAchizitie: Number(pretAchizitie),
+        pretVanzare: Number(pretVanzare),
+        categorieBVC: variantaDin?.categorieBVC || categorieBVC,
+      }, fotografie);
+    } catch (e) {
+      setConfirming(false);
+      setError(e.message || "Eroare la salvarea produsului. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  if (confirming) {
+    return (
+      <Modal title="Confirmare — cod produs ireversibil" onClose={() => setConfirming(false)}>
+        <div className="flex flex-col gap-4">
+          <div className="bg-stone-50 border border-stone-200 rounded-md p-3 text-center">
+            <div className="text-[11px] text-stone-500 uppercase tracking-wide mb-1">Cod generat</div>
+            <div className="font-mono text-lg text-[#1F3864] font-semibold">
+              {buildCod(bazaCod.trim().toUpperCase(), pretAchizitie, pretVanzare)}
+            </div>
+          </div>
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>
+              Atenție! După validare, acest produs devine <strong>needitabil, ireversibil</strong>. Denumirea, costul
+              și prețul de vânzare nu vor mai putea fi modificate pe acest cod — orice schimbare ulterioară de preț va
+              genera un cod nou, distinct.
+            </span>
+          </p>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" onClick={() => setConfirming(false)} disabled={salvand}>Înapoi, mai verific</Btn>
+            <Btn variant="danger" onClick={confirmaDefinitiv} disabled={salvand}>{salvand ? "Se salvează..." : "Confirm definitiv"}</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={variantaDin ? `Preț nou — variantă pentru ${variantaDin.bazaCod}` : "Produs nou de pangar"} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        {variantaDin && (
+          <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+            Produsul curent (cod {variantaDin.cod}) rămâne neschimbat, cu istoricul lui de stoc. Se va crea un cod nou,
+            cu stoc pornind de la 0, pentru noul cost/preț.
+          </p>
+        )}
+        <Field label="Cod de bază (acronim) — ex: LUM.P.100B">
+          <input
+            className={`${inputCls} font-mono`}
+            value={bazaCod}
+            onChange={(e) => setBazaCod(e.target.value)}
+            placeholder="NUME.TIP.VARIANTĂ"
+            disabled={!!variantaDin}
+          />
+        </Field>
+        <Field label="Denumire completă">
+          <input className={inputCls} value={denumire} onChange={(e) => setDenumire(e.target.value)} disabled={!!variantaDin} />
+        </Field>
+        <Field label="Categorie (determină articolele bugetare pe care se defalcă automat achiziția și vânzarea)">
+          {variantaDin ? (
+            <div className="text-sm text-stone-600 bg-stone-50 border border-stone-200 rounded-md px-3 py-2">
+              {CATEGORII_PANGAR[variantaDin.categorieBVC]?.label || variantaDin.categorieBVC}
+            </div>
+          ) : (
+            <select className={inputCls} value={categorieBVC} onChange={(e) => setCategorieBVC(e.target.value)}>
+              {Object.entries(CATEGORII_PANGAR).map(([key, c]) => (
+                <option key={key} value={key}>{c.label}</option>
+              ))}
+            </select>
+          )}
+        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Unitate">
+            <input className={inputCls} value={um} onChange={(e) => setUm(e.target.value)} disabled={!!variantaDin} />
+          </Field>
+          <Field label="Cost (achiziție)">
+            <input type="number" step="0.01" className={inputCls} value={pretAchizitie} onChange={(e) => setPretAchizitie(e.target.value)} />
+          </Field>
+          <Field label="Preț vânzare">
+            <input type="number" step="0.01" className={inputCls} value={pretVanzare} onChange={(e) => setPretVanzare(e.target.value)} />
+          </Field>
+        </div>
+        {codPreview && (
+          <div className="text-xs text-stone-500">
+            Cod ce va fi generat: <span className="font-mono text-[#1F3864] font-medium">{buildCod(bazaCod.trim().toUpperCase() || bazaCod, pretAchizitie, pretVanzare)}</span>
+          </div>
+        )}
+        <Field label="Fotografie produs (opțional — apare doar în nomenclator, la răsfoire, niciodată în listele de selecție)">
+          <input type="file" accept="image/*" className={inputCls} onChange={(e) => setFotografie(e.target.files?.[0] || null)} />
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+          <Btn variant="gold" onClick={cerereValidare}>Validează</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ReceptieEditForm({ miscare, onClose, onSave }) {
+  const [cantitate, setCantitate] = useState(String(miscare.cantitate));
+  const [furnizor, setFurnizor] = useState(miscare.furnizor || "");
+  const [nrFactura, setNrFactura] = useState(miscare.nrFactura || "");
+  const [data, setData] = useState(miscare.data);
+  const [dataScadenta, setDataScadenta] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    const cant = Number(cantitate);
+    if (!cant || cant <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (!furnizor.trim() || !nrFactura.trim() || !data) { setError("Furnizorul, numărul facturii și data sunt obligatorii."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ cantitate: cant, furnizor: furnizor.trim(), nrFactura: nrFactura.trim(), data, dataScadenta });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Modifică recepția — NRCD nr. ${miscare.nrNRCD}`} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Cantitate recepționată">
+            <input type="number" className={inputCls} value={cantitate} onChange={(e) => setCantitate(e.target.value)} />
+          </Field>
+          <Field label="Data recepției">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Furnizor">
+            <input className={inputCls} value={furnizor} onChange={(e) => setFurnizor(e.target.value)} />
+          </Field>
+          <Field label="Nr. factură">
+            <input className={inputCls} value={nrFactura} onChange={(e) => setNrFactura(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Dată scadentă (relevantă doar dacă factura era încă neachitată)">
+          <input type="date" className={inputCls} value={dataScadenta} onChange={(e) => setDataScadenta(e.target.value)} />
+          {dataScadenta && <span className="text-xs text-stone-400">{fmtDataJurnal(dataScadenta)}</span>}
+        </Field>
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Reducerea cantității e blocată dacă stocul curent al acestui cod nu mai acoperă diferența (adică s-a
+          vândut deja o parte). Statusul de plată (achitată/datorie) rămâne cel original, doar suma se actualizează.
+        </p>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function VanzareEditForm({ vanzare, onClose, onSave }) {
+  const [cantitate, setCantitate] = useState(String(vanzare.cantitate));
+  const [data, setData] = useState(vanzare.data);
+  const [tert, setTert] = useState(vanzare.tert || "");
+  const [modPlata, setModPlata] = useState(vanzare.modPlata || "numerar");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    const cant = Number(cantitate);
+    if (!cant || cant <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (!data) { setError("Data e obligatorie."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ cantitate: cant, data, tert: tert.trim(), modPlata });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Modifică vânzarea — chitanță nr. ${vanzare.nrChitanta}/${vanzare.anChitanta}`} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Cantitate vândută">
+            <input type="number" className={inputCls} value={cantitate} onChange={(e) => setCantitate(e.target.value)} />
+          </Field>
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Terț (credincios/cumpărător)">
+            <input className={inputCls} value={tert} onChange={(e) => setTert(e.target.value)} />
+          </Field>
+          <Field label="Mod plată">
+            <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
+              <option value="numerar">Numerar (casă)</option>
+              <option value="transfer">Transfer bancar</option>
+            </select>
+          </Field>
+        </div>
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Modificarea cantității reface automat defalcarea FIFO (venit propriu / venit tranzitoriu), consumând din
+          loturile disponibile în ordinea vechimii lor. Blocată dacă stocul disponibil nu acoperă noua cantitate.
+        </p>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Recepție NRCD cu linii multiple — mai multe produse diferite, pe aceeași factură, exact ca la
+// o factură reală. Produsele se aleg strict din nomenclator (fără introducere manuală de text),
+// din listă derulantă — orice produs nou creat apare automat aici, fără nimic suplimentar.
+function ReceptieNRCDForm({ articole, parteneri, onCreatPartener, furnizoriAutorizati, onClose, onSave }) {
+  const [pas, setPas] = useState("detalii"); // detalii | decizie | acum | amanata
+  const [furnizor, setFurnizor] = useState("");
+  const [nrFactura, setNrFactura] = useState("");
+  const [data, setData] = useState(todayISO());
+  const [linii, setLinii] = useState([{ id: uid(), articolId: "", cantitate: "" }]);
+  const [modPlata, setModPlata] = useState("transfer");
+  const [dataScadenta, setDataScadenta] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  const articoleSortate = useMemo(() => [...articole].sort((a, b) => a.seq - b.seq), [articole]);
+  const articolById = useMemo(() => Object.fromEntries(articole.map((a) => [a.id, a])), [articole]);
+
+  const liniiValide = linii.filter((l) => l.articolId && Number(l.cantitate) > 0);
+  const valoareAchizitieTotala = liniiValide.reduce((sum, l) => sum + Number(l.cantitate) * (articolById[l.articolId]?.pretAchizitie || 0), 0);
+  const toateLiniileEligibileScadentaAutomata =
+    liniiValide.length > 0 && liniiValide.every((l) => CATEGORII_SCADENTA_AUTOMATA.includes(articolById[l.articolId]?.categorieBVC));
+
+  useEffect(() => {
+    if (toateLiniileEligibileScadentaAutomata && data) {
+      setDataScadenta(adaugaZile(data, 60));
+    }
+  }, [toateLiniileEligibileScadentaAutomata, data]);
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), articolId: "", cantitate: "" }]);
+  }
+
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  function validateDetalii() {
+    if (!furnizor.trim()) { setError("Furnizorul este obligatoriu."); return false; }
+    if (!nrFactura.trim()) { setError("Numărul facturii este obligatoriu."); return false; }
+    if (!data) { setError("Data este obligatorie."); return false; }
+    if (linii.some((l) => !l.articolId)) { setError("Fiecare linie trebuie să aibă un produs selectat din nomenclator."); return false; }
+    if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return false; }
+    setError("");
+    return true;
+  }
+
+  function mergiLaDecizie() {
+    if (!validateDetalii()) return;
+    setPas("decizie");
+  }
+
+  async function finalizeaza(plataAcum) {
+    if (!plataAcum && !dataScadenta) {
+      setError("Introduceți data scadentă a facturii.");
+      return;
+    }
+    setSalvand(true);
+    try {
+      await onSave(
+        liniiValide.map((l) => ({ articolId: l.articolId, cantitate: Number(l.cantitate) })),
+        { furnizor: furnizor.trim(), nrFactura: nrFactura.trim(), data, plataAcum, modPlata, dataScadenta: plataAcum ? null : dataScadenta }
+      );
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea recepției. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  if (pas === "detalii") {
+    return (
+      <Modal title="Recepție marfă — Notă de Recepție și Constatare de Diferențe (NRCD)" onClose={onClose} wide>
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-stone-500">
+            O recepție poate acoperi mai multe produse diferite, pe aceeași factură. Produsele se aleg din nomenclator;
+            orice produs nou creat apare automat în listă.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <SelectorPartener id="nrcd" label="Furnizor" value={furnizor} onChange={setFurnizor} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false} autoCreeaza sugestiiSuplimentare={furnizoriAutorizati} />
+            <Field label="Nr. factură">
+              <input className={inputCls} value={nrFactura} onChange={(e) => setNrFactura(e.target.value)} />
+            </Field>
+            <Field label="Data facturii">
+              <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+              {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+            </Field>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Produse recepționate</div>
+            {linii.map((l, i) => {
+              const art = articolById[l.articolId];
+              return (
+                <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-6">
+                    <Field label={`Produs (linia ${i + 1})`}>
+                      <select className={inputCls} value={l.articolId} onChange={(e) => actualizeazaLinie(l.id, { articolId: e.target.value })}>
+                        <option value="">— selectați din nomenclator —</option>
+                        {articoleSortate.map((a) => (
+                          <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-2">
+                    <Field label="Cantitate">
+                      <input type="number" step="1" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div className="col-span-3 text-xs text-stone-500 pb-1.5">
+                    {art && l.cantitate > 0 && (
+                      <>Cost total: <span className="font-medium tabular-nums">{fmt(Number(l.cantitate) * art.pretAchizitie)} lei</span></>
+                    )}
+                  </div>
+                  <div className="col-span-1 flex justify-center pb-1.5">
+                    <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </Card>
+              );
+            })}
+            <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+              <Plus size={14} /> Adaugă produs
+            </Btn>
+          </div>
+
+          <Card className="p-3 bg-stone-50 flex items-center justify-between">
+            <span className="text-sm font-medium text-stone-600">Valoare totală (cost achiziție)</span>
+            <span className="font-serif text-lg text-[#1F3864] tabular-nums">{fmt(valoareAchizitieTotala)} lei</span>
+          </Card>
+
+          {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+
+          <div className="flex justify-end gap-2 mt-2">
+            <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+            <Btn variant="gold" onClick={mergiLaDecizie}>Continuă</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (pas === "decizie") {
+    return (
+      <Modal title="Plata facturii" onClose={() => setPas("detalii")}>
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-stone-600">Factura {nrFactura} de la {furnizor}, în valoare de {fmt(valoareAchizitieTotala)} lei, se achită acum, sau se înregistrează ca datorie, plătibilă ulterior?</p>
+          <div className="flex flex-col gap-2">
+            <Btn variant="gold" onClick={() => setPas("acum")} className="justify-center">Se achită acum</Btn>
+            <Btn variant="ghost" onClick={() => setPas("amanata")} className="justify-center">Nu, plata ulterioară</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (pas === "acum") {
+    return (
+      <Modal title="Plată la recepție" onClose={() => setPas("decizie")}>
+        <div className="flex flex-col gap-3">
+          <Field label="Mod de plată">
+            <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
+              <option value="numerar">Numerar (casă)</option>
+              <option value="transfer">Transfer bancar</option>
+            </select>
+          </Field>
+          <Card className="p-3 bg-stone-50 text-xs flex justify-between">
+            <span>Sumă de plată</span>
+            <span className="tabular-nums font-medium">{fmt(valoareAchizitieTotala)} RON</span>
+          </Card>
+          {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+          <div className="flex justify-end gap-2 mt-2">
+            <Btn variant="ghost" onClick={() => setPas("decizie")} disabled={salvand}>Înapoi</Btn>
+            <Btn variant="gold" onClick={() => finalizeaza(true)} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă recepția și plata"}</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  // pas === "amanata"
+  return (
+    <Modal title="Plată ulterioară — se înregistrează datorie" onClose={() => setPas("decizie")}>
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-stone-600">
+          Se va înregistra o datorie către furnizor, urmărită separat. Dacă rămâne neachitată peste 60 de zile de la
+          data facturii, va fi semnalată cu alertă pe tabloul de bord.
+        </p>
+        <Field
+          label={toateLiniileEligibileScadentaAutomata ? "Data scadentă a facturii (calculată automat, 60 zile calendaristice de la data facturii)" : "Data scadentă a facturii"}
+          error={error}
+        >
+          <input
+            type="date" className={inputCls} value={dataScadenta}
+            onChange={(e) => setDataScadenta(e.target.value)}
+            readOnly={toateLiniileEligibileScadentaAutomata}
+            disabled={toateLiniileEligibileScadentaAutomata}
+          />
+          {dataScadenta && <span className="text-xs text-stone-400">{fmtDataJurnal(dataScadenta)}</span>}
+        </Field>
+        <Card className="p-3 bg-stone-50 text-xs flex justify-between">
+          <span>Datorie înregistrată către {furnizor}</span>
+          <span className="tabular-nums font-medium">{fmt(valoareAchizitieTotala)} RON</span>
+        </Card>
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={() => setPas("decizie")} disabled={salvand}>Înapoi</Btn>
+          <Btn variant="gold" onClick={() => finalizeaza(false)} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă recepția (plată amânată)"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function VanzareMultiplaForm({ grupuri, previewNr, parteneri, onCreatPartener, donatoriIstorici, onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [tert, setTert] = useState("");
+  const [modPlata, setModPlata] = useState("numerar");
+  const [linii, setLinii] = useState([{ id: uid(), bazaCod: "", cantitate: "" }]);
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  const an = yearOf(data);
+  const grupuriDisponibile = useMemo(() => grupuri.filter((g) => g.stocTotal > 0).sort((a, b) => a.denumire.localeCompare(b.denumire)), [grupuri]);
+  const grupByBazaCod = useMemo(() => Object.fromEntries(grupuri.map((g) => [g.bazaCod, g])), [grupuri]);
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), bazaCod: "", cantitate: "" }]);
+  }
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  // Defalcare FIFO simulată per linie, doar pentru previzualizare — exact aceeași logică rulează
+  // la salvare, dar citind direct din Supabase (sursă de adevăr).
+  // Defalcare FIFO simulată per linie, doar pentru previzualizare — exact aceeași logică rulează
+  // la salvare, dar citind direct din Supabase (sursă de adevăr). Include și articolele bugetare
+  // reale pe care se înregistrează venitul (diferă pe categorie: lumânări, colportaj, vin, tipar).
+  const defalcarePeLinie = useMemo(() => {
+    return linii.map((l) => {
+      const g = grupByBazaCod[l.bazaCod];
+      const cant = Number(l.cantitate) || 0;
+      if (!g || cant <= 0) return { linieId: l.id, rezultat: [], conturi: [] };
+      let ramas = cant;
+      const rezultat = [];
+      const conturiMap = {};
+      for (const cod of g.coduri) {
+        if (ramas <= 0) break;
+        if (cod.stoc <= 0) continue;
+        const cantDinCod = Math.min(cod.stoc, ramas);
+        ramas -= cantDinCod;
+        rezultat.push({ cod, cantitate: cantDinCod });
+        const cat = CATEGORII_PANGAR[cod.categorieBVC];
+        const cost = cantDinCod * cod.pretAchizitie;
+        const propriu = cantDinCod * cod.pretVanzare - cost;
+        if (!conturiMap[cat.venitTranzitoriu]) conturiMap[cat.venitTranzitoriu] = { contId: cat.venitTranzitoriu, eticheta: "venit tranzitoriu", suma: 0 };
+        if (!conturiMap[cat.venitPropriu]) conturiMap[cat.venitPropriu] = { contId: cat.venitPropriu, eticheta: "venit propriu", suma: 0 };
+        conturiMap[cat.venitTranzitoriu].suma += cost;
+        conturiMap[cat.venitPropriu].suma += propriu;
+      }
+      return { linieId: l.id, denumire: g.denumire, um: g.um, rezultat, conturi: Object.values(conturiMap) };
+    });
+  }, [linii, grupByBazaCod]);
+
+  const totalIncasare = defalcarePeLinie.reduce((sum, dl) => sum + dl.rezultat.reduce((s, r) => s + r.cantitate * r.cod.pretVanzare, 0), 0);
+  const totalCost = defalcarePeLinie.reduce((sum, dl) => sum + dl.rezultat.reduce((s, r) => s + r.cantitate * r.cod.pretAchizitie, 0), 0);
+  const totalPropriu = totalIncasare - totalCost;
+
+  // Totalul pe fiecare articol bugetar real, agregat peste toate liniile — poate avea mai mult
+  // de 2 conturi dacă produsele vândute aparțin unor categorii diferite (ex. lumânări + colportaj).
+  const liniiBugetareGlobale = useMemo(() => {
+    const map = {};
+    for (const dl of defalcarePeLinie) {
+      for (const c of dl.conturi) {
+        if (!map[c.contId]) map[c.contId] = { contId: c.contId, eticheta: c.eticheta, suma: 0 };
+        map[c.contId].suma += c.suma;
+      }
+    }
+    return Object.values(map).filter((l) => l.suma > 0);
+  }, [defalcarePeLinie]);
+
+  async function submit() {
+    if (linii.some((l) => !l.bazaCod)) {
+      setError("Fiecare linie trebuie să aibă un produs selectat.");
+      return;
+    }
+    if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) {
+      setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0.");
+      return;
+    }
+    // Liniile care se referă la același produs se cumulează, ca stocul să fie verificat corect.
+    const cerutePerBaza = {};
+    for (const l of linii) cerutePerBaza[l.bazaCod] = (cerutePerBaza[l.bazaCod] || 0) + Number(l.cantitate);
+    for (const [bazaCod, cerut] of Object.entries(cerutePerBaza)) {
+      const g = grupByBazaCod[bazaCod];
+      if (!g || cerut > g.stocTotal) {
+        setError(`Stoc insuficient pentru ${g?.denumire || bazaCod} — disponibil ${g?.stocTotal ?? 0} ${g?.um || ""}.`);
+        return;
+      }
+    }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave(
+        Object.entries(cerutePerBaza).map(([bazaCod, cantitateTotala]) => ({ bazaCod, cantitateTotala })),
+        data, tert.trim(), modPlata
+      );
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea vânzării. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Emitere document nou" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <DocumentHeader tip="Chitanță" nr={previewNr} an={an} />
+        <p className="text-xs text-stone-500">
+          O vânzare poate acoperi mai multe produse diferite, pe o singură chitanță. Chitanța se defalcă automat pe
+          articolele bugetare de venit (tranzitoriu și propriu) — diferite pe categorie de produs — pentru fiecare
+          cod FIFO atins.
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Sursa încasării">
+            <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
+              <option value="numerar">Numerar (casă)</option>
+              <option value="transfer">Transfer bancar</option>
+            </select>
+          </Field>
+        </div>
+        <SelectorPartener
+          id="vanzare-pangar" label="Cumpărător (opțional)"
+          value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
+          sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
+        />
+
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Produse vândute</div>
+          {linii.map((l, i) => {
+            const dl = defalcarePeLinie.find((d) => d.linieId === l.id);
+            return (
+              <Card key={l.id} className="p-3 flex flex-col gap-2">
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-6">
+                    <Field label={`Produs (linia ${i + 1})`}>
+                      <select className={inputCls} value={l.bazaCod} onChange={(e) => actualizeazaLinie(l.id, { bazaCod: e.target.value })}>
+                        <option value="">— selectați —</option>
+                        {grupuriDisponibile.map((g) => (
+                          <option key={g.bazaCod} value={g.bazaCod}>{g.denumire} (stoc: {g.stocTotal} {g.um})</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-3">
+                    <Field label="Cantitate">
+                      <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} />
+                    </Field>
+                  </div>
+                  <div className="col-span-2 text-xs text-stone-500 pb-1.5">
+                    {dl && dl.rezultat.length > 0 && (
+                      <>Total: <span className="font-medium tabular-nums">{fmt(dl.rezultat.reduce((s, r) => s + r.cantitate * r.cod.pretVanzare, 0))} lei</span></>
+                    )}
+                  </div>
+                  <div className="col-span-1 flex justify-center pb-1.5">
+                    <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+                {dl && dl.rezultat.length > 0 && (
+                  <div className="text-xs text-stone-400 pl-1 flex flex-col gap-0.5">
+                    <div>FIFO: {dl.rezultat.map((r) => `${r.cantitate} × ${r.cod.cod}`).join("  +  ")}</div>
+                    <div>
+                      Articole bugetare: {dl.conturi.map((c) => `${c.contId} (${c.eticheta}) — ${fmt(c.suma)} lei`).join("  •  ")}
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă produs
+          </Btn>
+        </div>
+
+        <Card className="p-3 bg-stone-50 text-xs flex flex-col gap-1">
+          <div className="flex justify-between font-medium"><span>Total încasare (o singură chitanță)</span><span className="tabular-nums">{fmt(totalIncasare)} RON</span></div>
+          {liniiBugetareGlobale.map((l) => (
+            <div key={l.contId} className="flex justify-between text-stone-500">
+              <span>↳ {l.contId} ({l.eticheta}), cumulat</span>
+              <span className="tabular-nums">{fmt(l.suma)} RON</span>
+            </div>
+          ))}
+        </Card>
+
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="verde" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Emite chitanță și vinde"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Rapoarte -------------------------------- */
+
+// Raport detaliat pe articole bugetare (Partizi Venituri-Încasări sau Partizi Cheltuieli-Plăți):
+// grupează operațiunile pe cont BVC, iar în interiorul fiecărui grup calculează rulajul cumulat (Sold),
+// cu o linie de total situată deasupra primei tranzacții din rulajul acelui articol bugetar.
+function construiesteRaportDetaliatPartizi(operatiuni, conturi, tip, interval) {
+  const clasaTinta = tip === "incasare" ? "venit" : "cheltuiala";
+  const conturiRelevante = conturi.filter((c) => c.clasa === clasaTinta);
+
+  const indexate = operatiuni.map((op, idx) => ({ op, idx }));
+
+  return conturiRelevante
+    .map((cont) => {
+      const aleContului = indexate
+        .filter(({ op }) => op.contId === cont.id && op.tip === tip && op.data >= interval.start && op.data <= interval.final)
+        .sort((a, b) => (a.op.data !== b.op.data ? (a.op.data < b.op.data ? -1 : 1) : a.idx - b.idx));
+
+      let sold = 0;
+      const randuri = aleContului.map(({ op }) => {
+        sold += op.suma;
+        return { op, sold };
+      });
+
+      const total = sold; // soldul de după ultima operațiune = totalul rulajului
+      return { cont, total, randuri };
+    })
+    .filter((g) => g.randuri.length > 0);
+}
+
+function RapoarteTab({ state, setState, derived }) {
+  const aniDisponibili = useMemo(() => {
+    const ani = new Set(state.operatiuni.map((op) => op.an));
+    Object.keys(state.prevederiBugetare || {}).forEach((a) => ani.add(Number(a)));
+    ani.add(new Date().getFullYear());
+    ani.add(new Date().getFullYear() + 1);
+    return Array.from(ani).sort((a, b) => b - a);
+  }, [state.operatiuni, state.prevederiBugetare]);
+
+  const [modInterval, setModInterval] = useState("an"); // "an" | "manual"
+  const [anSelectat, setAnSelectat] = useState(aniDisponibili[0]);
+  const [dataStart, setDataStart] = useState(`${aniDisponibili[0]}-01-01`);
+  const [dataFinal, setDataFinal] = useState(todayISO());
+
+  const interval = modInterval === "an"
+    ? { start: `${anSelectat}-01-01`, final: `${anSelectat}-12-31` }
+    : { start: dataStart, final: dataFinal };
+
+  // Recalcul strict pe perioada selectată (rulaj), plus solduri cumulate la data finală a intervalului.
+  const stats = useMemo(() => {
+    let totalVenituri = 0;
+    let totalCheltuieli = 0;
+    let soldCasaLaData = 0;
+    let soldBancaLaData = 0;
+    const rulajPeCont = {};
+
+    for (const op of state.operatiuni) {
+      const cont = derived.contById[op.contId];
+      const eViramente = cont?.clasa === "viramente";
+      const eAjustare106 = op.contId === "106" && op.tip === "plata" && op.ajustare106;
+      const semn = op.tip === "incasare" ? 1 : -1;
+
+      if (op.data <= interval.final) {
+        if (op.modPlata === "numerar") soldCasaLaData += semn * op.suma;
+        else soldBancaLaData += semn * op.suma;
+      }
+
+      if (op.data >= interval.start && op.data <= interval.final) {
+        if (!rulajPeCont[op.contId]) rulajPeCont[op.contId] = { incasari: 0, plati: 0 };
+        if (op.tip === "incasare") rulajPeCont[op.contId].incasari += op.suma;
+        else rulajPeCont[op.contId].plati += op.suma;
+
+        if (!eViramente) {
+          if (op.tip === "incasare") totalVenituri += op.suma;
+          else if (!eAjustare106) totalCheltuieli += op.suma;
+        }
+      }
+    }
+    return { totalVenituri, totalCheltuieli, soldCasaLaData, soldBancaLaData, rulajPeCont };
+  }, [state.operatiuni, derived.contById, interval.start, interval.final]);
+
+  const venituriConturi = state.conturi.filter((c) => c.clasa === "venit");
+  const cheltuieliConturi = state.conturi.filter((c) => c.clasa === "cheltuiala");
+
+  const raportAnual = useMemo(() => construiesteRaportAnualComplet(state, anSelectat), [state, anSelectat]);
+
+  // Realizatul pe cont, strict pentru anul selectat (nu perioada liberă) — folosit de rapoartele
+  // de buget (Prevederi/Execuție), care sunt mereu anuale, spre deosebire de Partizi (perioadă liberă).
+  const realizatPeContAn = useMemo(() => {
+    const rez = {};
+    for (const op of state.operatiuni) {
+      if (op.an !== anSelectat) continue;
+      const eAjustare106 = op.contId === "106" && op.tip === "plata" && op.ajustare106;
+      if (eAjustare106) continue;
+      rez[op.contId] = (rez[op.contId] || 0) + op.suma;
+    }
+    return rez;
+  }, [state.operatiuni, anSelectat]);
+
+  function genereazaPartiziVenituri() {
+    const rows = venituriConturi.map((c) => ({
+      cont: c.simbol, denumire: c.denumire, incasari: fmt(stats.rulajPeCont[c.id]?.incasari || 0),
+    }));
+    exportPDF(
+      `Partizi Venituri - Încasări (${fmtDataJurnal(interval.start)} – ${fmtDataJurnal(interval.final)})`,
+      [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "incasari", label: "Încasări (lei)" }],
+      rows, state.parohie
+    );
+  }
+
+  function genereazaPartiziCheltuieli() {
+    const rows = cheltuieliConturi.map((c) => ({
+      cont: c.simbol, denumire: c.denumire, plati: fmt(stats.rulajPeCont[c.id]?.plati || 0),
+    }));
+    exportPDF(
+      `Partizi Cheltuieli - Plăți (${fmtDataJurnal(interval.start)} – ${fmtDataJurnal(interval.final)})`,
+      [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "plati", label: "Plăți (lei)" }],
+      rows, state.parohie
+    );
+  }
+
+  function genereazaBugetPrevederi() {
+    const toate = [...venituriConturi, ...cheltuieliConturi];
+    const rows = toate.map((c) => ({
+      cont: c.simbol, denumire: c.denumire, clasa: c.clasa === "venit" ? "Venit" : "Cheltuială",
+      bugetat: fmt((state.buget[c.id] || {})[anSelectat] || 0),
+    }));
+    exportPDF(
+      `Buget — Prevederi (anul ${anSelectat})`,
+      [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" }, { key: "bugetat", label: "Prevăzut (lei)" }],
+      rows, state.parohie
+    );
+  }
+
+  function genereazaBugetExecutie() {
+    const toate = [...venituriConturi, ...cheltuieliConturi];
+    const rows = toate.map((c) => {
+      const bugetat = (state.buget[c.id] || {})[anSelectat] || 0;
+      const realizat = realizatPeContAn[c.id] || 0;
+      const diferenta = bugetat - realizat;
+      const procent = bugetat > 0 ? (realizat / bugetat) * 100 : realizat > 0 ? 100 : 0;
+      return {
+        cont: c.simbol, denumire: c.denumire, clasa: c.clasa === "venit" ? "Venit" : "Cheltuială",
+        bugetat: fmt(bugetat), realizat: fmt(realizat), diferenta: fmt(diferenta), procent: `${procent.toFixed(0)}%`,
+      };
+    });
+    exportPDF(
+      `Buget — Execuție (anul ${anSelectat})`,
+      [
+        { key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" },
+        { key: "bugetat", label: "Prevăzut (lei)" }, { key: "realizat", label: "Realizat (lei)" },
+        { key: "diferenta", label: "Diferență (lei)" }, { key: "procent", label: "% realizare" },
+      ],
+      rows, state.parohie
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header>
+        <h1 className="font-serif text-2xl text-[#1F3864]">Rapoarte</h1>
+        <p className="text-sm text-stone-500">Centralizatoare și situații, calculate din registrul jurnal.</p>
+      </header>
+
+      <Card className="p-4 border-[#1F3864]/30 bg-[#1F3864]/5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h2 className="font-serif text-lg text-[#1F3864]">Raport anual de sinteză — toate modulele</h2>
+            <p className="text-xs text-stone-500">
+              Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență — un singur document, pentru anul {anSelectat}.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Btn variant="ghost" onClick={() => exportRaportAnualXLSX(raportAnual, state.parohie)}>
+              <FileSpreadsheet size={14} /> XLSX
+            </Btn>
+            <Btn variant="gold" onClick={() => printeazaRaportAnualComplet(raportAnual, state.parohie)}>
+              <Download size={14} /> Generează raport PDF
+            </Btn>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex gap-2">
+            <Btn variant={modInterval === "an" ? "primary" : "ghost"} onClick={() => setModInterval("an")}>An calendaristic</Btn>
+            <Btn variant={modInterval === "manual" ? "primary" : "ghost"} onClick={() => setModInterval("manual")}>Interval definit manual</Btn>
+          </div>
+          {modInterval === "an" ? (
+            <Field label="An">
+              <select className={inputCls} value={anSelectat} onChange={(e) => setAnSelectat(Number(e.target.value))}>
+                {aniDisponibili.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </Field>
+          ) : (
+            <>
+              <Field label="De la data">
+                <input type="date" className={inputCls} value={dataStart} onChange={(e) => setDataStart(e.target.value)} />
+                {dataStart && <span className="text-xs text-stone-400">{fmtDataJurnal(dataStart)}</span>}
+              </Field>
+              <Field label="Până la data">
+                <input type="date" className={inputCls} value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} />
+                {dataFinal && <span className="text-xs text-stone-400">{fmtDataJurnal(dataFinal)}</span>}
+              </Field>
+            </>
+          )}
+        </div>
+        <p className="text-xs text-stone-400 mt-2">
+          Perioadă activă: {fmtDataJurnal(interval.start)} – {fmtDataJurnal(interval.final)}
+        </p>
+      </Card>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Total venituri (perioadă)" value={`${fmt(stats.totalVenituri)} RON`} sub="exclude contul 581" />
+        <StatCard label="Total cheltuieli (perioadă)" value={`${fmt(stats.totalCheltuieli)} RON`} sub="exclude 581 și ajustările 106" />
+        <StatCard label="Sold casă la dată" value={`${fmt(stats.soldCasaLaData)} RON`} />
+        <StatCard label="Sold bancă la dată" value={`${fmt(stats.soldBancaLaData)} RON`} />
+      </div>
+
+      <Card className="p-4">
+        <h2 className="font-serif text-lg text-[#1F3864] mb-1">Generează rapoarte</h2>
+        <p className="text-xs text-stone-500 mb-3">
+          Partizile se generează pentru perioada selectată mai sus; rapoartele de buget sunt mereu anuale, pentru anul {anSelectat}.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Btn variant="gold" onClick={genereazaPartiziVenituri} className="justify-center">
+            <Download size={14} /> Partizi Venituri - Încasări
+          </Btn>
+          <Btn variant="gold" onClick={genereazaPartiziCheltuieli} className="justify-center">
+            <Download size={14} /> Partizi Cheltuieli - Plăți
+          </Btn>
+          <Btn variant="gold" onClick={genereazaBugetPrevederi} className="justify-center">
+            <Download size={14} /> Buget Prevederi
+          </Btn>
+          <Btn variant="gold" onClick={genereazaBugetExecutie} className="justify-center">
+            <Download size={14} /> Buget Execuție
+          </Btn>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ExecutieBugetara({ conturi, buget, operatiuni, prevederiBugetare, aniDisponibili }) {
+  const [an, setAn] = useState(aniDisponibili[0]);
+  const venituriConturi = conturi.filter((c) => c.clasa === "venit");
+  const cheltuieliConturi = conturi.filter((c) => c.clasa === "cheltuiala");
+  const validatPtAn = !!prevederiBugetare?.[an]?.validat;
+
+  const realizatPeCont = useMemo(() => {
+    const rez = {};
+    for (const op of operatiuni) {
+      if (op.an !== an) continue;
+      const eAjustare106 = op.contId === "106" && op.tip === "plata" && op.ajustare106;
+      if (eAjustare106) continue;
+      rez[op.contId] = (rez[op.contId] || 0) + op.suma;
+    }
+    return rez;
+  }, [operatiuni, an]);
+
+  const subtotal = (conturiGrup) => conturiGrup.reduce(
+    (acc, c) => {
+      const bugetat = (buget[c.id] || {})[an] || 0;
+      const realizat = realizatPeCont[c.id] || 0;
+      return { bugetat: acc.bugetat + bugetat, realizat: acc.realizat + realizat };
+    },
+    { bugetat: 0, realizat: 0 }
+  );
+  const subVenituri = subtotal(venituriConturi);
+  const subCheltuieli = subtotal(cheltuieliConturi);
+  const soldFinalBugetat = subVenituri.bugetat - subCheltuieli.bugetat;
+  const soldFinalRealizat = subVenituri.realizat - subCheltuieli.realizat;
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-serif text-lg text-[#1F3864]">Execuție bugetară</h2>
+        <Field label="An bugetar">
+          <select className={inputCls} value={an} onChange={(e) => setAn(Number(e.target.value))}>
+            {aniDisponibili.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </Field>
+      </div>
+      {!validatPtAn && (
+        <p className="text-xs text-stone-400 mb-2">
+          Nu există Prevederi bugetare validate pentru anul {an} — coloana „Bugetat” apare 0 până la validare.
+        </p>
+      )}
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+            <th className="px-2 py-1.5">Art. bug. nr.</th>
+            <th className="px-2 py-1.5">Denumire</th>
+            <th className="px-2 py-1.5 text-right">Bugetat (lei)</th>
+            <th className="px-2 py-1.5 text-right">Realizat (lei)</th>
+            <th className="px-2 py-1.5 text-right">Diferență</th>
+            <th className="px-2 py-1.5 text-right">% realizare</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="bg-emerald-50/60"><td colSpan={6} className="px-2 py-1 text-xs uppercase tracking-wide text-emerald-800 font-medium">Venituri</td></tr>
+          {venituriConturi.map((c) => (
+            <ExecutieBugetaraRand key={c.id} cont={c} bugetat={(buget[c.id] || {})[an] || 0} realizat={realizatPeCont[c.id] || 0} />
+          ))}
+          <ExecutieBugetaraSubtotal eticheta="Subtotal venituri" bugetat={subVenituri.bugetat} realizat={subVenituri.realizat} />
+
+          <tr className="bg-rose-50/60"><td colSpan={6} className="px-2 py-1 text-xs uppercase tracking-wide text-rose-800 font-medium">Cheltuieli</td></tr>
+          {cheltuieliConturi.map((c) => (
+            <ExecutieBugetaraRand key={c.id} cont={c} bugetat={(buget[c.id] || {})[an] || 0} realizat={realizatPeCont[c.id] || 0} />
+          ))}
+          <ExecutieBugetaraSubtotal eticheta="Subtotal cheltuieli" bugetat={subCheltuieli.bugetat} realizat={subCheltuieli.realizat} />
+
+          <tr className="bg-[#1F3864]/10 font-semibold border-t-2 border-[#1F3864]/30">
+            <td className="px-2 py-1.5" colSpan={2}>Sold final</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldFinalBugetat)}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldFinalRealizat)}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldFinalBugetat - soldFinalRealizat)}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
+function ExecutieBugetaraSubtotal({ eticheta, bugetat, realizat }) {
+  const diferenta = bugetat - realizat;
+  const procent = bugetat > 0 ? (realizat / bugetat) * 100 : realizat > 0 ? 100 : 0;
+  return (
+    <tr className="font-semibold border-b-2 border-stone-200">
+      <td className="px-2 py-1.5" colSpan={2}>{eticheta}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(bugetat)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(realizat)}</td>
+      <td className={`px-2 py-1.5 text-right tabular-nums ${diferenta < 0 ? "text-rose-700" : "text-stone-600"}`}>{fmt(diferenta)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-stone-600">{procent.toFixed(0)}%</td>
+    </tr>
+  );
+}
+
+function ExecutieBugetaraRand({ cont, bugetat, realizat }) {
+  const diferenta = bugetat - realizat;
+  const procent = bugetat > 0 ? (realizat / bugetat) * 100 : realizat > 0 ? 100 : 0;
+
+  return (
+    <tr className="border-b border-stone-100">
+      <td className="px-2 py-1.5 font-mono tabular-nums">{cont.simbol}</td>
+      <td className="px-2 py-1.5">{cont.denumire}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(bugetat)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(realizat)}</td>
+      <td className={`px-2 py-1.5 text-right tabular-nums ${diferenta < 0 ? "text-rose-700" : "text-stone-500"}`}>{fmt(diferenta)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{procent.toFixed(0)}%</td>
+    </tr>
+  );
+}
+
+function RulajTable({ conturi, rulajPeCont, tip }) {
+  const total = conturi.reduce((sum, c) => sum + ((rulajPeCont[c.id] || {})[tip] || 0), 0);
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+          <th className="px-2 py-1.5">Simbol</th>
+          <th className="px-2 py-1.5">Denumire</th>
+          <th className="px-2 py-1.5 text-right">Rulaj (RON)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {conturi.map((c) => (
+          <tr key={c.id} className="border-b border-stone-100">
+            <td className="px-2 py-1.5 tabular-nums">{c.simbol}</td>
+            <td className="px-2 py-1.5">{c.denumire}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmt((rulajPeCont[c.id] || {})[tip] || 0)}</td>
+          </tr>
+        ))}
+        <tr className="font-semibold">
+          <td className="px-2 py-1.5" colSpan={2}>Total</td>
+          <td className="px-2 py-1.5 text-right tabular-nums">{fmt(total)}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function RaportDetaliatPartizi({ titlu, grupuri, parohie }) {
+  const coloane = [
+    { key: "artBugNr", label: "Art. bugetar nr." },
+    { key: "denumireArtBug", label: "Denumire art. bugetar" },
+    { key: "data", label: "Data operațiunii" },
+    { key: "partener", label: "Denumire partener" },
+    { key: "explicatie", label: "Explicație" },
+    { key: "suma", label: "Sumă (lei)" },
+    { key: "sold", label: "Sold" },
+  ];
+  const randuriExport = [];
+  grupuri.forEach((g) => {
+    randuriExport.push({
+      artBugNr: g.cont.simbol, denumireArtBug: `TOTAL rulaj — ${g.cont.denumire}`,
+      data: "", partener: "", explicatie: "", suma: fmt(g.total), sold: fmt(g.total),
+    });
+    g.randuri.forEach((r) => {
+      randuriExport.push({
+        artBugNr: g.cont.simbol, denumireArtBug: g.cont.denumire,
+        data: fmtDataJurnal(r.op.data), partener: r.op.tert || "", explicatie: r.op.explicatie || "",
+        suma: fmt(r.op.suma), sold: fmt(r.sold),
+      });
+    });
+  });
+
+  return (
+    <div className="mt-4 pt-4 border-t border-stone-200">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-serif text-base text-[#1F3864]">{titlu}</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-stone-400">Document generat automat, read-only.</span>
+          <ExportMenu titlu={titlu} columns={coloane} rows={randuriExport} parohie={parohie} />
+        </div>
+      </div>
+      {grupuri.length === 0 && (
+        <p className="text-sm text-stone-400 py-4 text-center">Nicio operațiune înregistrată în perioada selectată.</p>
+      )}
+      {grupuri.length > 0 && (
+        <Card className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                <th className="px-2 py-2">Art. bugetar nr.</th>
+                <th className="px-2 py-2">Denumire art. bugetar</th>
+                <th className="px-2 py-2">Data operațiunii</th>
+                <th className="px-2 py-2">Denumire partener</th>
+                <th className="px-2 py-2">Explicație</th>
+                <th className="px-2 py-2 text-right">Sumă (lei)</th>
+                <th className="px-2 py-2 text-right">Sold</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grupuri.map((g) => (
+                <React.Fragment key={g.cont.id}>
+                  <tr className="bg-[#1F3864]/5 font-semibold border-b border-stone-200">
+                    <td className="px-2 py-1.5 font-mono">{g.cont.simbol}</td>
+                    <td className="px-2 py-1.5" colSpan={4}>TOTAL rulaj — {g.cont.denumire}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(g.total)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(g.total)}</td>
+                  </tr>
+                  {g.randuri.map((r) => (
+                    <tr key={r.op.id} className="border-b border-stone-100 hover:bg-stone-50">
+                      <td className="px-2 py-1.5 font-mono text-stone-400">{g.cont.simbol}</td>
+                      <td className="px-2 py-1.5 text-stone-400">{g.cont.denumire}</td>
+                      <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
+                      <td className="px-2 py-1.5">{r.op.tert || "—"}</td>
+                      <td className="px-2 py-1.5 text-stone-500">{r.op.explicatie || "—"}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.op.suma)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.sold)}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function ProfilParohieTab({ state, setState, obligatoriu, setTab }) {
+  const [date, setDate] = useState({
+    areCimitir: false,
+    adresaCimitirDiferita: false,
+    adresaCimitir: { judet: "", localitate: "", strada: "", codPostal: "" },
+    ...state.parohie,
+  });
+  const [modEditare, setModEditare] = useState(obligatoriu || !state.parohie?.denumire);
+  const [salvat, setSalvat] = useState(false);
+  const [fisierImport, setFisierImport] = useState(null);
+  const [eroareImport, setEroareImport] = useState("");
+  const [confirmareImport, setConfirmareImport] = useState(null); // payload validat, în așteptarea confirmării
+  const [eroareObligatoriu, setEroareObligatoriu] = useState("");
+
+  function actualizeaza(patch) {
+    setDate((d) => ({ ...d, ...patch }));
+    setSalvat(false);
+  }
+
+  function salveaza() {
+    const lipsa = [];
+    if (!date.denumire?.trim()) lipsa.push("Denumirea");
+    if (!date.cif?.trim()) lipsa.push("CUI/CIF");
+    if (!date.judet?.trim() || !date.localitate?.trim()) lipsa.push("Adresa/Sediul social (județ și localitate)");
+    if (!date.iban?.trim()) lipsa.push("Cont bancar (IBAN)");
+    if (!date.emailPreot?.trim()) lipsa.push("E-mail");
+    if (!date.telefonPreot?.trim()) lipsa.push("Telefon");
+    if (!date.preotParoh?.trim()) lipsa.push("Reprezentant legal (Preot paroh)");
+    if (lipsa.length > 0) {
+      setEroareObligatoriu(`Completează, te rog: ${lipsa.join(", ")}.`);
+      return;
+    }
+    setEroareObligatoriu("");
+    setState((s) => ({ ...s, parohie: date }));
+    setSalvat(true);
+    setModEditare(false);
+    setTimeout(() => setSalvat(false), 2500);
+  }
+
+  function anuleaza() {
+    setDate({
+      areCimitir: false,
+      adresaCimitirDiferita: false,
+      adresaCimitir: { judet: "", localitate: "", strada: "", codPostal: "" },
+      ...state.parohie,
+    });
+    setModEditare(false);
+  }
+
+  const [confirmareDezactivareCimitir, setConfirmareDezactivareCimitir] = useState(false);
+
+  function dezactiveazaModulCimitir() {
+    setState((s) => ({ ...s, parohie: { ...s.parohie, areCimitir: false } }));
+    setDate((d) => ({ ...d, areCimitir: false }));
+    setConfirmareDezactivareCimitir(false);
+  }
+
+  function activeazaModulCimitir() {
+    setDate((d) => ({ ...d, areCimitir: true }));
+    setModEditare(true);
+  }
+
+  function selecteazaFisier(e) {
+    const file = e.target.files?.[0];
+    setEroareImport("");
+    setFisierImport(null);
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(reader.result);
+        const eroare = valideazaBackup(payload);
+        if (eroare) {
+          setEroareImport(eroare);
+          return;
+        }
+        setConfirmareImport(payload);
+      } catch (err) {
+        setEroareImport("Fișierul nu poate fi citit ca JSON valid.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  function confirmaRestaurare() {
+    setState(confirmareImport.stare);
+    setDate({
+      areCimitir: false,
+      adresaCimitirDiferita: false,
+      adresaCimitir: { judet: "", localitate: "", strada: "", codPostal: "" },
+      ...confirmareImport.stare.parohie,
+    });
+    setModEditare(false);
+    setConfirmareImport(null);
+  }
+
+  return (
+    <div className="flex flex-col gap-4 max-w-3xl">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-2xl text-[#1F3864]">
+            {obligatoriu ? "Bine ai venit — completează datele parohiei" : "Date de identificare a parohiei"}
+          </h1>
+          <p className="text-sm text-stone-500">
+            {obligatoriu
+              ? "Înainte de a continua, e nevoie de datele de bază ale parohiei — apar pe prima pagină și în antetul/subsolul tuturor rapoartelor exportate."
+              : "Aceste date apar pe prima pagină și în antetul/subsolul tuturor rapoartelor exportate."}
+          </p>
+        </div>
+        {modEditare ? (
+          <div className="flex gap-2">
+            {!obligatoriu && <Btn variant="ghost" onClick={anuleaza}>Anulează</Btn>}
+            <Btn variant="gold" onClick={salveaza}>
+              <Check size={14} /> {obligatoriu ? "Continuă" : (salvat ? "Salvat!" : "Salvează")}
+            </Btn>
+          </div>
+        ) : (
+          <Btn variant="gold" onClick={() => setModEditare(true)}>
+            <Pencil size={14} /> Modifică datele
+          </Btn>
+        )}
+      </header>
+
+      {eroareObligatoriu && (
+        <Card className="p-3 border-rose-300 bg-rose-50 text-sm text-rose-800 flex items-center gap-2">
+          <AlertTriangle size={14} /> {eroareObligatoriu}
+        </Card>
+      )}
+
+      {!modEditare && (
+        <Card className="p-4 flex flex-col gap-2">
+          <div className="flex justify-between text-sm"><span className="text-stone-500">Denumire</span><span className="font-medium text-right">{date.denumire || "—"}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-stone-500">Eparhia / Protoieria</span><span className="text-right">{date.eparhie || "—"} / {date.protoierie || "—"}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-stone-500">CIF</span><span className="text-right">{date.cif || "—"}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-stone-500">Adresă</span><span className="text-right">{[date.strada, date.localitate, date.judet].filter(Boolean).join(", ") || "—"}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-stone-500">Preot paroh</span><span className="text-right">{date.preotParoh || "—"}</span></div>
+          <div className="flex justify-between text-sm items-center pt-2 border-t border-stone-100">
+            <span className="text-stone-500">Cimitir parohial</span>
+            {date.areCimitir ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">Activat</span>
+                <Btn variant="ghost" onClick={() => setConfirmareDezactivareCimitir(true)}>Dezactivează</Btn>
+              </div>
+            ) : (
+              <Btn variant="gold" onClick={activeazaModulCimitir}>
+                <Plus size={14} /> Activează modulul Cimitir Parohial
+              </Btn>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {confirmareDezactivareCimitir && (
+        <Modal title="Dezactivare modul Cimitir Parohial" onClose={() => setConfirmareDezactivareCimitir(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <span>
+                Tab-ul „Cimitir Parohial" va dispărea din meniu. Datele deja introduse (locuri, persoane înhumate,
+                concesiuni) <strong>nu se șterg</strong> — rămân în baza de date și reapar automat dacă reactivezi
+                modulul ulterior. Doar accesul din meniu se ascunde.
+              </span>
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setConfirmareDezactivareCimitir(false)}>Renunță</Btn>
+              <Btn variant="danger" onClick={dezactiveazaModulCimitir}>Dezactivează modulul</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {modEditare && (
+      <>
+      <Card className="p-4 flex flex-col gap-3">
+        <h3 className="font-serif text-base text-[#1F3864]">Salvare și restaurare bază de date</h3>
+        <p className="text-xs text-stone-500">
+          Baza de date a acestei parohii este distinctă și independentă (secțiunea 2.1). O poți salva ca fișier de
+          sine stătător, transferabil către altă instalare, sau o poți restaura dintr-o salvare anterioară.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Btn variant="primary" onClick={() => exportBackup(state)}>
+            <Download size={14} /> Descarcă salvare completă (JSON)
+          </Btn>
+          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border border-stone-300 text-stone-600 hover:bg-stone-100 cursor-pointer">
+            <RotateCcw size={14} /> Restaurează dintr-o salvare
+            <input type="file" accept="application/json,.json" className="hidden" onChange={selecteazaFisier} />
+          </label>
+        </div>
+        {eroareImport && (
+          <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroareImport}</span>
+        )}
+      </Card>
+
+      <Card className="p-4 flex flex-col gap-3">
+        <h3 className="font-serif text-base text-[#1F3864]">Identificare de bază</h3>
+        <Field label="Denumire completă a parohiei">
+          <input className={inputCls} value={date.denumire} onChange={(e) => actualizeaza({ denumire: e.target.value })} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Eparhia"><input className={inputCls} value={date.eparhie} onChange={(e) => actualizeaza({ eparhie: e.target.value })} /></Field>
+          <Field label="Protoieria"><input className={inputCls} value={date.protoierie} onChange={(e) => actualizeaza({ protoierie: e.target.value })} /></Field>
+        </div>
+        <Field label="Hramul parohiei"><input className={inputCls} value={date.hram} onChange={(e) => actualizeaza({ hram: e.target.value })} /></Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Cod fiscal (CIF)"><input className={inputCls} value={date.cif} onChange={(e) => actualizeaza({ cif: e.target.value })} /></Field>
+          <Field label="Registrul ANAF al entităților/unităților de cult">
+            <select className={inputCls} value={date.inscrisAnaf || ""} onChange={(e) => actualizeaza({ inscrisAnaf: e.target.value })}>
+              <option value="">— selectați —</option>
+              <option value="inscris">Înscrisă</option>
+              <option value="neinscris">Neînscrisă</option>
+            </select>
+          </Field>
+          <Field label="Cod LMI (dacă e monument istoric)"><input className={inputCls} value={date.codLMI} onChange={(e) => actualizeaza({ codLMI: e.target.value })} /></Field>
+        </div>
+      </Card>
+
+      <Card className="p-4 flex flex-col gap-3">
+        <h3 className="font-serif text-base text-[#1F3864]">Adresă și contact</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Județ"><input className={inputCls} value={date.judet} onChange={(e) => actualizeaza({ judet: e.target.value })} /></Field>
+          <Field label="Localitate"><input className={inputCls} value={date.localitate} onChange={(e) => actualizeaza({ localitate: e.target.value })} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Stradă și număr"><input className={inputCls} value={date.strada} onChange={(e) => actualizeaza({ strada: e.target.value })} /></Field>
+          <Field label="Cod poștal"><input className={inputCls} value={date.codPostal} onChange={(e) => actualizeaza({ codPostal: e.target.value })} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Telefon parohie"><input className={inputCls} value={date.telefon} onChange={(e) => actualizeaza({ telefon: e.target.value })} /></Field>
+          <Field label="E-mail parohie"><input className={inputCls} value={date.email} onChange={(e) => actualizeaza({ email: e.target.value })} /></Field>
+        </div>
+      </Card>
+
+      <Card className="p-4 flex flex-col gap-3">
+        <h3 className="font-serif text-base text-[#1F3864]">Preot paroh</h3>
+        <Field label="Nume și prenume"><input className={inputCls} value={date.preotParoh} onChange={(e) => actualizeaza({ preotParoh: e.target.value })} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Telefon"><input className={inputCls} value={date.telefonPreot} onChange={(e) => actualizeaza({ telefonPreot: e.target.value })} /></Field>
+          <Field label="E-mail"><input className={inputCls} value={date.emailPreot} onChange={(e) => actualizeaza({ emailPreot: e.target.value })} /></Field>
+        </div>
+      </Card>
+
+      <Card className="p-4 flex flex-col gap-3">
+        <h3 className="font-serif text-base text-[#1F3864]">Date bancare</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Bancă"><input className={inputCls} value={date.banca} onChange={(e) => actualizeaza({ banca: e.target.value })} /></Field>
+          <Field label="IBAN"><input className={inputCls} value={date.iban} onChange={(e) => actualizeaza({ iban: e.target.value })} /></Field>
+        </div>
+        <Field label="Data înființării/atestării (opțional)">
+          <input type="date" className={inputCls} value={date.dataInfiintare} onChange={(e) => actualizeaza({ dataInfiintare: e.target.value })} />
+          {date.dataInfiintare && <span className="text-xs text-stone-400">{fmtDataJurnal(date.dataInfiintare)}</span>}
+        </Field>
+      </Card>
+
+      <Card className="p-4 flex flex-col gap-3">
+        <h3 className="font-serif text-base text-[#1F3864]">Cimitir parohial</h3>
+        <p className="text-xs text-stone-500">
+          Modulul „Cimitir Parohial” din meniu se activează doar dacă parohia administrează efectiv un cimitir propriu.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-stone-700">
+          <input
+            type="checkbox"
+            checked={date.areCimitir}
+            onChange={(e) => actualizeaza({ areCimitir: e.target.checked })}
+          />
+          Parohia administrează un cimitir propriu
+        </label>
+
+        {date.areCimitir && (
+          <>
+            <label className="flex items-center gap-2 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                checked={date.adresaCimitirDiferita}
+                onChange={(e) => actualizeaza({ adresaCimitirDiferita: e.target.checked })}
+              />
+              Adresa cimitirului diferă de adresa bisericii parohiale
+            </label>
+
+            {date.adresaCimitirDiferita && (
+              <div className="pl-2 border-l-2 border-stone-200 flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Județ (cimitir)">
+                    <input className={inputCls} value={date.adresaCimitir.judet} onChange={(e) => actualizeaza({ adresaCimitir: { ...date.adresaCimitir, judet: e.target.value } })} />
+                  </Field>
+                  <Field label="Localitate (cimitir)">
+                    <input className={inputCls} value={date.adresaCimitir.localitate} onChange={(e) => actualizeaza({ adresaCimitir: { ...date.adresaCimitir, localitate: e.target.value } })} />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Stradă și număr (cimitir)">
+                    <input className={inputCls} value={date.adresaCimitir.strada} onChange={(e) => actualizeaza({ adresaCimitir: { ...date.adresaCimitir, strada: e.target.value } })} />
+                  </Field>
+                  <Field label="Cod poștal (cimitir)">
+                    <input className={inputCls} value={date.adresaCimitir.codPostal} onChange={(e) => actualizeaza({ adresaCimitir: { ...date.adresaCimitir, codPostal: e.target.value } })} />
+                  </Field>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+      </>
+      )}
+
+      {confirmareImport && (
+        <Modal title="Confirmare restaurare bază de date" onClose={() => setConfirmareImport(null)}>
+          <div className="flex flex-col gap-4">
+            <Card className="p-3 bg-stone-50 text-xs flex flex-col gap-1">
+              <div className="flex justify-between"><span>Parohie din salvare</span><span className="font-medium">{confirmareImport.parohie || "—"}</span></div>
+              <div className="flex justify-between"><span>Data salvării</span><span>{confirmareImport.dataExport ? fmtDataJurnal(confirmareImport.dataExport) : "—"}</span></div>
+              <div className="flex justify-between"><span>Operațiuni incluse</span><span>{confirmareImport.stare.operatiuni?.length ?? 0}</span></div>
+            </Card>
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <span>
+                Atenție! Restaurarea va <strong>înlocui complet</strong> toate datele curente ale acestei parohii cu
+                cele din fișierul de salvare. Această acțiune nu poate fi anulată.
+              </span>
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setConfirmareImport(null)}>Anulează</Btn>
+              <Btn variant="danger" onClick={confirmaRestaurare}>Da, restaurează și înlocuiește datele</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------ Consum intern / Acte filantropice / Protocol -------------------------------- */
+
+const MOTIVE_CONSUM = {
+  consum_intern: { label: "Consum propriu intern", contId: "601.01", cereBeneficiar: false },
+  filantropic: { label: "Act filantropic/caritabil", contId: "671", cereBeneficiar: true },
+  protocol: { label: "Protocol", contId: "623", cereBeneficiar: false },
+};
+
+function ConsumInternTab({ state, setState, permisiuni, parohieId }) {
+  const [showArticol, setShowArticol] = useState(false);
+  const [showReceptie, setShowReceptie] = useState(false);
+  const [showBon, setShowBon] = useState(false);
+  const [showBrowserBon, setShowBrowserBon] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [editReceptieFor, setEditReceptieFor] = useState(null);
+  const [editBonFor, setEditBonFor] = useState(null);
+
+  function addArticol(denumire, um) {
+    setState((s) => ({
+      ...s,
+      articoleConsumIntern: [
+        ...s.articoleConsumIntern,
+        { id: uid(), seq: s.articoleConsumIntern.length + 1, denumire, um, costUnitar: 0, stoc: 0 },
+      ],
+    }));
+  }
+
+  // Recepție cu linii multiple — fiecare linie creează un lot nou, cu costul lui propriu, exact
+  // ca înainte, doar că acum pot fi mai multe articole diferite într-o singură recepție.
+  function receptieMultipla(data, linii) {
+    setState((s) => {
+      let articoleConsumIntern = [...s.articoleConsumIntern];
+      const miscariNoi = [];
+      for (const l of linii) {
+        const lotNou = { id: uid(), seq: articoleConsumIntern.length + 1, denumire: l.denumire, um: l.um, costUnitar: l.cost, stoc: l.cantitate };
+        articoleConsumIntern = [...articoleConsumIntern, lotNou];
+        miscariNoi.push({
+          id: uid(), data, tip: "intrare", articolId: lotNou.id, cantitate: l.cantitate,
+          valoareUnitara: l.cost, valoareTotala: l.cantitate * l.cost,
+        });
+      }
+      return {
+        ...s,
+        articoleConsumIntern,
+        miscariConsumIntern: [...s.miscariConsumIntern, ...miscariNoi],
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Recepție Consum intern — ${linii.map((l) => l.denumire).join(", ")}`),
+      };
+    });
+  }
+
+  // Editare recepție: fiecare recepție e propriul ei lot — cantitatea/costul se pot ajusta direct,
+  // cu condiția să nu scadă sub ce s-a consumat deja din acel lot.
+  function editeazaReceptie(miscareId, opts) {
+    setState((s) => {
+      const miscare = s.miscariConsumIntern.find((m) => m.id === miscareId);
+      if (!miscare || miscare.tip !== "intrare") return s;
+      const lot = s.articoleConsumIntern.find((a) => a.id === miscare.articolId);
+      if (!lot) return s;
+
+      const anNou = yearOf(opts.data);
+      if (anNou !== yearOf(miscare.data)) {
+        setNotice(`Nu poți muta recepția în alt an prin editare — rămâi în ${yearOf(miscare.data)}.`);
+        return s;
+      }
+      if (s.exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+        setNotice(`Exercițiul financiar ${anNou} este închis definitiv — needitabil.`);
+        return s;
+      }
+      const consumatDejaDinLot = miscare.cantitate - lot.stoc;
+      if (opts.cantitate < consumatDejaDinLot) {
+        setNotice(`Nu poți reduce cantitatea sub ce s-a consumat deja din acest lot (${consumatDejaDinLot} ${lot.um}).`);
+        return s;
+      }
+      const stocNouLot = opts.cantitate - consumatDejaDinLot;
+      const articoleConsumIntern = s.articoleConsumIntern.map((a) => (a.id === lot.id ? { ...a, stoc: stocNouLot, costUnitar: opts.costUnitar } : a));
+      const miscariConsumIntern = s.miscariConsumIntern.map((m) => (m.id === miscareId ? {
+        ...m, data: opts.data, cantitate: opts.cantitate, valoareUnitara: opts.costUnitar, valoareTotala: opts.cantitate * opts.costUnitar,
+      } : m));
+
+      return {
+        ...s, articoleConsumIntern, miscariConsumIntern,
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare recepție Consum intern — ${lot.denumire}`),
+      };
+    });
+  }
+
+  async function bonDeConsum({ data, motiv, beneficiar, linii }) {
+    const year = yearOf(data);
+    const nrOP = await rezervaUrmatorulNumar(parohieId, year, "plata");
+    setState((s) => {
+      const nrBon = nextNumber(s, year, "bonConsum");
+      const contoare = commitNumber(s, year, "bonConsum");
+
+      let articoleConsumIntern = [...s.articoleConsumIntern];
+      const miscariNoi = [];
+      let totalValoare = 0;
+      const liniiRezultat = [];
+
+      for (const l of linii) {
+        let ramas = Number(l.cantitate) || 0;
+        if (ramas <= 0) continue;
+        const loturi = articoleConsumIntern
+          .filter((a) => a.denumire === l.denumire && a.um === l.um && a.stoc > 0)
+          .sort((a, b) => a.seq - b.seq);
+        for (const lot of loturi) {
+          if (ramas <= 0) break;
+          const cantDinLot = Math.min(lot.stoc, ramas);
+          ramas -= cantDinLot;
+          const valoare = cantDinLot * lot.costUnitar;
+          articoleConsumIntern = articoleConsumIntern.map((a) =>
+            a.id === lot.id ? { ...a, stoc: a.stoc - cantDinLot } : a
+          );
+          miscariNoi.push({
+            id: uid(), data, tip: "iesire", articolId: lot.id, cantitate: cantDinLot,
+            valoareUnitara: lot.costUnitar, valoareTotala: valoare, nrBon,
+          });
+          totalValoare += valoare;
+          liniiRezultat.push({ articolId: lot.id, denumire: l.denumire, cantitate: cantDinLot, valoare });
+        }
+      }
+
+      const motivInfo = MOTIVE_CONSUM[motiv];
+      const explicatie = `Bon de consum nr. ${nrBon}/${year} — ${motivInfo.label}${beneficiar ? " (" + beneficiar + ")" : ""}`;
+      const op = {
+        id: uid(), tip: "plata", contId: motivInfo.contId, data, suma: totalValoare,
+        modPlata: "numerar", tert: beneficiar || "", explicatie, nr: nrOP, an: year,
+      };
+      const bon = { id: uid(), nr: nrBon, an: year, data, motiv, beneficiar, linii: liniiRezultat, opId: op.id };
+
+      return {
+        ...s,
+        articoleConsumIntern,
+        miscariConsumIntern: [...s.miscariConsumIntern, ...miscariNoi],
+        bonuriConsum: [...s.bonuriConsum, bon],
+        operatiuni: [...s.operatiuni, op],
+        contoare,
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Bon de consum nr. ${nrBon}/${year} — ${motivInfo.label}, ${fmt(totalValoare)} lei`),
+      };
+    });
+  }
+
+  // Editare bon de consum: restituie loturile consumate de bonul vechi, verifică disponibilul,
+  // apoi reface FIFO cu noile linii/motiv/dată — actualizând, în loc, operațiunea financiară legată
+  // (bon.opId), fără să emită un document nou. Blocată integral dacă stocul nu acoperă noile cantități.
+  function editeazaBonConsum(bonId, opts) {
+    setState((s) => {
+      const bon = s.bonuriConsum.find((b) => b.id === bonId);
+      if (!bon) return s;
+
+      const anNou = yearOf(opts.data);
+      if (anNou !== bon.an) {
+        setNotice(`Nu poți muta bonul în alt an prin editare — rămâi în ${bon.an}.`);
+        return s;
+      }
+      if (s.exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+        setNotice(`Exercițiul financiar ${anNou} este închis definitiv — needitabil.`);
+        return s;
+      }
+
+      // Restituim stocul consumat de bonul vechi, ca simulare, ca să verificăm disponibilul.
+      let articoleSimulate = s.articoleConsumIntern.map((a) => {
+        const totalRestituit = bon.linii.filter((l) => l.articolId === a.id).reduce((sum, l) => sum + l.cantitate, 0);
+        return totalRestituit > 0 ? { ...a, stoc: a.stoc + totalRestituit } : a;
+      });
+
+      for (const l of opts.linii) {
+        const disponibil = articoleSimulate.filter((a) => a.denumire === l.denumire && a.um === l.um).reduce((sum, a) => sum + a.stoc, 0);
+        if (Number(l.cantitate) > disponibil) {
+          setNotice(`Stoc insuficient pentru „${l.denumire}” — disponibil: ${disponibil} ${l.um}.`);
+          return s;
+        }
+      }
+
+      let articoleConsumIntern = articoleSimulate;
+      const miscariConsumIntern = s.miscariConsumIntern.filter((m) => !(m.tip === "iesire" && m.nrBon === bon.nr && yearOf(m.data) === bon.an));
+
+      const miscariNoi = [];
+      let totalValoare = 0;
+      const liniiRezultat = [];
+      for (const l of opts.linii) {
+        let ramas = Number(l.cantitate) || 0;
+        if (ramas <= 0) continue;
+        const loturi = articoleConsumIntern.filter((a) => a.denumire === l.denumire && a.um === l.um && a.stoc > 0).sort((a, b) => a.seq - b.seq);
+        for (const lot of loturi) {
+          if (ramas <= 0) break;
+          const cantDinLot = Math.min(lot.stoc, ramas);
+          ramas -= cantDinLot;
+          const valoare = cantDinLot * lot.costUnitar;
+          articoleConsumIntern = articoleConsumIntern.map((a) => (a.id === lot.id ? { ...a, stoc: a.stoc - cantDinLot } : a));
+          miscariNoi.push({
+            id: uid(), data: opts.data, tip: "iesire", articolId: lot.id, cantitate: cantDinLot,
+            valoareUnitara: lot.costUnitar, valoareTotala: valoare, nrBon: bon.nr,
+          });
+          totalValoare += valoare;
+          liniiRezultat.push({ articolId: lot.id, denumire: l.denumire, cantitate: cantDinLot, valoare });
+        }
+      }
+
+      const motivInfo = MOTIVE_CONSUM[opts.motiv];
+      const operatiuni = s.operatiuni.map((op) => (op.id === bon.opId ? {
+        ...op, contId: motivInfo.contId, data: opts.data, suma: totalValoare, tert: opts.beneficiar || "",
+        explicatie: `Bon de consum nr. ${bon.nr}/${bon.an} — ${motivInfo.label}${opts.beneficiar ? " (" + opts.beneficiar + ")" : ""}`,
+      } : op));
+      const bonuriConsum = s.bonuriConsum.map((b) => (b.id === bonId ? { ...b, data: opts.data, motiv: opts.motiv, beneficiar: opts.beneficiar, linii: liniiRezultat } : b));
+
+      return {
+        ...s, articoleConsumIntern, miscariConsumIntern: [...miscariConsumIntern, ...miscariNoi], operatiuni, bonuriConsum,
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare bon de consum nr. ${bon.nr}/${bon.an}`),
+      };
+    });
+  }
+
+  // Grupare pe denumire+UM (produsul, din perspectiva utilizatorului), cu loturile FIFO în spate.
+  const grupeConsumIntern = useMemo(() => {
+    const map = new Map();
+    for (const a of state.articoleConsumIntern) {
+      const key = `${a.denumire}|||${a.um}`;
+      if (!map.has(key)) map.set(key, { denumire: a.denumire, um: a.um, stocTotal: 0, loturi: [] });
+      const g = map.get(key);
+      g.stocTotal += a.stoc;
+      g.loturi.push(a);
+    }
+    for (const g of map.values()) g.loturi.sort((a, b) => a.seq - b.seq);
+    return Array.from(map.values()).sort((a, b) => a.denumire.localeCompare(b.denumire));
+  }, [state.articoleConsumIntern]);
+
+  const configColoaneConsumIntern = useMemo(() => ({
+    articol: { get: (g) => g.denumire },
+    stoc: { get: (g) => g.stocTotal },
+  }), []);
+  const { filtre: filtreConsumIntern, setFiltre: setFiltreConsumIntern, procesate: grupeConsumInternProcesate, sugestiiPentru: sugestiiConsumIntern } =
+    useFiltrareColoane(grupeConsumIntern, configColoaneConsumIntern);
+
+  const bonuriSortate = [...state.bonuriConsum].sort((a, b) => (a.data < b.data ? 1 : -1));
+
+  const { cautare: cautareArt, setCautare: setCautareArt, pagina: paginaArt, setPagina: setPaginaArt, totalPagini: totalPaginiArt, afisate: articoleAfisate, totalFiltrate: totalArticoleFiltrate } =
+    useTabelFiltrat(grupeConsumInternProcesate, ["denumire"], 15);
+
+  const bonuriCautabile = useMemo(
+    () => bonuriSortate.map((b) => ({ ...b, cautMotiv: MOTIVE_CONSUM[b.motiv].label, cautBeneficiar: b.beneficiar || "" })),
+    [bonuriSortate]
+  );
+  const { cautare: cautareBonuri, setCautare: setCautareBonuri, pagina: paginaBonuri, setPagina: setPaginaBonuri, totalPagini: totalPaginiBonuri, afisate: bonuriAfisate, totalFiltrate: totalBonuriFiltrate } =
+    useTabelFiltrat(bonuriCautabile, ["cautMotiv", "cautBeneficiar"], 15);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-2xl text-[#1F3864]">Consum propriu intern & Acte filantropice & Protocol</h1>
+          <p className="text-sm text-stone-500">
+            Gestiune FIFO, pe loturi la cost de intrare — distinctă de pangar, evaluat la preț de vânzare.
+          </p>
+        </div>
+        {!permisiuni.citireOnly && (
+          <div className="flex gap-2">
+            <Btn variant="verde" onClick={() => setShowReceptie(true)}>
+              <FileText size={15} /> Recepție articole
+            </Btn>
+            <Btn variant="primary" onClick={() => setShowArticol(true)}>
+              <Plus size={15} /> Articol nou
+            </Btn>
+          </div>
+        )}
+      </header>
+
+      {notice && (
+        <Card className="p-3 border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
+          <span className="flex items-center gap-2"><AlertTriangle size={14} /> {notice}</span>
+          <button onClick={() => setNotice(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+        </Card>
+      )}
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Gestiune curentă (FIFO — loturi la cost de intrare)</div>
+        <BaraCautarePaginare
+          cautare={cautareArt} onCautare={setCautareArt}
+          pagina={paginaArt} totalPagini={totalPaginiArt} onPagina={setPaginaArt}
+          totalFiltrate={totalArticoleFiltrate} placeholder="Caută denumire articol..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <AntetFiltrabil cheie="articol" eticheta="Articol" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("articol")} />
+              <AntetFiltrabil cheie="stoc" eticheta="Stoc curent" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("stoc")} className="px-3 py-2 align-bottom text-right" />
+              <th className="px-3 py-2">Loturi active (FIFO, cel mai vechi primul)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {articoleAfisate.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-6 text-center text-stone-400">Niciun articol găsit.</td></tr>
+            )}
+            {articoleAfisate.map((g) => (
+              <tr key={`${g.denumire}|||${g.um}`} className="border-b border-stone-100 hover:bg-stone-50">
+                <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs">({g.um})</span></td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium">{g.stocTotal}</td>
+                <td className="px-3 py-2 text-xs text-stone-500">
+                  {g.loturi.filter((l) => l.stoc > 0).length === 0
+                    ? "—"
+                    : g.loturi.filter((l) => l.stoc > 0).map((l) => `${l.stoc} × ${fmt(l.costUnitar)} lei`).join("  +  ")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
+          Recepții recente — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Articol</th>
+              <th className="px-3 py-2 text-right">Cantitate</th>
+              <th className="px-3 py-2 text-right">Cost/unitate</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...state.miscariConsumIntern].filter((m) => m.tip === "intrare").sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 10).map((m) => {
+              const lot = state.articoleConsumIntern.find((a) => a.id === m.articolId);
+              const anInchisDefinitiv = !!state.exercitiiFinanciare?.[yearOf(m.data)]?.inchisDefinitiv;
+              return (
+                <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(m.data)}</td>
+                  <td className="px-3 py-2">{lot?.denumire || m.articolId}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{m.cantitate}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(m.valoareUnitara)}</td>
+                  <td className="px-3 py-2">
+                    {anInchisDefinitiv ? (
+                      <span className="text-xs text-stone-400">Închis definitiv</span>
+                    ) : (
+                      !permisiuni.citireOnly && <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {editReceptieFor && (
+        <ReceptieConsumEditForm
+          miscare={editReceptieFor}
+          lot={state.articoleConsumIntern.find((a) => a.id === editReceptieFor.articolId)}
+          onClose={() => setEditReceptieFor(null)}
+          onSave={(opts) => { editeazaReceptie(editReceptieFor.id, opts); setEditReceptieFor(null); }}
+        />
+      )}
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
+          Bonuri de consum recente — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Nr.</th>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Motiv</th>
+              <th className="px-3 py-2">Beneficiar</th>
+              <th className="px-3 py-2 text-right">Valoare</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...state.bonuriConsum].sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 10).map((bon) => {
+              const anInchisDefinitiv = !!state.exercitiiFinanciare?.[bon.an]?.inchisDefinitiv;
+              const totalBon = bon.linii.reduce((sum, l) => sum + l.valoare, 0);
+              return (
+                <tr key={bon.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 tabular-nums">{bon.nr}/{bon.an}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(bon.data)}</td>
+                  <td className="px-3 py-2">{MOTIVE_CONSUM[bon.motiv]?.label || bon.motiv}</td>
+                  <td className="px-3 py-2 text-stone-500">{bon.beneficiar || "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalBon)}</td>
+                  <td className="px-3 py-2">
+                    {anInchisDefinitiv ? (
+                      <span className="text-xs text-stone-400">Închis definitiv</span>
+                    ) : (
+                      !permisiuni.citireOnly && <Btn variant="gold" onClick={() => setEditBonFor(bon)}>Modifică</Btn>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {editBonFor && (
+        <BonConsumEditForm
+          bon={editBonFor}
+          grupe={grupeConsumIntern}
+          onClose={() => setEditBonFor(null)}
+          onSave={(opts) => { editeazaBonConsum(editBonFor.id, opts); setEditBonFor(null); }}
+        />
+      )}
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-serif text-lg text-[#1F3864]">Bonuri de consum emise</h2>
+          <div className="flex gap-2">
+            <Btn variant="ghost" onClick={() => setShowBrowserBon(true)}>
+              <FileText size={14} /> Navigator bonuri
+            </Btn>
+            {!permisiuni.citireOnly && (
+              <Btn variant="gold" onClick={() => setShowBon(true)} disabled={state.articoleConsumIntern.every((a) => a.stoc === 0)}>
+                <Plus size={14} /> Bon de consum nou
+              </Btn>
+            )}
+          </div>
+        </div>
+        <BaraCautarePaginare
+          cautare={cautareBonuri} onCautare={setCautareBonuri}
+          pagina={paginaBonuri} totalPagini={totalPaginiBonuri} onPagina={setPaginaBonuri}
+          totalFiltrate={totalBonuriFiltrate} placeholder="Caută motiv sau beneficiar..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-2 py-1.5">Nr.</th>
+              <th className="px-2 py-1.5">Data</th>
+              <th className="px-2 py-1.5">Motiv</th>
+              <th className="px-2 py-1.5">Beneficiar</th>
+              <th className="px-2 py-1.5 text-right">Valoare (lei)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bonuriAfisate.length === 0 && (
+              <tr><td colSpan={5} className="px-2 py-4 text-center text-stone-400">Niciun bon găsit.</td></tr>
+            )}
+            {bonuriAfisate.map((b) => (
+              <tr key={b.id} className="border-b border-stone-100">
+                <td className="px-2 py-1.5 tabular-nums">{b.nr}/{b.an}</td>
+                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(b.data)}</td>
+                <td className="px-2 py-1.5">{MOTIVE_CONSUM[b.motiv].label}</td>
+                <td className="px-2 py-1.5 text-stone-500">{b.beneficiar || "—"}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(b.linii.reduce((s, l) => s + l.valoare, 0))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {showArticol && (
+        <ArticolConsumInternForm onClose={() => setShowArticol(false)} onSave={(denumire, um) => { addArticol(denumire, um); setShowArticol(false); }} />
+      )}
+      {showReceptie && (
+        <ReceptieConsumInternMultiForm
+          grupe={grupeConsumIntern}
+          onClose={() => setShowReceptie(false)}
+          onSave={async (data, linii) => { await receptieMultipla(data, linii); setShowReceptie(false); }}
+        />
+      )}
+      {showBon && (
+        <BonConsumForm
+          grupe={grupeConsumIntern}
+          onClose={() => setShowBon(false)}
+          onSave={async (payload) => { await bonDeConsum(payload); setShowBon(false); }}
+        />
+      )}
+      {showBrowserBon && (
+        <DocumentBrowserGeneric
+          tipEtichetat="Bon de consum / protocol"
+          documente={[...state.bonuriConsum].sort((a, b) => (a.an !== b.an ? a.an - b.an : a.nr - b.nr))}
+          campuriAntet={[
+            { label: "Data", value: (d) => fmtDataJurnal(d.data) },
+            { label: "Motiv", value: (d) => MOTIVE_CONSUM[d.motiv].label },
+            { label: "Beneficiar", value: (d) => d.beneficiar || "—" },
+          ]}
+          coloaneLinii={[
+            { label: "Articol", value: (l) => state.articoleConsumIntern.find((a) => a.id === l.articolId)?.denumire || l.articolId },
+            { label: "Cantitate", value: (l) => String(l.cantitate), right: true },
+            { label: "Valoare (lei)", value: (l) => fmt(l.valoare), right: true, total: true, totalValue: (d) => fmt(d.linii.reduce((s, l) => s + l.valoare, 0)) },
+          ]}
+          parohie={state.parohie}
+          onClose={() => setShowBrowserBon(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ArticolConsumInternForm({ onClose, onSave }) {
+  const [denumire, setDenumire] = useState("");
+  const [um, setUm] = useState("buc");
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (!denumire.trim()) {
+      setError("Denumirea este obligatorie.");
+      return;
+    }
+    onSave(denumire.trim(), um.trim() || "buc");
+  }
+
+  return (
+    <Modal title="Articol nou (consum intern/filantropie/protocol)" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Denumire">
+          <input className={inputCls} value={denumire} onChange={(e) => setDenumire(e.target.value)} placeholder="ex: Vin, Tămâie, Cărbuni" />
+        </Field>
+        <Field label="Unitate de măsură">
+          <input className={inputCls} value={um} onChange={(e) => setUm(e.target.value)} />
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit}>Salvează</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ReceptieConsumEditForm({ miscare, lot, onClose, onSave }) {
+  const [cantitate, setCantitate] = useState(String(miscare.cantitate));
+  const [costUnitar, setCostUnitar] = useState(String(miscare.valoareUnitara));
+  const [data, setData] = useState(miscare.data);
+  const [error, setError] = useState("");
+
+  function submit() {
+    const cant = Number(cantitate);
+    const cost = Number(costUnitar);
+    if (!cant || cant <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (cost < 0) { setError("Costul nu poate fi negativ."); return; }
+    if (!data) { setError("Data e obligatorie."); return; }
+    setError("");
+    onSave({ cantitate: cant, costUnitar: cost, data });
+  }
+
+  return (
+    <Modal title={`Modifică recepția — ${lot?.denumire || ""}`} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={`Cantitate (${lot?.um || ""})`}>
+            <input type="number" className={inputCls} value={cantitate} onChange={(e) => setCantitate(e.target.value)} />
+          </Field>
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+        </div>
+        <Field label="Cost unitar (lei)">
+          <input type="number" className={inputCls} value={costUnitar} onChange={(e) => setCostUnitar(e.target.value)} />
+        </Field>
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Reducerea cantității e blocată dacă s-a consumat deja o parte din acest lot printr-un bon de consum.
+        </p>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit}>Salvează</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function BonConsumEditForm({ bon, grupe, onClose, onSave }) {
+  const [data, setData] = useState(bon.data);
+  const [motiv, setMotiv] = useState(bon.motiv);
+  const [beneficiar, setBeneficiar] = useState(bon.beneficiar || "");
+  const [linii, setLinii] = useState(
+    bon.linii.map((l) => ({ id: uid(), denumire: l.denumire, um: grupe.find((g) => g.denumire === l.denumire)?.um || "", cantitate: String(l.cantitate) }))
+  );
+  const [error, setError] = useState("");
+
+  const motivInfo = MOTIVE_CONSUM[motiv];
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), denumire: "", um: "", cantitate: "" }]);
+  }
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  function submit() {
+    if (motivInfo.cereBeneficiar && !beneficiar.trim()) {
+      setError("Actul filantropic/caritabil necesită precizarea beneficiarului.");
+      return;
+    }
+    if (linii.some((l) => !l.denumire || !l.cantitate || Number(l.cantitate) <= 0)) {
+      setError("Fiecare linie trebuie să aibă un articol selectat și o cantitate validă, mai mare ca 0.");
+      return;
+    }
+    setError("");
+    onSave({ data, motiv, beneficiar: beneficiar.trim(), linii: linii.map((l) => ({ denumire: l.denumire, um: l.um, cantitate: Number(l.cantitate) })) });
+  }
+
+  return (
+    <Modal title={`Modifică bonul de consum nr. ${bon.nr}/${bon.an}`} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Motiv descărcare">
+            <select className={inputCls} value={motiv} onChange={(e) => setMotiv(e.target.value)}>
+              {Object.entries(MOTIVE_CONSUM).map(([key, m]) => <option key={key} value={key}>{m.label}</option>)}
+            </select>
+          </Field>
+        </div>
+        {motivInfo.cereBeneficiar && (
+          <Field label="Beneficiar">
+            <input className={inputCls} value={beneficiar} onChange={(e) => setBeneficiar(e.target.value)} placeholder="Persoană sau familie beneficiară" />
+          </Field>
+        )}
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Articole descărcate (FIFO)</div>
+          {linii.map((l, i) => (
+            <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-6">
+                <Field label={`Articol (linia ${i + 1})`}>
+                  <select
+                    className={inputCls}
+                    value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                    onChange={(e) => {
+                      const [denumire, um] = e.target.value.split("|||");
+                      actualizeazaLinie(l.id, { denumire, um });
+                    }}
+                  >
+                    <option value="">— selectați —</option>
+                    {grupe.map((g) => (
+                      <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="col-span-4">
+                <Field label="Cantitate">
+                  <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-2 flex justify-center pb-1.5">
+                <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </Card>
+          ))}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă articol
+          </Btn>
+        </div>
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          La salvare, stocul consumat de versiunea veche a bonului se restituie, apoi se reface FIFO cu noile
+          cantități. Blocat integral dacă stocul disponibil nu acoperă noile cantități.
+        </p>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit}>Salvează</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Recepție articole Consum intern, cu linii multiple — produsele se aleg strict din nomenclator
+// (dropdown, fără text liber); orice produs nou creat prin "+ Produs nou" apare automat aici.
+function ReceptieConsumInternMultiForm({ grupe, onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [linii, setLinii] = useState([{ id: uid(), denumire: "", um: "", cantitate: "", cost: "" }]);
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  const grupeSortate = useMemo(() => [...grupe].sort((a, b) => a.denumire.localeCompare(b.denumire)), [grupe]);
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), denumire: "", um: "", cantitate: "", cost: "" }]);
+  }
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  const totalValoare = linii.reduce((sum, l) => sum + (Number(l.cantitate) || 0) * (Number(l.cost) || 0), 0);
+
+  async function submit() {
+    if (linii.some((l) => !l.denumire)) { setError("Fiecare linie trebuie să aibă un articol selectat din nomenclator."); return; }
+    if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return; }
+    if (linii.some((l) => !l.cost || Number(l.cost) <= 0)) { setError("Fiecare linie trebuie să aibă un cost de achiziție valid, mai mare ca 0."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave(data, linii.map((l) => ({ denumire: l.denumire, um: l.um, cantitate: Number(l.cantitate), cost: Number(l.cost) })));
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea recepției. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Recepție articole — Consum intern & Filantropie" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Fiecare linie creează un lot nou, cu costul lui propriu — poate acoperi mai multe articole diferite deodată.
+          Descărcarea (bonul de consum) se face FIFO, din cel mai vechi lot cu stoc disponibil.
+        </p>
+        <Field label="Data recepției">
+          <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+          {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+        </Field>
+
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Articole recepționate</div>
+          {linii.map((l, i) => (
+            <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-5">
+                <Field label={`Articol (linia ${i + 1})`}>
+                  <select
+                    className={inputCls}
+                    value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                    onChange={(e) => {
+                      const [denumire, um] = e.target.value.split("|||");
+                      actualizeazaLinie(l.id, { denumire, um });
+                    }}
+                  >
+                    <option value="">— selectați din nomenclator —</option>
+                    {grupeSortate.map((g) => (
+                      <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire} ({g.um})</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="Cantitate">
+                  <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="Cost/unitate (lei)">
+                  <input type="number" step="0.01" className={inputCls} value={l.cost} onChange={(e) => actualizeazaLinie(l.id, { cost: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-2 text-xs text-stone-500 pb-1.5">
+                {l.cantitate > 0 && l.cost > 0 && (
+                  <>Total: <span className="font-medium tabular-nums">{fmt(Number(l.cantitate) * Number(l.cost))} lei</span></>
+                )}
+              </div>
+              <div className="col-span-1 flex justify-center pb-1.5">
+                <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </Card>
+          ))}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă articol
+          </Btn>
+        </div>
+
+        <Card className="p-3 bg-stone-50 flex items-center justify-between">
+          <span className="text-sm font-medium text-stone-600">Valoare totală recepție</span>
+          <span className="font-serif text-lg text-[#1F3864] tabular-nums">{fmt(totalValoare)} lei</span>
+        </Card>
+
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă recepția"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+function BonConsumForm({ grupe, onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [motiv, setMotiv] = useState("consum_intern");
+  const [beneficiar, setBeneficiar] = useState("");
+  const [linii, setLinii] = useState([{ id: uid(), denumire: "", um: "", cantitate: "" }]);
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  const grupeDisponibile = grupe.filter((g) => g.stocTotal > 0);
+  const motivInfo = MOTIVE_CONSUM[motiv];
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), denumire: "", um: "", cantitate: "" }]);
+  }
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
+  // Simulare FIFO: din ce loturi s-ar consuma cantitatea introdusă, în ordinea seq (cel mai vechi întâi).
+  function simuleazaFIFO(denumire, um, cantitate) {
+    const grup = grupe.find((g) => g.denumire === denumire && g.um === um);
+    if (!grup) return { valoare: 0, detaliu: [] };
+    let ramas = cantitate;
+    let valoare = 0;
+    const detaliu = [];
+    for (const lot of grup.loturi) {
+      if (ramas <= 0 || lot.stoc <= 0) continue;
+      const cant = Math.min(lot.stoc, ramas);
+      ramas -= cant;
+      valoare += cant * lot.costUnitar;
+      detaliu.push({ cantitate: cant, cost: lot.costUnitar });
+    }
+    return { valoare, detaliu };
+  }
+
+  const totalValoare = linii.reduce((sum, l) => {
+    if (!l.denumire || !l.cantitate) return sum;
+    return sum + simuleazaFIFO(l.denumire, l.um, Number(l.cantitate) || 0).valoare;
+  }, 0);
+
+  async function submit() {
+    if (motivInfo.cereBeneficiar && !beneficiar.trim()) {
+      setError("Actul filantropic/caritabil necesită precizarea beneficiarului.");
+      return;
+    }
+    if (linii.some((l) => !l.denumire)) {
+      setError("Fiecare linie trebuie să aibă un articol selectat.");
+      return;
+    }
+    if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) {
+      setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0.");
+      return;
+    }
+    for (const l of linii) {
+      const grup = grupe.find((g) => g.denumire === l.denumire && g.um === l.um);
+      if (Number(l.cantitate) > (grup?.stocTotal || 0)) {
+        setError(`Stoc insuficient pentru „${l.denumire}” — disponibil: ${grup?.stocTotal || 0} ${l.um}.`);
+        return;
+      }
+    }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ data, motiv, beneficiar: beneficiar.trim(), linii: linii.map((l) => ({ denumire: l.denumire, um: l.um, cantitate: Number(l.cantitate) })) });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea bonului de consum. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Bon de consum / protocol nou" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Motiv descărcare">
+            <select className={inputCls} value={motiv} onChange={(e) => setMotiv(e.target.value)}>
+              {Object.entries(MOTIVE_CONSUM).map(([key, m]) => <option key={key} value={key}>{m.label}</option>)}
+            </select>
+          </Field>
+        </div>
+        {motivInfo.cereBeneficiar && (
+          <Field label="Beneficiar">
+            <input className={inputCls} value={beneficiar} onChange={(e) => setBeneficiar(e.target.value)} placeholder="Persoană sau familie beneficiară" />
+          </Field>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Articole descărcate (FIFO)</div>
+          {linii.map((l, i) => {
+            const simulare = l.denumire && l.cantitate ? simuleazaFIFO(l.denumire, l.um, Number(l.cantitate) || 0) : null;
+            return (
+              <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-5">
+                  <Field label={`Articol (linia ${i + 1})`}>
+                    <select
+                      className={inputCls}
+                      value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                      onChange={(e) => {
+                        const [denumire, um] = e.target.value.split("|||");
+                        actualizeazaLinie(l.id, { denumire, um });
+                      }}
+                    >
+                      <option value="">— selectați —</option>
+                      {grupeDisponibile.map((g) => (
+                        <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>
+                          {g.denumire} (stoc: {g.stocTotal} {g.um})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="col-span-3">
+                  <Field label="Cantitate">
+                    <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} />
+                  </Field>
+                </div>
+                <div className="col-span-3 text-xs text-stone-500 pb-2">
+                  {simulare && simulare.detaliu.length > 0 && (
+                    <>Valoare FIFO: {simulare.detaliu.map((d, idx) => <span key={idx}>{idx > 0 && " + "}{d.cantitate}×{fmt(d.cost)}</span>)} = {fmt(simulare.valoare)} lei</>
+                  )}
+                </div>
+                <div className="col-span-1 flex justify-center pb-1.5">
+                  <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </Card>
+            );
+          })}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă articol
+          </Btn>
+        </div>
+
+        <Card className="p-3 bg-stone-50 flex items-center justify-between">
+          <span className="text-sm font-medium text-stone-600">Total valoare descărcată (cheltuială generată)</span>
+          <span className="font-serif text-lg text-[#1F3864] tabular-nums">{fmt(totalValoare)} lei</span>
+        </Card>
+
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Emite bonul de consum"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Inventar & Patrimoniu -------------------------------- */
+
+function PatrimoniuTab({ state, setState, permisiuni, parohieId }) {
+  const [showBun, setShowBun] = useState(false);
+  const [casareFor, setCasareFor] = useState(null);
+  const [showInventariere, setShowInventariere] = useState(false);
+  const [verPV, setVerPV] = useState(null);
+  const [editBunFor, setEditBunFor] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  async function addBun({ denumire, categorie, dataAchizitie, sursa, valoare, locatie, note, referintaFoto, modPlata }) {
+    const rezultat = await creeazaBunPatrimoniu(parohieId, { denumire, categorie, dataAchizitie, sursa, valoare, locatie, note, referintaFoto, modPlata });
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        bunuriPatrimoniu: [...sPatched.bunuriPatrimoniu, rezultat.bun],
+        operatiuni: [...sPatched.operatiuni, ...rezultat.operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Bun de patrimoniu nou — ${denumire} (${fmt(valoare)} lei, ${sursa})`),
+      };
+    });
+  }
+
+  // Editare bun de patrimoniu: sincronizează Ordinul de plată legat (dacă sursa e achiziție),
+  // creează unul nou dacă sursa devine achiziție, sau îl șterge dacă nu mai e cazul.
+  async function editeazaBun(bunId, opts) {
+    const bunCurent = state.bunuriPatrimoniu.find((b) => b.id === bunId);
+    if (!bunCurent) return;
+    const anNou = yearOf(opts.dataAchizitie);
+    if (anNou !== yearOf(bunCurent.dataAchizitie)) {
+      setNotice(`Nu poți muta bunul în alt an prin editare — rămâi în ${yearOf(bunCurent.dataAchizitie)}.`);
+      return;
+    }
+    if (state.exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+      setNotice(`Exercițiul financiar ${anNou} este închis definitiv — needitabil.`);
+      return;
+    }
+    const rezultat = await editeazaBunPatrimoniu(
+      bunId,
+      { denumire: opts.denumire, categorie: opts.categorie, dataAchizitie: opts.dataAchizitie, sursa: opts.sursa, valoare: opts.valoare, locatie: opts.locatie, note: opts.note, referintaFoto: opts.referintaFoto, modPlata: opts.modPlata, documentIdExistent: bunCurent.documentId },
+      parohieId
+    );
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        bunuriPatrimoniu: sPatched.bunuriPatrimoniu.map((b) => (b.id === bunId ? {
+          ...b, denumire: opts.denumire, categorie: opts.categorie, dataAchizitie: opts.dataAchizitie, sursa: opts.sursa,
+          valoare: opts.valoare, locatie: opts.locatie, note: opts.note, referintaFoto: opts.referintaFoto, documentId: rezultat.documentId,
+        } : b)),
+        operatiuni: [
+          ...(rezultat.documentSters ? sPatched.operatiuni.filter((op) => op.documentId !== bunCurent.documentId) : sPatched.operatiuni),
+          ...rezultat.operatiuniNoi,
+        ],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare bun de patrimoniu — ${opts.denumire}`),
+      };
+    });
+  }
+
+  async function caseaza(bunId, { motiv, aprobatDe }) {
+    const bun = state.bunuriPatrimoniu.find((b) => b.id === bunId);
+    if (!bun) return;
+    const dataCasare = todayISO();
+    await caseazaBunPatrimoniu(bunId, { motiv, aprobatDe });
+    setState((s) => ({
+      ...s,
+      bunuriPatrimoniu: s.bunuriPatrimoniu.map((b) =>
+        b.id === bunId ? { ...b, stare: "casat", motivCasare: motiv, aprobatDe: aprobatDe || null, dataCasare } : b
+      ),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Casare bun de patrimoniu — ${bun.denumire}${aprobatDe ? " (aprobat de " + aprobatDe + ")" : ""}`),
+    }));
+  }
+
+  async function inventariaza({ data, membri, observatii }) {
+    const bunuri = state.bunuriPatrimoniu
+      .filter((b) => b.stare !== "casat")
+      .map((b) => ({ id: b.id, denumire: b.denumire, stare: b.stare, valoare: b.valoare }));
+    const pv = await creeazaInventariere(parohieId, { data, membri, observatii, bunuri });
+    setState((s) => ({ ...s, inventarieriPatrimoniu: [...s.inventarieriPatrimoniu, pv] }));
+  }
+
+  const bunuriActive = state.bunuriPatrimoniu.filter((b) => b.stare !== "casat");
+  const bunuriCasate = state.bunuriPatrimoniu.filter((b) => b.stare === "casat");
+  const inventarieriSortate = [...state.inventarieriPatrimoniu].sort((a, b) => (a.data < b.data ? 1 : -1));
+  const { cautare: cautareBun, setCautare: setCautareBun, pagina: paginaBun, setPagina: setPaginaBun, totalPagini: totalPaginiBun, afisate: bunuriAfisate, totalFiltrate: totalBunuriFiltrate } =
+    useTabelFiltrat(bunuriActive, ["denumire", "categorie", "locatie"], 15);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-2xl text-[#1F3864]">Inventar & Patrimoniu</h1>
+          <p className="text-sm text-stone-500">
+            Bunuri peste {fmt(PRAG_BUN_VALOARE_MARE)} RON necesită fotografiere la intrare și aprobare suplimentară la casare.
+          </p>
+        </div>
+        {!permisiuni.citireOnly && (
+          <div className="flex gap-2">
+            <Btn variant="ghost" onClick={() => setShowInventariere(true)}>
+              <ClipboardCheck size={15} /> Inventariere anuală
+            </Btn>
+            <Btn variant="primary" onClick={() => setShowBun(true)}>
+              <Plus size={15} /> Bun nou
+            </Btn>
+          </div>
+        )}
+      </header>
+
+      {notice && (
+        <Card className="p-3 border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
+          <span className="flex items-center gap-2"><AlertTriangle size={14} /> {notice}</span>
+          <button onClick={() => setNotice(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+        </Card>
+      )}
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Bunuri active</div>
+        <BaraCautarePaginare
+          cautare={cautareBun} onCautare={setCautareBun}
+          pagina={paginaBun} totalPagini={totalPaginiBun} onPagina={setPaginaBun}
+          totalFiltrate={totalBunuriFiltrate} placeholder="Caută denumire, categorie sau locație..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Denumire</th>
+              <th className="px-3 py-2">Categorie</th>
+              <th className="px-3 py-2">Locație</th>
+              <th className="px-3 py-2 text-right">Valoare</th>
+              <th className="px-3 py-2">Stare</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {bunuriAfisate.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-6 text-center text-stone-400">Niciun bun găsit.</td></tr>
+            )}
+            {bunuriAfisate.map((b) => (
+              <tr key={b.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <td className="px-3 py-2 font-medium">
+                  {b.denumire}
+                  {b.valoare >= PRAG_BUN_VALOARE_MARE && (
+                    <span className="ml-1 text-[10px] text-[#B8860B] border border-[#B8860B]/40 rounded px-1 py-0.5">valoare mare</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-stone-500">{b.categorie}</td>
+                <td className="px-3 py-2 text-stone-500">{b.locatie || "—"}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fmt(b.valoare)}</td>
+                <td className="px-3 py-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${b.stare === "necesita_reparatii" ? "text-amber-700 bg-amber-50" : "text-emerald-700 bg-emerald-50"}`}>
+                    {STARI_BUN[b.stare]}
+                  </span>
+                </td>
+                <td className="px-3 py-2 flex gap-2">
+                  {!permisiuni.citireOnly && !state.exercitiiFinanciare?.[yearOf(b.dataAchizitie)]?.inchisDefinitiv && (
+                    <Btn variant="gold" onClick={() => setEditBunFor(b)}>Modifică</Btn>
+                  )}
+                  {!permisiuni.citireOnly && <Btn variant="ghost" onClick={() => setCasareFor(b)}>Casează</Btn>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {bunuriCasate.length > 0 && (
+        <Card className="overflow-x-auto">
+          <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Bunuri casate</div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                <th className="px-3 py-2">Denumire</th>
+                <th className="px-3 py-2">Data casării</th>
+                <th className="px-3 py-2">Motiv</th>
+                <th className="px-3 py-2">Aprobat de</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bunuriCasate.map((b) => (
+                <tr key={b.id} className="border-b border-stone-100 text-stone-500">
+                  <td className="px-3 py-2 line-through">{b.denumire}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(b.dataCasare)}</td>
+                  <td className="px-3 py-2">{b.motivCasare}</td>
+                  <td className="px-3 py-2">{b.aprobatDe || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-serif text-lg text-[#1F3864]">Procese-verbale de inventariere</h2>
+          <Btn variant="ghost" onClick={() => setVerPV("browser")}>
+            <FileText size={14} /> Navigator procese-verbale
+          </Btn>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-2 py-1.5">Nr. PV</th>
+              <th className="px-2 py-1.5">Data</th>
+              <th className="px-2 py-1.5">Comisie</th>
+              <th className="px-2 py-1.5 text-right">Bunuri verificate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {inventarieriSortate.length === 0 && (
+              <tr><td colSpan={4} className="px-2 py-4 text-center text-stone-400">Nicio inventariere înregistrată încă.</td></tr>
+            )}
+            {inventarieriSortate.map((pv) => (
+              <tr key={pv.id} className="border-b border-stone-100">
+                <td className="px-2 py-1.5 tabular-nums">{pv.nrPV}/{pv.an}</td>
+                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(pv.data)}</td>
+                <td className="px-2 py-1.5 text-stone-500">{pv.membri.join(", ")}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{pv.bunuri.length}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {showBun && (
+        <BunPatrimoniuForm onClose={() => setShowBun(false)} onSave={async (payload) => { await addBun(payload); setShowBun(false); }} />
+      )}
+      {editBunFor && (
+        <BunPatrimoniuForm
+          initial={editBunFor}
+          onClose={() => setEditBunFor(null)}
+          onSave={async (payload) => { await editeazaBun(editBunFor.id, payload); setEditBunFor(null); }}
+        />
+      )}
+      {casareFor && (
+        <CasareBunModal bun={casareFor} onClose={() => setCasareFor(null)} onSave={async (payload) => { await caseaza(casareFor.id, payload); setCasareFor(null); }} />
+      )}
+      {showInventariere && (
+        <InventariereForm bunuriActive={bunuriActive} onClose={() => setShowInventariere(false)} onSave={async (payload) => { await inventariaza(payload); setShowInventariere(false); }} />
+      )}
+      {verPV === "browser" && (
+        <DocumentBrowserGeneric
+          tipEtichetat="Proces-verbal de inventariere"
+          documente={inventarieriSortate.map((pv) => ({ ...pv, nr: pv.nrPV }))}
+          campuriAntet={[
+            { label: "Data inventarierii", value: (d) => fmtDataJurnal(d.data) },
+            { label: "Comisie", value: (d) => d.membri.join(", ") },
+            { label: "Observații", value: (d) => d.observatii || "—" },
+          ]}
+          coloaneLinii={[
+            { label: "Bun", value: (l) => l.denumire },
+            { label: "Stare", value: (l) => STARI_BUN[l.stare] },
+            { label: "Valoare (lei)", value: (l) => fmt(l.valoare), right: true, total: true, totalValue: (d) => fmt(d.bunuri.reduce((s, l) => s + l.valoare, 0)) },
+          ]}
+          parohie={state.parohie}
+          onClose={() => setVerPV(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function BunPatrimoniuForm({ initial, onClose, onSave }) {
+  const [denumire, setDenumire] = useState(initial?.denumire || "");
+  const [categorie, setCategorie] = useState(initial?.categorie || CATEGORII_PATRIMONIU[0]);
+  const [dataAchizitie, setDataAchizitie] = useState(initial?.dataAchizitie || todayISO());
+  const [sursa, setSursa] = useState(initial?.sursa || "achizitie");
+  const [valoare, setValoare] = useState(initial ? String(initial.valoare) : "");
+  const [locatie, setLocatie] = useState(initial?.locatie || "");
+  const [note, setNote] = useState(initial?.note || "");
+  const [referintaFoto, setReferintaFoto] = useState(initial?.referintaFoto || "");
+  const [modPlata, setModPlata] = useState("transfer");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  const valoareNum = Number(valoare) || 0;
+  const necesitaFoto = valoareNum >= PRAG_BUN_VALOARE_MARE;
+
+  async function submit() {
+    if (!denumire.trim()) { setError("Denumirea este obligatorie."); return; }
+    if (!valoare || valoareNum <= 0) { setError("Introduceți o valoare validă, mai mare ca 0."); return; }
+    if (necesitaFoto && !referintaFoto.trim()) {
+      setError(`Bunurile peste ${fmt(PRAG_BUN_VALOARE_MARE)} RON necesită obligatoriu o referință foto la intrare.`);
+      return;
+    }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({
+        denumire: denumire.trim(), categorie, dataAchizitie, sursa, valoare: valoareNum,
+        locatie: locatie.trim(), note: note.trim(), referintaFoto: referintaFoto.trim(), modPlata,
+      });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea bunului de patrimoniu. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={initial ? `Modifică bunul — ${initial.denumire}` : "Bun nou de patrimoniu"} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <Field label="Denumire">
+          <input className={inputCls} value={denumire} onChange={(e) => setDenumire(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Categorie">
+            <select className={inputCls} value={categorie} onChange={(e) => setCategorie(e.target.value)}>
+              {CATEGORII_PATRIMONIU.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Sursă">
+            <select className={inputCls} value={sursa} onChange={(e) => setSursa(e.target.value)}>
+              <option value="achizitie">Achiziție</option>
+              <option value="donatie">Donație în natură</option>
+              <option value="transfer">Transfer</option>
+            </select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data intrării">
+            <input type="date" className={inputCls} value={dataAchizitie} onChange={(e) => setDataAchizitie(e.target.value)} />
+            {dataAchizitie && <span className="text-xs text-stone-400">{fmtDataJurnal(dataAchizitie)}</span>}
+          </Field>
+          <Field label="Valoare (lei)">
+            <input type="number" step="0.01" className={inputCls} value={valoare} onChange={(e) => setValoare(e.target.value)} />
+          </Field>
+        </div>
+        {sursa === "achizitie" && (
+          <Field label="Mod de plată">
+            <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
+              <option value="numerar">Numerar (casă)</option>
+              <option value="transfer">Transfer bancar</option>
+            </select>
+          </Field>
+        )}
+        <Field label="Locație în cadrul lăcașului">
+          <input className={inputCls} value={locatie} onChange={(e) => setLocatie(e.target.value)} />
+        </Field>
+        {necesitaFoto && (
+          <Field label="Referință foto (obligatoriu — bun peste prag)">
+            <input className={inputCls} value={referintaFoto} onChange={(e) => setReferintaFoto(e.target.value)} placeholder="ex: foto-icoana-01.jpg / link arhivă" />
+          </Field>
+        )}
+        <Field label="Note istorice/patrimoniale (opțional)">
+          <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : initial ? "Salvează" : "Salvează bunul"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function CasareBunModal({ bun, onClose, onSave }) {
+  const [motiv, setMotiv] = useState("");
+  const [aprobatDe, setAprobatDe] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+  const necesitaAprobare = bun.valoare >= PRAG_BUN_VALOARE_MARE;
+
+  async function submit() {
+    if (!motiv.trim()) { setError("Motivul casării este obligatoriu."); return; }
+    if (necesitaAprobare && !aprobatDe.trim()) {
+      setError(`Bunurile peste ${fmt(PRAG_BUN_VALOARE_MARE)} RON necesită aprobarea explicită a Preotului paroh/Administratorului parohiei.`);
+      return;
+    }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ motiv: motiv.trim(), aprobatDe: aprobatDe.trim() });
+    } catch (e) {
+      setError(e.message || "Eroare la casarea bunului. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Casare — ${bun.denumire}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        {necesitaAprobare && (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>Acest bun are valoare peste {fmt(PRAG_BUN_VALOARE_MARE)} RON — casarea necesită aprobare suplimentară, nu doar decizia gestionarului de patrimoniu.</span>
+          </p>
+        )}
+        <Field label="Motivul casării">
+          <input className={inputCls} value={motiv} onChange={(e) => setMotiv(e.target.value)} placeholder="ex: uzură avansată, deteriorare iremediabilă" />
+        </Field>
+        {necesitaAprobare && (
+          <Field label="Aprobat de (nume Preot paroh/Administrator)">
+            <input className={inputCls} value={aprobatDe} onChange={(e) => setAprobatDe(e.target.value)} />
+          </Field>
+        )}
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="danger" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă casarea"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function InventariereForm({ bunuriActive, onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [membri, setMembri] = useState(["", ""]);
+  const [observatii, setObservatii] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  function actualizeazaMembru(i, val) {
+    setMembri((m) => m.map((x, idx) => (idx === i ? val : x)));
+  }
+  function adaugaMembru() {
+    setMembri((m) => [...m, ""]);
+  }
+  function stergeMembru(i) {
+    setMembri((m) => (m.length > 2 ? m.filter((_, idx) => idx !== i) : m));
+  }
+
+  async function submit() {
+    const membriValizi = membri.map((m) => m.trim()).filter(Boolean);
+    if (membriValizi.length < 2) {
+      setError("Comisia de inventariere trebuie să aibă minimum 2 membri.");
+      return;
+    }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ data, membri: membriValizi, observatii: observatii.trim() });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea procesului-verbal. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Inventariere anuală — proces-verbal" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Inventarierea se efectuează obligatoriu de o comisie formată din minimum 2 persoane. Se generează un
+          proces-verbal cu instantaneul bunurilor active la data inventarierii.
+        </p>
+        <Field label="Data inventarierii">
+          <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+          {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+        </Field>
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Membrii comisiei (minimum 2)</div>
+          {membri.map((m, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <input className={inputCls + " flex-1"} value={m} onChange={(e) => actualizeazaMembru(i, e.target.value)} placeholder={`Membru ${i + 1}`} />
+              <button type="button" onClick={() => stergeMembru(i)} disabled={membri.length <= 2} className="text-stone-300 hover:text-rose-600 disabled:opacity-30">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+          <Btn variant="ghost" onClick={adaugaMembru} className="self-start"><Plus size={14} /> Adaugă membru</Btn>
+        </div>
+        <Field label="Observații generale (opțional)">
+          <input className={inputCls} value={observatii} onChange={(e) => setObservatii(e.target.value)} />
+        </Field>
+        <Card className="p-3 bg-stone-50 text-xs">
+          Vor fi incluse în procesul-verbal: <strong>{bunuriActive.length}</strong> bunuri active.
+        </Card>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Generează procesul-verbal"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Cimitir Parohial -------------------------------- */
+
+function CimitirTab({ state, setState, permisiuni, parohieId }) {
+  const [showLoc, setShowLoc] = useState(false);
+  const [concesioneazaFor, setConcesioneazaFor] = useState(null);
+  const [reinnoiesteFor, setReinnoiesteFor] = useState(null);
+  const [transferaFor, setTransferaFor] = useState(null);
+  const [showPersoana, setShowPersoana] = useState(false);
+  const [showTarife, setShowTarife] = useState(false);
+  const [editConcesiuneFor, setEditConcesiuneFor] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  async function addLoc(codParcela) {
+    const locNou = await creeazaLocInhumare(parohieId, { codParcela });
+    setState((s) => ({ ...s, locuriInhumare: [...s.locuriInhumare, locNou] }));
+  }
+
+  async function creeazaConcesiune({ locId, concesionar, tipDurata, dataInceput, modPlata }) {
+    const tarif = state.tarifeCimitir[tipDurata] || 0;
+    const dataExpirare = calculeazaDataExpirare(dataInceput, tipDurata);
+    const codLoc = state.locuriInhumare.find((l) => l.id === locId)?.codParcela;
+    const rezultat = await creeazaConcesiuneApi(parohieId, {
+      locId, concesionar, tipDurata, tarif, dataInceput, dataExpirare, modPlata, codLoc,
+    });
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        concesiuni: [...sPatched.concesiuni, rezultat.concesiune],
+        locuriInhumare: sPatched.locuriInhumare.map((l) => (l.id === locId ? { ...l, stare: "concesionat" } : l)),
+        operatiuni: [...sPatched.operatiuni, ...rezultat.operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Concesiune nouă — loc ${codLoc}, ${concesionar}, ${DURATE_CONCESIUNE[tipDurata]}`),
+      };
+    });
+  }
+
+  async function reinnoieste(concesiuneId, { dataInceputNoua, modPlata }) {
+    const c = state.concesiuni.find((x) => x.id === concesiuneId);
+    if (!c) return;
+    const dataExpirareNoua = calculeazaDataExpirare(dataInceputNoua, c.tipDurata);
+    const codLoc = state.locuriInhumare.find((l) => l.id === c.locId)?.codParcela;
+    const rezultat = await reinnoiesteConcesiune(parohieId, concesiuneId, {
+      concesionar: c.concesionar, tarif: c.tarif, dataInceputNoua, dataExpirareNoua, modPlata, codLoc,
+    });
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        concesiuni: sPatched.concesiuni.map((x) =>
+          x.id === concesiuneId
+            ? { ...x, dataExpirare: rezultat.dataExpirare, expirataDefinitiv: false, istoric: [...x.istoric, rezultat.evenimentNou] }
+            : x
+        ),
+        locuriInhumare: sPatched.locuriInhumare.map((l) => (l.id === c.locId ? { ...l, stare: "concesionat" } : l)),
+        operatiuni: [...sPatched.operatiuni, ...rezultat.operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Reînnoire concesiune — loc ${codLoc}, ${c.concesionar}`),
+      };
+    });
+  }
+
+  // Editare concesiune: corectează concesionar/tipDurată/tarif/dată pe ULTIMUL eveniment (inițial sau
+  // reînnoire), recalculând expirarea, și sincronizează chitanța legată de acel eveniment, dacă există.
+  async function editeazaConcesiune(concesiuneId, opts) {
+    const c = state.concesiuni.find((x) => x.id === concesiuneId);
+    if (!c) return;
+    const ultimulEveniment = c.istoric[c.istoric.length - 1];
+
+    const anNou = yearOf(opts.dataInceput);
+    if (anNou !== yearOf(ultimulEveniment.data)) {
+      setNotice(`Nu poți muta evenimentul în alt an prin editare — rămâi în ${yearOf(ultimulEveniment.data)}.`);
+      return;
+    }
+    if (state.exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+      setNotice(`Exercițiul financiar ${anNou} este închis definitiv — needitabil.`);
+      return;
+    }
+
+    const dataExpirareNoua = calculeazaDataExpirare(opts.dataInceput, opts.tipDurata);
+    const codLoc = state.locuriInhumare.find((l) => l.id === c.locId)?.codParcela;
+    const esteEvenimentInitial = c.istoric.length === 1;
+
+    await editeazaConcesiuneApi(concesiuneId, {
+      concesionar: opts.concesionar, tipDurata: opts.tipDurata, tarif: opts.tarif, dataInceput: opts.dataInceput,
+      dataExpirare: dataExpirareNoua, documentId: ultimulEveniment.documentId, tipEveniment: ultimulEveniment.tip,
+      codLoc, esteEvenimentInitial,
+    });
+
+    setState((s) => {
+      const istoricNou = [...c.istoric];
+      istoricNou[istoricNou.length - 1] = { ...ultimulEveniment, data: opts.dataInceput, concesionar: opts.concesionar };
+      return {
+        ...s,
+        concesiuni: s.concesiuni.map((x) => (x.id === concesiuneId ? {
+          ...x, concesionar: opts.concesionar, tipDurata: opts.tipDurata, tarif: opts.tarif,
+          dataInceput: esteEvenimentInitial ? opts.dataInceput : x.dataInceput,
+          dataExpirare: dataExpirareNoua, istoric: istoricNou,
+        } : x)),
+        operatiuni: ultimulEveniment.documentId
+          ? s.operatiuni.map((op) => (op.documentId === ultimulEveniment.documentId ? {
+              ...op, data: opts.dataInceput, suma: opts.tarif, tert: opts.concesionar,
+              explicatie: ultimulEveniment.tip === "reinnoire" ? `Reînnoire concesiune — loc ${codLoc}` : `Concesiune nouă — loc ${codLoc}`,
+            } : op))
+          : s.operatiuni,
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare concesiune — loc ${codLoc}, ${opts.concesionar}`),
+      };
+    });
+  }
+
+  async function transferaConcesiune(concesiuneId, { concesionarNou, document }) {
+    const c = state.concesiuni.find((x) => x.id === concesiuneId);
+    if (!c) return;
+    const codLoc = state.locuriInhumare.find((l) => l.id === c.locId)?.codParcela;
+    const data = todayISO();
+    const rezultat = await transferaConcesiuneApi(concesiuneId, { concesionarNou, data });
+    setState((s) => ({
+      ...s,
+      concesiuni: s.concesiuni.map((x) =>
+        x.id === concesiuneId ? { ...x, concesionar: concesionarNou, istoric: [...x.istoric, rezultat.evenimentNou] } : x
+      ),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Transfer concesiune — loc ${codLoc}, de la ${c.concesionar} la ${concesionarNou} (document: ${document})`),
+    }));
+  }
+
+  // Notificarea succesorilor se face prin modulul Corespondență & Arhivă (corespondență de ieșire), conform specificației.
+  async function notificaSuccesori(concesiune) {
+    const codLoc = state.locuriInhumare.find((l) => l.id === concesiune.locId)?.codParcela;
+    const data = todayISO();
+    const obiect = `Notificare expirare concesiune — loc ${codLoc}. Termen legal de identificare a succesorilor: ${calculeazaTermenLimitaSuccesori(concesiune.dataExpirare)}.`;
+    const rec = await creeazaCorespondentaIesire(parohieId, { data, partener: concesiune.concesionar, obiect, referintaIntrareId: null });
+    setState((s) => ({
+      ...s,
+      corespondenta: [...s.corespondenta, rec],
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Notificare succesori trimisă — loc ${codLoc} (corespondență ieșire nr. ${rec.nr}/${rec.an})`),
+    }));
+  }
+
+  async function addPersoanaInhumata({ locId, nume, dataNasterii, dataDeces, dataInhumare }) {
+    const persoanaNoua = await creeazaPersoanaInhumata(parohieId, { locId, nume, dataNasterii, dataDeces, dataInhumare });
+    setState((s) => ({ ...s, persoaneInhumate: [...s.persoaneInhumate, persoanaNoua] }));
+  }
+
+  function actualizeazaTarif(tipDurata, valoare) {
+    setState((s) => ({ ...s, tarifeCimitir: { ...s.tarifeCimitir, [tipDurata]: valoare } }));
+  }
+
+  const azi = todayISO();
+  const locuriDisponibile = state.locuriInhumare.filter((l) => l.stare === "disponibil");
+  const concesiuniActive = state.concesiuni.filter((c) => !c.expirataDefinitiv);
+
+  const { cautare: cautareLoc, setCautare: setCautareLoc, pagina: paginaLoc, setPagina: setPaginaLoc, totalPagini: totalPaginiLoc, afisate: locuriAfisate, totalFiltrate: totalLocuriFiltrate } =
+    useTabelFiltrat(state.locuriInhumare, ["codParcela", "stare"], 15);
+
+  const concesiuniCautabile = useMemo(
+    () => state.concesiuni.map((c) => ({ ...c, cautCodLoc: state.locuriInhumare.find((l) => l.id === c.locId)?.codParcela || "", cautConcesionar: c.concesionar })),
+    [state.concesiuni, state.locuriInhumare]
+  );
+  const { cautare: cautareConc, setCautare: setCautareConc, pagina: paginaConc, setPagina: setPaginaConc, totalPagini: totalPaginiConc, afisate: concesiuniAfisate, totalFiltrate: totalConcesiuniFiltrate } =
+    useTabelFiltrat(concesiuniCautabile, ["cautCodLoc", "cautConcesionar"], 15);
+
+  const persoaneCautabile = useMemo(
+    () => state.persoaneInhumate.map((p) => ({ ...p, cautCodLoc: state.locuriInhumare.find((l) => l.id === p.locId)?.codParcela || "", cautNume: p.nume })),
+    [state.persoaneInhumate, state.locuriInhumare]
+  );
+  const { cautare: cautarePers, setCautare: setCautarePers, pagina: paginaPers, setPagina: setPaginaPers, totalPagini: totalPaginiPers, afisate: persoaneAfisate, totalFiltrate: totalPersoaneFiltrate } =
+    useTabelFiltrat(persoaneCautabile, ["cautCodLoc", "cautNume"], 15);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-2xl text-[#1F3864]">Cimitir Parohial</h1>
+          <p className="text-sm text-stone-500">
+            Concesionarul (persoană vie) și persoana înhumată sunt roluri distincte, care pot coincide.
+          </p>
+        </div>
+        {!permisiuni.citireOnly && (
+          <div className="flex gap-2">
+            <Btn variant="ghost" onClick={() => setShowTarife(true)}>Tarife</Btn>
+            <Btn variant="ghost" onClick={() => setShowPersoana(true)}>
+              <Plus size={14} /> Persoană înhumată
+            </Btn>
+            <Btn variant="primary" onClick={() => setShowLoc(true)}>
+              <Plus size={15} /> Loc nou
+            </Btn>
+          </div>
+        )}
+      </header>
+
+      {notice && (
+        <Card className="p-3 border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
+          <span className="flex items-center gap-2"><AlertTriangle size={14} /> {notice}</span>
+          <button onClick={() => setNotice(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+        </Card>
+      )}
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Locuri de înhumare</div>
+        <BaraCautarePaginare
+          cautare={cautareLoc} onCautare={setCautareLoc}
+          pagina={paginaLoc} totalPagini={totalPaginiLoc} onPagina={setPaginaLoc}
+          totalFiltrate={totalLocuriFiltrate} placeholder="Caută cod parcelă sau stare..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Cod parcelă</th>
+              <th className="px-3 py-2">Stare</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {locuriAfisate.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-6 text-center text-stone-400">Niciun loc găsit.</td></tr>
+            )}
+            {locuriAfisate.map((l) => {
+              const stareTone = l.stare === "disponibil" ? "text-emerald-700 bg-emerald-50" : l.stare === "concesionat" ? "text-amber-700 bg-amber-50" : "text-stone-500 bg-stone-100";
+              return (
+                <tr key={l.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 font-mono font-medium">{l.codParcela}</td>
+                  <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{l.stare}</span></td>
+                  <td className="px-3 py-2">
+                    {!permisiuni.citireOnly && l.stare === "disponibil" && (
+                      <Btn variant="gold" onClick={() => setConcesioneazaFor(l)}>Concesionează</Btn>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Concesiuni</div>
+        <BaraCautarePaginare
+          cautare={cautareConc} onCautare={setCautareConc}
+          pagina={paginaConc} totalPagini={totalPaginiConc} onPagina={setPaginaConc}
+          totalFiltrate={totalConcesiuniFiltrate} placeholder="Caută cod loc sau concesionar..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Loc</th>
+              <th className="px-3 py-2">Concesionar</th>
+              <th className="px-3 py-2">Durată</th>
+              <th className="px-3 py-2">Expiră</th>
+              <th className="px-3 py-2">Stare</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {concesiuniAfisate.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-6 text-center text-stone-400">Nicio concesiune găsită.</td></tr>
+            )}
+            {concesiuniAfisate.map((c) => {
+              const loc = state.locuriInhumare.find((l) => l.id === c.locId);
+              let stareLabel = "Activă", stareTone = "text-emerald-700 bg-emerald-50";
+              const inTermenSuccesori = !c.expirataDefinitiv && c.dataExpirare && c.dataExpirare < azi;
+              if (c.expirataDefinitiv) { stareLabel = "Expirată — loc eliberat"; stareTone = "text-stone-500 bg-stone-100"; }
+              else if (inTermenSuccesori) { stareLabel = "Expirată — termen succesori activ"; stareTone = "text-rose-700 bg-rose-50"; }
+              return (
+                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 font-mono">{loc?.codParcela}</td>
+                  <td className="px-3 py-2">{c.concesionar}</td>
+                  <td className="px-3 py-2 text-stone-500">{DURATE_CONCESIUNE[c.tipDurata]}</td>
+                  <td className="px-3 py-2 tabular-nums text-stone-500">{c.dataExpirare ? fmtDataJurnal(c.dataExpirare) : "—"}</td>
+                  <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{stareLabel}</span></td>
+                  <td className="px-3 py-2">
+                    {!permisiuni.citireOnly && !c.expirataDefinitiv && (
+                      <div className="flex gap-1 justify-end">
+                        {inTermenSuccesori && (
+                          <Btn variant="danger" onClick={async () => { try { await notificaSuccesori(c); } catch (e) { setNotice(e.message || "Eroare la trimiterea notificării. Încearcă din nou."); } }}>Notifică succesorii</Btn>
+                        )}
+                        {!state.exercitiiFinanciare?.[yearOf(c.istoric[c.istoric.length - 1].data)]?.inchisDefinitiv && (
+                          <Btn variant="gold" onClick={() => setEditConcesiuneFor(c)}>Modifică</Btn>
+                        )}
+                        <Btn variant="ghost" onClick={() => setReinnoiesteFor(c)}>Reînnoiește</Btn>
+                        <Btn variant="ghost" onClick={() => setTransferaFor(c)}>Transferă</Btn>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Persoane înhumate</div>
+        <BaraCautarePaginare
+          cautare={cautarePers} onCautare={setCautarePers}
+          pagina={paginaPers} totalPagini={totalPaginiPers} onPagina={setPaginaPers}
+          totalFiltrate={totalPersoaneFiltrate} placeholder="Caută nume sau cod loc..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Nume</th>
+              <th className="px-3 py-2">Loc</th>
+              <th className="px-3 py-2">Data decesului</th>
+              <th className="px-3 py-2">Data înhumării</th>
+              <th className="px-3 py-2">Concesionar?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {persoaneAfisate.length === 0 && (
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-stone-400">Nicio persoană găsită.</td></tr>
+            )}
+            {persoaneAfisate.map((p) => {
+              const loc = state.locuriInhumare.find((l) => l.id === p.locId);
+              const concesiuneLoc = state.concesiuni.find((c) => c.locId === p.locId);
+              const esteConcesionarul = concesiuneLoc && concesiuneLoc.concesionar.trim().toLowerCase() === p.nume.trim().toLowerCase();
+              return (
+                <tr key={p.id} className="border-b border-stone-100">
+                  <td className="px-3 py-2 font-medium">{p.nume}</td>
+                  <td className="px-3 py-2 font-mono text-stone-500">{loc?.codParcela}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.dataDeces)}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.dataInhumare)}</td>
+                  <td className="px-3 py-2">{esteConcesionarul ? "Da — declanșează obligația de reînnoire de către succesori" : "Nu"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      {showLoc && (
+        <LocInhumareForm onClose={() => setShowLoc(false)} onSave={async (cod) => { await addLoc(cod); setShowLoc(false); }} />
+      )}
+      {concesioneazaFor && (
+        <ConcesiuneForm
+          loc={concesioneazaFor}
+          tarife={state.tarifeCimitir}
+          onClose={() => setConcesioneazaFor(null)}
+          onSave={async (payload) => { await creeazaConcesiune({ locId: concesioneazaFor.id, ...payload }); setConcesioneazaFor(null); }}
+        />
+      )}
+      {reinnoiesteFor && (
+        <ReinnoireConcesiuneForm
+          concesiune={reinnoiesteFor}
+          onClose={() => setReinnoiesteFor(null)}
+          onSave={async (payload) => { await reinnoieste(reinnoiesteFor.id, payload); setReinnoiesteFor(null); }}
+        />
+      )}
+      {editConcesiuneFor && (
+        <ConcesiuneEditForm
+          concesiune={editConcesiuneFor}
+          tarifeCimitir={state.tarifeCimitir}
+          onClose={() => setEditConcesiuneFor(null)}
+          onSave={async (payload) => { await editeazaConcesiune(editConcesiuneFor.id, payload); setEditConcesiuneFor(null); }}
+        />
+      )}
+      {transferaFor && (
+        <TransferConcesiuneForm
+          concesiune={transferaFor}
+          onClose={() => setTransferaFor(null)}
+          onSave={async (payload) => { await transferaConcesiune(transferaFor.id, payload); setTransferaFor(null); }}
+        />
+      )}
+      {showPersoana && (
+        <PersoanaInhumataForm
+          locuri={state.locuriInhumare.filter((l) => l.stare !== "disponibil")}
+          onClose={() => setShowPersoana(false)}
+          onSave={async (payload) => { await addPersoanaInhumata(payload); setShowPersoana(false); }}
+        />
+      )}
+      {showTarife && (
+        <TarifeCimitirModal tarife={state.tarifeCimitir} onClose={() => setShowTarife(false)} onSave={(tip, val) => actualizeazaTarif(tip, val)} />
+      )}
+    </div>
+  );
+}
+
+function LocInhumareForm({ onClose, onSave }) {
+  const [codParcela, setCodParcela] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!codParcela.trim()) { setError("Codul parcelei este obligatoriu."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave(codParcela.trim());
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea locului. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Loc de înhumare nou" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Cod parcelă">
+          <input className={inputCls} value={codParcela} onChange={(e) => setCodParcela(e.target.value)} placeholder="ex: A-12" />
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ConcesiuneForm({ loc, tarife, onClose, onSave }) {
+  const [concesionar, setConcesionar] = useState("");
+  const [tipDurata, setTipDurata] = useState("7");
+  const [dataInceput, setDataInceput] = useState(todayISO());
+  const [modPlata, setModPlata] = useState("numerar");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  const tarif = tarife[tipDurata] || 0;
+  const dataExpirare = calculeazaDataExpirare(dataInceput, tipDurata);
+
+  async function submit() {
+    if (!concesionar.trim()) { setError("Concesionarul (persoană vie) este obligatoriu."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ concesionar: concesionar.trim(), tipDurata, dataInceput, modPlata });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea concesiunii. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Concesiune nouă — loc ${loc.codParcela}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Concesionar (persoană vie)">
+          <input className={inputCls} value={concesionar} onChange={(e) => setConcesionar(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Durată concesiune">
+            <select className={inputCls} value={tipDurata} onChange={(e) => setTipDurata(e.target.value)}>
+              {Object.entries(DURATE_CONCESIUNE).map(([k, v]) => <option key={k} value={k}>{v} — {fmt(tarife[k] || 0)} lei</option>)}
+            </select>
+          </Field>
+          <Field label="Data începerii">
+            <input type="date" className={inputCls} value={dataInceput} onChange={(e) => setDataInceput(e.target.value)} />
+            {dataInceput && <span className="text-xs text-stone-400">{fmtDataJurnal(dataInceput)}</span>}
+          </Field>
+        </div>
+        <Field label="Sursa încasării">
+          <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
+            <option value="numerar">Numerar (casă)</option>
+            <option value="transfer">Transfer bancar</option>
+          </select>
+        </Field>
+        <Card className="p-3 bg-stone-50 text-xs flex flex-col gap-1">
+          <div className="flex justify-between"><span>Tarif</span><span className="tabular-nums font-medium">{fmt(tarif)} lei</span></div>
+          <div className="flex justify-between"><span>Expiră la</span><span>{dataExpirare ? fmtDataJurnal(dataExpirare) : "Pe veci — fără expirare"}</span></div>
+        </Card>
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="verde" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Emite chitanța și concesionează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ConcesiuneEditForm({ concesiune, tarifeCimitir, onClose, onSave }) {
+  const ultimulEveniment = concesiune.istoric[concesiune.istoric.length - 1];
+  const [concesionar, setConcesionar] = useState(concesiune.concesionar);
+  const [tipDurata, setTipDurata] = useState(concesiune.tipDurata);
+  const [tarif, setTarif] = useState(String(concesiune.tarif));
+  const [dataInceput, setDataInceput] = useState(ultimulEveniment.data);
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!concesionar.trim()) { setError("Numele concesionarului este obligatoriu."); return; }
+    const tarifNum = Number(tarif);
+    if (!tarif || tarifNum <= 0) { setError("Introduceți un tarif valid, mai mare ca 0."); return; }
+    if (!dataInceput) { setError("Data e obligatorie."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ concesionar: concesionar.trim(), tipDurata, tarif: tarifNum, dataInceput });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Modifică concesiunea — ${concesiune.concesionar}`} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Se corectează ultimul eveniment din istoricul concesiunii ({ultimulEveniment.tip === "reinnoire" ? "reînnoirea" : "concesiunea inițială"}),
+          inclusiv chitanța legată de el, dacă există.
+        </p>
+        <Field label="Concesionar">
+          <input className={inputCls} value={concesionar} onChange={(e) => setConcesionar(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Durată">
+            <select className={inputCls} value={tipDurata} onChange={(e) => { setTipDurata(e.target.value); setTarif(String(tarifeCimitir[e.target.value] || 0)); }}>
+              {Object.entries(DURATE_CONCESIUNE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
+          <Field label="Data">
+            <input type="date" className={inputCls} value={dataInceput} onChange={(e) => setDataInceput(e.target.value)} />
+            {dataInceput && <span className="text-xs text-stone-400">{fmtDataJurnal(dataInceput)}</span>}
+          </Field>
+        </div>
+        <Field label="Tarif (lei)">
+          <input type="number" className={inputCls} value={tarif} onChange={(e) => setTarif(e.target.value)} />
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ReinnoireConcesiuneForm({ concesiune, onClose, onSave }) {
+  const [dataInceputNoua, setDataInceputNoua] = useState(todayISO());
+  const [modPlata, setModPlata] = useState("numerar");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    setSalvand(true);
+    try {
+      await onSave({ dataInceputNoua, modPlata });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea reînnoirii. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Reînnoire concesiune — ${concesiune.concesionar}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Card className="p-3 bg-stone-50 text-xs">Tarif reînnoire (identic cu cel inițial): <strong>{fmt(concesiune.tarif)} lei</strong></Card>
+        <Field label="Data noii perioade">
+          <input type="date" className={inputCls} value={dataInceputNoua} onChange={(e) => setDataInceputNoua(e.target.value)} />
+          {dataInceputNoua && <span className="text-xs text-stone-400">{fmtDataJurnal(dataInceputNoua)}</span>}
+        </Field>
+        <Field label="Sursa încasării">
+          <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
+            <option value="numerar">Numerar (casă)</option>
+            <option value="transfer">Transfer bancar</option>
+          </select>
+        </Field>
+        {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="verde" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Emite chitanța și reînnoiește"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function TransferConcesiuneForm({ concesiune, onClose, onSave }) {
+  const [concesionarNou, setConcesionarNou] = useState("");
+  const [document, setDocument] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!concesionarNou.trim()) { setError("Numele noului concesionar este obligatoriu."); return; }
+    if (!document.trim()) { setError("Documentul justificativ (certificat moștenitor/declarație notarială) este obligatoriu."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ concesionarNou: concesionarNou.trim(), document: document.trim() });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea transferului. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Transfer concesiune — de la ${concesiune.concesionar}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Transferul necesită document justificativ (certificat de moștenitor sau declarație notarială) și este
+          aprobat de preotul paroh/administratorul parohiei.
+        </p>
+        <Field label="Noul concesionar">
+          <input className={inputCls} value={concesionarNou} onChange={(e) => setConcesionarNou(e.target.value)} />
+        </Field>
+        <Field label="Document justificativ (referință)">
+          <input className={inputCls} value={document} onChange={(e) => setDocument(e.target.value)} placeholder="ex: Certificat moștenitor nr. .../notar ..." />
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă transferul"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function PersoanaInhumataForm({ locuri, onClose, onSave }) {
+  const [locId, setLocId] = useState("");
+  const [nume, setNume] = useState("");
+  const [dataNasterii, setDataNasterii] = useState("");
+  const [dataDeces, setDataDeces] = useState(todayISO());
+  const [dataInhumare, setDataInhumare] = useState(todayISO());
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!locId) { setError("Selectați locul de înhumare."); return; }
+    if (!nume.trim()) { setError("Numele este obligatoriu."); return; }
+    if (!dataNasterii) { setError("Data nașterii este obligatorie."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ locId, nume: nume.trim(), dataNasterii, dataDeces, dataInhumare });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea persoanei. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Persoană înhumată — înregistrare nouă" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Loc de înhumare">
+          <select className={inputCls} value={locId} onChange={(e) => setLocId(e.target.value)}>
+            <option value="">— selectați —</option>
+            {locuri.map((l) => <option key={l.id} value={l.id}>{l.codParcela}</option>)}
+          </select>
+        </Field>
+        <Field label="Nume și prenume">
+          <input className={inputCls} value={nume} onChange={(e) => setNume(e.target.value)} />
+        </Field>
+        <Field label="Data nașterii">
+          <input type="date" className={inputCls} value={dataNasterii} onChange={(e) => setDataNasterii(e.target.value)} />
+          {dataNasterii && <span className="text-xs text-stone-400">{fmtDataJurnal(dataNasterii)}</span>}
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data decesului">
+            <input type="date" className={inputCls} value={dataDeces} onChange={(e) => setDataDeces(e.target.value)} />
+            {dataDeces && <span className="text-xs text-stone-400">{fmtDataJurnal(dataDeces)}</span>}
+          </Field>
+          <Field label="Data înhumării">
+            <input type="date" className={inputCls} value={dataInhumare} onChange={(e) => setDataInhumare(e.target.value)} />
+            {dataInhumare && <span className="text-xs text-stone-400">{fmtDataJurnal(dataInhumare)}</span>}
+          </Field>
+        </div>
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Dacă numele coincide cu concesionarul locului, aplicația recunoaște automat această persoană ca fiind chiar
+          concesionarul — nu mai e nevoie de o bifă separată.
+        </p>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function TarifeCimitirModal({ tarife, onClose, onSave }) {
+  const [valori, setValori] = useState(tarife);
+
+  return (
+    <Modal title="Tarife de concesiune" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        {Object.entries(DURATE_CONCESIUNE).map(([k, label]) => (
+          <Field key={k} label={label}>
+            <input
+              type="number" step="0.01" className={inputCls}
+              value={valori[k]}
+              onChange={(e) => setValori((v) => ({ ...v, [k]: Number(e.target.value) || 0 }))}
+            />
+          </Field>
+        ))}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+          <Btn variant="gold" onClick={() => { Object.entries(valori).forEach(([k, v]) => onSave(k, v)); onClose(); }}>Salvează tarifele</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Corespondență & Arhivă -------------------------------- */
+
+const MOD_PRIMIRE = { posta: "Poștă", email: "E-mail", direct: "Depunere directă" };
+
+function CorespondentaTab({ state, setState, permisiuni, parohieId }) {
+  const [showIntrare, setShowIntrare] = useState(false);
+  const [showIesire, setShowIesire] = useState(false);
+  const [showArhiva, setShowArhiva] = useState(false);
+  const [filtruCategorie, setFiltruCategorie] = useState("");
+  const [browseCoresp, setBrowseCoresp] = useState(null); // null | "intrare" | "iesire"
+  const [notice, setNotice] = useState(null);
+
+  async function addIntrare({ data, partener, obiect, modPrimire, termenRaspuns }) {
+    const rec = await creeazaCorespondentaIntrare(parohieId, { data, partener, obiect, modPrimire, termenRaspuns });
+    setState((s) => ({ ...s, corespondenta: [...s.corespondenta, rec] }));
+  }
+
+  async function addIesire({ data, partener, obiect, referintaIntrareId }) {
+    const rec = await creeazaCorespondentaIesire(parohieId, { data, partener, obiect, referintaIntrareId });
+    setState((s) => ({ ...s, corespondenta: [...s.corespondenta, rec] }));
+  }
+
+  async function toggleStatus(id) {
+    const c = state.corespondenta.find((x) => x.id === id);
+    if (!c) return;
+    const statusNou = c.status === "in_lucru" ? "rezolvat" : "in_lucru";
+    await actualizeazaStatusCorespondenta(id, statusNou);
+    setState((s) => ({
+      ...s,
+      corespondenta: s.corespondenta.map((x) => (x.id === id ? { ...x, status: statusNou } : x)),
+    }));
+  }
+
+  async function addDocumentArhiva({ denumire, categorie, notite }) {
+    const an = new Date().getFullYear();
+    const rec = await creeazaDocumentArhiva(parohieId, { denumire, categorie, an, notite });
+    setState((s) => ({ ...s, arhiva: [...s.arhiva, rec] }));
+  }
+
+  const intrari = state.corespondenta.filter((c) => c.tip === "intrare").sort((a, b) => (a.data < b.data ? 1 : -1));
+  const iesiri = state.corespondenta.filter((c) => c.tip === "iesire").sort((a, b) => (a.data < b.data ? 1 : -1));
+  const azi = todayISO();
+  const documenteFiltrate = filtruCategorie ? state.arhiva.filter((d) => d.categorie === filtruCategorie) : state.arhiva;
+
+  const intrariCautabile = useMemo(() => intrari.map((c) => ({ ...c, cautObiect: c.obiect, cautPartener: c.partener })), [intrari]);
+  const iesiriCautabile = useMemo(() => iesiri.map((c) => ({ ...c, cautObiect: c.obiect, cautPartener: c.partener })), [iesiri]);
+  const {
+    cautare: cautareIntrare, setCautare: setCautareIntrare, pagina: paginaIntrare, setPagina: setPaginaIntrare,
+    totalPagini: totalPaginiIntrare, afisate: intrariAfisate, totalFiltrate: totalIntrariFiltrate,
+  } = useTabelFiltrat(intrariCautabile, ["cautObiect", "cautPartener"], 12);
+  const {
+    cautare: cautareIesire, setCautare: setCautareIesire, pagina: paginaIesire, setPagina: setPaginaIesire,
+    totalPagini: totalPaginiIesire, afisate: iesiriAfisate, totalFiltrate: totalIesiriFiltrate,
+  } = useTabelFiltrat(iesiriCautabile, ["cautObiect", "cautPartener"], 12);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header>
+        <h1 className="font-serif text-2xl text-[#1F3864]">Corespondență & Arhivă</h1>
+        <p className="text-sm text-stone-500">Termen de retenție unic: {TERMEN_RETENTIE_ANI} de ani, pentru toate documentele.</p>
+      </header>
+
+      {notice && (
+        <Card className="p-3 bg-amber-50 border-amber-200 flex items-center justify-between">
+          <span className="text-sm text-amber-800 flex items-center gap-2"><AlertTriangle size={14} /> {notice}</span>
+          <button onClick={() => setNotice(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+        </Card>
+      )}
+
+      <Card className="overflow-x-auto">
+        <div className="flex items-center justify-between px-3 pt-3">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Registru corespondență — intrare</div>
+          <div className="flex gap-2">
+            <Btn variant="ghost" onClick={() => setBrowseCoresp("intrare")}><FileText size={14} /> Navigator</Btn>
+            {!permisiuni.citireOnly && (
+              <Btn variant="primary" onClick={() => setShowIntrare(true)}><Plus size={14} /> Înregistrare nouă</Btn>
+            )}
+          </div>
+        </div>
+        <BaraCautarePaginare
+          cautare={cautareIntrare} onCautare={setCautareIntrare}
+          pagina={paginaIntrare} totalPagini={totalPaginiIntrare} onPagina={setPaginaIntrare}
+          totalFiltrate={totalIntrariFiltrate} placeholder="Caută obiect sau expeditor..."
+        />
+        <table className="w-full text-sm mt-2">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Nr.</th>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Expeditor</th>
+              <th className="px-3 py-2">Obiect</th>
+              <th className="px-3 py-2">Mod primire</th>
+              <th className="px-3 py-2">Termen răspuns</th>
+              <th className="px-3 py-2">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {intrariAfisate.length === 0 && (
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-stone-400">Nicio înregistrare găsită.</td></tr>
+            )}
+            {intrariAfisate.map((c) => {
+              const depasit = c.termenRaspuns && c.termenRaspuns < azi && c.status === "in_lucru";
+              const aproape = c.termenRaspuns && !depasit && c.status === "in_lucru" && (new Date(c.termenRaspuns) - new Date(azi)) / 86400000 <= 5;
+              return (
+                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(c.data)}</td>
+                  <td className="px-3 py-2">{c.partener}</td>
+                  <td className="px-3 py-2 text-stone-500">{c.obiect}</td>
+                  <td className="px-3 py-2 text-stone-500">{MOD_PRIMIRE[c.modPrimire]}</td>
+                  <td className="px-3 py-2 tabular-nums">
+                    {c.termenRaspuns ? (
+                      <span className={depasit ? "text-rose-700 font-medium" : aproape ? "text-amber-700 font-medium" : "text-stone-500"}>
+                        {fmtDataJurnal(c.termenRaspuns)}{depasit ? " — depășit!" : aproape ? " — apropiat" : ""}
+                      </span>
+                    ) : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {permisiuni.citireOnly ? (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${c.status === "rezolvat" ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}>
+                        {c.status === "rezolvat" ? "Rezolvat" : "În lucru"}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={async () => { try { await toggleStatus(c.id); } catch (e) { setNotice(e.message || "Eroare la actualizarea stării."); } }}
+                        className={`text-xs px-2 py-0.5 rounded-full ${c.status === "rezolvat" ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}
+                      >
+                        {c.status === "rezolvat" ? "Rezolvat" : "În lucru"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card className="overflow-x-auto">
+        <div className="flex items-center justify-between px-3 pt-3">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Registru corespondență — ieșire</div>
+          <div className="flex gap-2">
+            <Btn variant="ghost" onClick={() => setBrowseCoresp("iesire")}><FileText size={14} /> Navigator</Btn>
+            {!permisiuni.citireOnly && (
+              <Btn variant="primary" onClick={() => setShowIesire(true)}><Plus size={14} /> Înregistrare nouă</Btn>
+            )}
+          </div>
+        </div>
+        <BaraCautarePaginare
+          cautare={cautareIesire} onCautare={setCautareIesire}
+          pagina={paginaIesire} totalPagini={totalPaginiIesire} onPagina={setPaginaIesire}
+          totalFiltrate={totalIesiriFiltrate} placeholder="Caută obiect sau destinatar..."
+        />
+        <table className="w-full text-sm mt-2">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-3 py-2">Nr.</th>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Destinatar</th>
+              <th className="px-3 py-2">Obiect</th>
+              <th className="px-3 py-2">Răspuns la</th>
+            </tr>
+          </thead>
+          <tbody>
+            {iesiriAfisate.length === 0 && (
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-stone-400">Nicio înregistrare găsită.</td></tr>
+            )}
+            {iesiriAfisate.map((c) => {
+              const referinta = state.corespondenta.find((x) => x.id === c.referintaIntrareId);
+              return (
+                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <td className="px-3 py-2 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
+                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(c.data)}</td>
+                  <td className="px-3 py-2">{c.partener}</td>
+                  <td className="px-3 py-2 text-stone-500">{c.obiect}</td>
+                  <td className="px-3 py-2 text-stone-500">{referinta ? `Intrare nr. ${referinta.nr}/${referinta.an}` : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-serif text-lg text-[#1F3864]">Arhivă digitală</h2>
+          <div className="flex gap-2 items-center">
+            <select className={inputCls} value={filtruCategorie} onChange={(e) => setFiltruCategorie(e.target.value)}>
+              <option value="">Toate categoriile</option>
+              {CATEGORII_ARHIVA.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {!permisiuni.citireOnly && (
+              <Btn variant="gold" onClick={() => setShowArhiva(true)}><Plus size={14} /> Document nou</Btn>
+            )}
+          </div>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-2 py-1.5">Denumire</th>
+              <th className="px-2 py-1.5">Categorie</th>
+              <th className="px-2 py-1.5">An</th>
+              <th className="px-2 py-1.5">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {documenteFiltrate.length === 0 && (
+              <tr><td colSpan={4} className="px-2 py-4 text-center text-stone-400">Niciun document încă.</td></tr>
+            )}
+            {documenteFiltrate.map((d) => (
+              <tr key={d.id} className="border-b border-stone-100">
+                <td className="px-2 py-1.5 font-medium">{d.denumire}</td>
+                <td className="px-2 py-1.5 text-stone-500">{d.categorie}</td>
+                <td className="px-2 py-1.5 tabular-nums">{d.an}</td>
+                <td className="px-2 py-1.5 text-stone-500">{d.notite || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {showIntrare && (
+        <CorespondentaIntrareForm onClose={() => setShowIntrare(false)} onSave={async (payload) => { await addIntrare(payload); setShowIntrare(false); }} />
+      )}
+      {showIesire && (
+        <CorespondentaIesireForm intrari={intrari} onClose={() => setShowIesire(false)} onSave={async (payload) => { await addIesire(payload); setShowIesire(false); }} />
+      )}
+      {showArhiva && (
+        <DocumentArhivaForm onClose={() => setShowArhiva(false)} onSave={async (payload) => { await addDocumentArhiva(payload); setShowArhiva(false); }} />
+      )}
+      {browseCoresp === "intrare" && (
+        <DocumentBrowserGeneric
+          tipEtichetat="Corespondență — intrare"
+          documente={intrari}
+          campuriAntet={[
+            { label: "Data", value: (d) => fmtDataJurnal(d.data) },
+            { label: "Expeditor", value: (d) => d.partener },
+            { label: "Obiect", value: (d) => d.obiect },
+            { label: "Mod primire", value: (d) => MOD_PRIMIRE[d.modPrimire] },
+            { label: "Termen răspuns", value: (d) => (d.termenRaspuns ? fmtDataJurnal(d.termenRaspuns) : "—") },
+            { label: "Status", value: (d) => (d.status === "rezolvat" ? "Rezolvat" : "În lucru") },
+          ]}
+          parohie={state.parohie}
+          onClose={() => setBrowseCoresp(null)}
+        />
+      )}
+      {browseCoresp === "iesire" && (
+        <DocumentBrowserGeneric
+          tipEtichetat="Corespondență — ieșire"
+          documente={iesiri}
+          campuriAntet={[
+            { label: "Data", value: (d) => fmtDataJurnal(d.data) },
+            { label: "Destinatar", value: (d) => d.partener },
+            { label: "Obiect", value: (d) => d.obiect },
+            { label: "Răspuns la", value: (d) => {
+              const ref = state.corespondenta.find((x) => x.id === d.referintaIntrareId);
+              return ref ? `Intrare nr. ${ref.nr}/${ref.an}` : "—";
+            } },
+          ]}
+          parohie={state.parohie}
+          onClose={() => setBrowseCoresp(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CorespondentaIntrareForm({ onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [partener, setPartener] = useState("");
+  const [obiect, setObiect] = useState("");
+  const [modPrimire, setModPrimire] = useState("posta");
+  const [termenRaspuns, setTermenRaspuns] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!partener.trim() || !obiect.trim()) { setError("Expeditorul și obiectul sunt obligatorii."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ data, partener: partener.trim(), obiect: obiect.trim(), modPrimire, termenRaspuns: termenRaspuns || null });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea corespondenței. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Corespondență intrare — înregistrare nouă" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+          <Field label="Mod de primire">
+            <select className={inputCls} value={modPrimire} onChange={(e) => setModPrimire(e.target.value)}>
+              {Object.entries(MOD_PRIMIRE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </Field>
+        </div>
+        <Field label="Expeditor">
+          <input className={inputCls} value={partener} onChange={(e) => setPartener(e.target.value)} />
+        </Field>
+        <Field label="Obiect">
+          <input className={inputCls} value={obiect} onChange={(e) => setObiect(e.target.value)} />
+        </Field>
+        <Field label="Termen de răspuns (opțional)">
+          <input type="date" className={inputCls} value={termenRaspuns} onChange={(e) => setTermenRaspuns(e.target.value)} />
+          {termenRaspuns && <span className="text-xs text-stone-400">{fmtDataJurnal(termenRaspuns)}</span>}
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function CorespondentaIesireForm({ intrari, onClose, onSave }) {
+  const [data, setData] = useState(todayISO());
+  const [partener, setPartener] = useState("");
+  const [obiect, setObiect] = useState("");
+  const [referintaIntrareId, setReferintaIntrareId] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!partener.trim() || !obiect.trim()) { setError("Destinatarul și obiectul sunt obligatorii."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ data, partener: partener.trim(), obiect: obiect.trim(), referintaIntrareId: referintaIntrareId || null });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea corespondenței. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Corespondență ieșire — înregistrare nouă" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Data">
+          <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+          {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+        </Field>
+        <Field label="Destinatar">
+          <input className={inputCls} value={partener} onChange={(e) => setPartener(e.target.value)} />
+        </Field>
+        <Field label="Obiect">
+          <input className={inputCls} value={obiect} onChange={(e) => setObiect(e.target.value)} />
+        </Field>
+        <Field label="Răspuns la (opțional)">
+          <select className={inputCls} value={referintaIntrareId} onChange={(e) => setReferintaIntrareId(e.target.value)}>
+            <option value="">— nu este răspuns —</option>
+            {intrari.map((i) => <option key={i.id} value={i.id}>Intrare nr. {i.nr}/{i.an} — {i.obiect}</option>)}
+          </select>
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DocumentArhivaForm({ onClose, onSave }) {
+  const [denumire, setDenumire] = useState("");
+  const [categorie, setCategorie] = useState(CATEGORII_ARHIVA[0]);
+  const [notite, setNotite] = useState("");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!denumire.trim()) { setError("Denumirea este obligatorie."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ denumire: denumire.trim(), categorie, notite: notite.trim() });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea documentului. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title="Document nou în arhivă" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">Termen de retenție unic: {TERMEN_RETENTIE_ANI} de ani.</p>
+        <Field label="Denumire document">
+          <input className={inputCls} value={denumire} onChange={(e) => setDenumire(e.target.value)} />
+        </Field>
+        <Field label="Categorie">
+          <select className={inputCls} value={categorie} onChange={(e) => setCategorie(e.target.value)}>
+            {CATEGORII_ARHIVA.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Note / referință (opțional)">
+          <input className={inputCls} value={notite} onChange={(e) => setNotite(e.target.value)} placeholder="ex: referință către un alt modul" />
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Navigator documente (Chitanțe / Ordine de plată) -------------------------------- */
+
+function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, onClose }) {
+  // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
+  // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
+  const documente = useMemo(() => grupeazaDocumente(operatiuni, tip), [operatiuni, tip]);
+  const [index, setIndex] = useState(documente.length - 1);
+  const [confirmareStergere, setConfirmareStergere] = useState(false);
+  const [eroareStergere, setEroareStergere] = useState("");
+  const [stergand, setStergand] = useState(false);
+  const [saltNr, setSaltNr] = useState("");
+  const [modSelectie, setModSelectie] = useState(false);
+  const [selectie, setSelectie] = useState(new Set());
+  const [eroareSalt, setEroareSalt] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const [editData, setEditData] = useState(null); // { data, tert, linii: [{id, idTemporar, contId, suma, explicatie, modPlata, ajustare106}] }
+  const [idsDeSters, setIdsDeSters] = useState([]);
+  const [eroareEdit, setEroareEdit] = useState("");
+  const [salvandEdit, setSalvandEdit] = useState(false);
+  const [confirmareExcedent, setConfirmareExcedent] = useState(null); // { excedentVechi, excedentNou } | null
+
+  const tipEtichetat = tip === "incasare" ? "Chitanță" : "Ordin de plată";
+  const docCurent = documente[index];
+  const anInchisDefinitiv = docCurent && !!exercitiiFinanciare?.[docCurent.an]?.inchisDefinitiv;
+  const conturiFiltrate = conturi
+    ? conturi.filter((c) => c.clasa !== "viramente" && (tip === "incasare" ? c.clasa !== "cheltuiala" : c.clasa !== "venit" || c.id === "106"))
+    : [];
+
+  // Sold cumulat de plăți (obligatoriu, afișat pe fiecare Ordin de plată) — suma tuturor OP
+  // emise în același an, de la începutul anului până la (inclusiv) documentul curent.
+  const soldCumulatPlati = useMemo(() => {
+    if (tip !== "plata" || !docCurent) return null;
+    return documente
+      .filter((d) => d.an === docCurent.an && d.nr <= docCurent.nr)
+      .reduce((sum, d) => sum + d.linii.reduce((s, l) => s + l.suma, 0), 0);
+  }, [tip, docCurent, documente]);
+
+  // Ștergerea NU e permisă pentru: excedentul reportat (Chitanța nr. 1/an), documentele legate
+  // de stocuri (Pangar) sau viramentele interne (articol bugetar 581).
+  const documentIdCurent = docCurent?.linii[0]?.documentId;
+  const motivBlocareStergere = !docCurent ? null
+    : docCurent.linii.some((l) => l.esteExcedentReportat) ? "reprezintă excedentul reportat din anul precedent"
+    : docCurent.linii.some((l) => l.contId === "581") ? "reprezintă un virament intern (articol bugetar 581)"
+    : (miscariStoc || []).some((m) => m.documentId === documentIdCurent) ? "este legat de gestiunea stocurilor (Pangar) — ștergerea ar desincroniza stocul"
+    : null;
+
+  async function stergeDocumentCurent() {
+    if (!documentIdCurent) { setConfirmareStergere(false); return; }
+    setStergand(true);
+    try {
+      await stergeDocument(documentIdCurent);
+      setState((s) => ({
+        ...s,
+        operatiuni: s.operatiuni.filter((op) => op.documentId !== documentIdCurent),
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`),
+      }));
+      setConfirmareStergere(false);
+      setIndex((i) => Math.max(0, i - 1));
+    } catch (e) {
+      setEroareStergere(e.message || "Eroare la ștergerea documentului. Încearcă din nou.");
+    } finally {
+      setStergand(false);
+    }
+  }
+
+  function intraInEditare() {
+    setEditData({
+      data: docCurent.data, tert: docCurent.tert,
+      linii: docCurent.linii.map((l) => ({
+        id: l.id, contId: l.contId, suma: String(l.suma), explicatie: l.explicatie || "",
+        modPlata: l.modPlata, ajustare106: !!l.ajustare106,
+      })),
+    });
+    setIdsDeSters([]);
+    setConfirmareExcedent(null);
+    setEroareEdit("");
+    setEditMode(true);
+  }
+
+  function renuntaEditare() {
+    setEditData(null);
+    setIdsDeSters([]);
+    setConfirmareExcedent(null);
+    setEroareEdit("");
+    setEditMode(false);
+  }
+
+  function actualizeazaLinieEdit(cheie, patch) {
+    setEditData((d) => ({
+      ...d,
+      linii: d.linii.map((l) => ((l.id || l.idTemporar) === cheie ? { ...l, ...patch } : l)),
+    }));
+  }
+
+  function adaugaLinieEdit() {
+    setEditData((d) => ({
+      ...d,
+      linii: [
+        ...d.linii,
+        { id: null, idTemporar: uid(), contId: "", suma: "", explicatie: "", modPlata: tip === "incasare" ? "numerar" : "transfer", ajustare106: false },
+      ],
+    }));
+  }
+
+  function stergeLinieEdit(cheie) {
+    setEditData((d) => {
+      if (d.linii.length <= 1) return d;
+      const linie = d.linii.find((l) => (l.id || l.idTemporar) === cheie);
+      if (linie?.id) setIdsDeSters((ids) => [...ids, linie.id]);
+      return { ...d, linii: d.linii.filter((l) => (l.id || l.idTemporar) !== cheie) };
+    });
+  }
+
+  async function salveazaEditare() {
+    if (!editData.data) { setEroareEdit("Data e obligatorie."); return; }
+    if (editData.linii.some((l) => !l.contId || !l.suma || Number(l.suma) <= 0)) {
+      setEroareEdit("Fiecare linie trebuie să aibă un cont și o sumă validă, mai mare ca 0.");
+      return;
+    }
+    const anNou = yearOf(editData.data);
+    if (anNou !== docCurent.an) {
+      setEroareEdit(`Nu poți muta documentul în alt an prin editare (numerotarea e legată de anul ${docCurent.an}) — rămâi în ${docCurent.an}.`);
+      return;
+    }
+    if (exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+      setEroareEdit(`Exercițiul financiar ${anNou} este închis definitiv — nu poate primi acest document.`);
+      return;
+    }
+
+    // Verificare de sold: comparăm contribuția VECHE a acestui document la soldul Casă/Bancă
+    // cu contribuția NOUĂ propusă — dacă editarea (indiferent de tip: chitanță sau ordin de
+    // plată) ar duce vreunul din solduri sub zero, blocăm, la fel cum se întâmplă la emitere.
+    const semn = tip === "incasare" ? 1 : -1;
+    const sumaPe = (linii, sursa) => linii.filter((l) => l.modPlata === sursa).reduce((s, l) => s + Number(l.suma), 0);
+    const casaVeche = semn * sumaPe(docCurent.linii, "numerar");
+    const bancaVeche = semn * sumaPe(docCurent.linii, "transfer");
+    const casaNoua = semn * sumaPe(editData.linii, "numerar");
+    const bancaNoua = semn * sumaPe(editData.linii, "transfer");
+    const soldCasaProspectiv = derived.soldCasa - casaVeche + casaNoua;
+    const soldBancaProspectiv = derived.soldBanca - bancaVeche + bancaNoua;
+    if (soldCasaProspectiv < 0) {
+      setEroareEdit(`Această modificare ar duce soldul din Casă la ${fmt(soldCasaProspectiv)} RON — sub zero. Nu poate fi salvată așa.`);
+      return;
+    }
+    if (soldBancaProspectiv < 0) {
+      setEroareEdit(`Această modificare ar duce soldul din Bancă la ${fmt(soldBancaProspectiv)} RON — sub zero. Nu poate fi salvată așa.`);
+      return;
+    }
+
+    // Anul e deja soft-închis: orice modificare schimbă și excedentul deja reportat în Chitanța
+    // nr. 1/(anNou+1). Nu aplicăm nimic tăcut — arătăm valorile vechi/noi și cerem confirmare
+    // explicită; abia după aceea recalculăm automat acele linii (utilizatorul nu le tastează).
+    const anEsteSoftInchis = !!exercitiiFinanciare?.[anNou]?.inchis && !exercitiiFinanciare?.[anNou]?.inchisDefinitiv;
+    if (anEsteSoftInchis && !confirmareExcedent) {
+      const { soldCasa: casaVecheTotal, soldBanca: bancaVecheTotal } = soldCasaBancaLaData(operatiuni, `${anNou}-12-31`);
+      setConfirmareExcedent({
+        excedentVechi: { soldCasa: casaVecheTotal, soldBanca: bancaVecheTotal },
+        excedentNou: { soldCasa: casaVecheTotal - casaVeche + casaNoua, soldBanca: bancaVecheTotal - bancaVeche + bancaNoua },
+      });
+      return; // așteptăm confirmarea, într-un pas separat — nimic nu se salvează încă
+    }
+
+    const documentId = docCurent.linii[0]?.documentId;
+    setSalvandEdit(true);
+    try {
+      let liniiNoiInserate = [];
+      if (documentId) {
+        // Documentul există în Supabase (migrat) — scriem acolo întâi, ca sursă de adevăr.
+        const rezultat = await actualizeazaDocument(documentId, { data: editData.data, tert: editData.tert }, editData.linii, idsDeSters);
+        liniiNoiInserate = rezultat.liniiNoiInserate;
+      }
+      let excedentActualizat = [];
+      if (confirmareExcedent) {
+        const rezultatExcedent = await seteazaExcedentReportat(parohieId, anNou + 1, confirmareExcedent.excedentNou);
+        excedentActualizat = rezultatExcedent.operatiuniActualizate;
+      }
+      setState((s) => {
+        // id-urile temporare ale liniilor nou-adăugate primesc acum id-ul real din Supabase.
+        const idReal = (l) => (l.id ? l.id : liniiNoiInserate.find((x) => x.idTemporar === l.idTemporar)?.id || l.idTemporar);
+
+        let operatiuni = s.operatiuni.filter((op) => !idsDeSters.includes(op.id));
+        operatiuni = operatiuni.map((op) => {
+          const linieEditata = editData.linii.find((l) => l.id === op.id);
+          if (!linieEditata) return op;
+          return {
+            ...op, data: editData.data, tert: editData.tert, modPlata: linieEditata.modPlata,
+            contId: linieEditata.contId, suma: Number(linieEditata.suma), explicatie: linieEditata.explicatie,
+            ajustare106: !!linieEditata.ajustare106, an: anNou,
+          };
+        });
+        const liniiNoi = editData.linii.filter((l) => !l.id);
+        for (const l of liniiNoi) {
+          operatiuni.push({
+            id: idReal(l), tip, contId: l.contId, data: editData.data, suma: Number(l.suma), modPlata: l.modPlata,
+            tert: editData.tert, explicatie: l.explicatie || "", nr: docCurent.nr, an: anNou,
+            ajustare106: !!l.ajustare106, documentId,
+          });
+        }
+        if (excedentActualizat.length > 0) {
+          const idsExcedent = new Set(excedentActualizat.map((o) => o.id));
+          operatiuni = [...operatiuni.filter((op) => !idsExcedent.has(op.id)), ...excedentActualizat];
+        }
+        const mesajExcedent = confirmareExcedent
+          ? ` — excedent reportat în Chitanța nr. 1/${anNou + 1} recalculat automat (Casă: ${fmt(confirmareExcedent.excedentNou.soldCasa)} RON, Bancă: ${fmt(confirmareExcedent.excedentNou.soldBanca)} RON)`
+          : "";
+        return {
+          ...s, operatiuni,
+          jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}${mesajExcedent}`),
+        };
+      });
+      setEditMode(false);
+      setEditData(null);
+      setIdsDeSters([]);
+      setConfirmareExcedent(null);
+    } catch (e) {
+      setEroareEdit(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
+    } finally {
+      setSalvandEdit(false);
+    }
+  }
+
+  function mergiLa(i) {
+    if (i < 0 || i >= documente.length) return;
+    setEditMode(false);
+    setIndex(i);
+  }
+
+  function saltLaNr() {
+    const nr = Number(saltNr);
+    const gasit = documente.findIndex((d) => d.nr === nr);
+    if (gasit === -1) {
+      setEroareSalt(`Nu există documentul nr. ${saltNr}.`);
+      return;
+    }
+    setEroareSalt("");
+    setIndex(gasit);
+  }
+
+  function toggleSelectie(key) {
+    setSelectie((s) => {
+      const nou = new Set(s);
+      if (nou.has(key)) nou.delete(key);
+      else nou.add(key);
+      return nou;
+    });
+  }
+
+  if (documente.length === 0) {
+    return (
+      <Modal title={`${tipEtichetat}e — niciun document emis`} onClose={onClose}>
+        <p className="text-sm text-stone-500">Nu există încă niciun document de acest tip.</p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={`Navigator documente — ${tipEtichetat}e`} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <Card className="p-3 bg-stone-50 flex items-center justify-between">
+          <span className="text-sm font-medium text-stone-600">
+            TOTAL {tip === "incasare" ? "Încasări" : "Plăți"} ({documente.length} {tipEtichetat.toLowerCase()}{documente.length === 1 ? "ă" : "e"})
+          </span>
+          <span className={`font-serif text-lg tabular-nums ${tip === "incasare" ? "text-emerald-700" : "text-rose-700"}`}>
+            {fmt(documente.reduce((sum, d) => sum + d.linii.reduce((s, l) => s + l.suma, 0), 0))} lei
+          </span>
+        </Card>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Btn variant="ghost" onClick={() => mergiLa(index - 1)} disabled={index <= 0}>← Precedentul</Btn>
+            <Btn variant="ghost" onClick={() => mergiLa(index + 1)} disabled={index >= documente.length - 1}>Următorul →</Btn>
+            <Btn variant="ghost" onClick={() => mergiLa(documente.length - 1)}>Salt la ultimul doc.</Btn>
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number" className={inputCls + " w-24"} value={saltNr}
+              onChange={(e) => setSaltNr(e.target.value)} placeholder="Nr. doc"
+              onKeyDown={(e) => e.key === "Enter" && saltLaNr()}
+            />
+            <Btn variant="ghost" onClick={saltLaNr}>Salt la doc nr.</Btn>
+          </div>
+        </div>
+        {eroareSalt && <span className="text-rose-600 text-xs">{eroareSalt}</span>}
+        <div className="text-xs text-stone-400 text-center">Document {index + 1} din {documente.length}</div>
+
+        <DocumentHeader tip={tipEtichetat} nr={docCurent.nr} an={docCurent.an} serie={docCurent.serie} numarIdentificare={docCurent.numarIdentificare} />
+
+        {!editMode && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-stone-400">
+              {anInchisDefinitiv
+                ? `Exercițiul ${docCurent.an} e închis definitiv — document needitabil.`
+                : motivBlocareStergere
+                ? `Nu poate fi șters — ${motivBlocareStergere}.`
+                : `Editabil cât timp exercițiul ${docCurent.an} nu e închis definitiv (până la 31.12.${docCurent.an + 1}).`}
+            </span>
+            {!permisiuni.citireOnly && !anInchisDefinitiv && (
+              <div className="flex gap-2">
+                <Btn variant="gold" onClick={intraInEditare}>Modifică</Btn>
+                <Btn
+                  variant="danger"
+                  onClick={() => { setEroareStergere(""); setConfirmareStergere(true); }}
+                  disabled={!!motivBlocareStergere}
+                >
+                  Șterge
+                </Btn>
+              </div>
+            )}
+          </div>
+        )}
+
+        {confirmareStergere && (
+          <Modal title={`Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`} onClose={() => setConfirmareStergere(false)}>
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <span>ATENȚIE! Sunteți sigur că doriți să ștergeți documentul? Operația e ireversibilă.</span>
+              </p>
+              {eroareStergere && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroareStergere}</span>}
+              <div className="flex justify-end gap-2">
+                <Btn variant="ghost" onClick={() => setConfirmareStergere(false)} disabled={stergand}>Renunță</Btn>
+                <Btn variant="danger" onClick={stergeDocumentCurent} disabled={stergand}>{stergand ? "Se șterge..." : "Da, șterge documentul"}</Btn>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {!editMode && (
+          <>
+            <Card className="p-3 text-sm flex flex-col gap-1">
+              <div className="flex justify-between"><span className="text-stone-500">Data</span><span>{fmtDataJurnal(docCurent.data)}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Denumire partener</span><span>{docCurent.tert || "—"}</span></div>
+            </Card>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left bg-stone-50 text-stone-500"><th className="px-2 py-1.5">Art. bug. nr.</th><th className="px-2 py-1.5">Explicație</th><th className="px-2 py-1.5">Sursă/Destinație</th><th className="px-2 py-1.5 text-right">Sumă</th></tr>
+              </thead>
+              <tbody>
+                {docCurent.linii.map((l) => (
+                  <tr key={l.id} className="border-t border-stone-100">
+                    <td className="px-2 py-1.5 font-mono">{contById[l.contId]?.simbol || l.contId}</td>
+                    <td className="px-2 py-1.5 text-stone-500">{l.explicatie || "—"}</td>
+                    <td className="px-2 py-1.5 text-stone-500">{l.modPlata === "numerar" ? "Casă" : "Bancă"}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(l.suma)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-stone-300 font-semibold">
+                  <td className="px-2 py-1.5" colSpan={3}>Total</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmt(docCurent.linii.reduce((s, l) => s + l.suma, 0))}</td>
+                </tr>
+                {tip === "plata" && (
+                  <tr className="bg-amber-50 font-semibold">
+                    <td className="px-2 py-1.5" colSpan={3}>Sold cumulat plăți (an {docCurent.an})</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldCumulatPlati)}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {editMode && editData && confirmareExcedent && (
+          <Card className="p-3 flex flex-col gap-4 border-amber-300 bg-amber-50">
+            <p className="text-sm text-amber-900 flex items-start gap-2">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <span>
+                Exercițiul {docCurent.an} este deja închis. Această modificare schimbă excedentul deja reportat în
+                Chitanța nr. 1/{docCurent.an + 1} — se va actualiza automat, cu valorile de mai jos, fără să fie
+                nevoie s-o editezi manual.
+              </span>
+            </p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <Card className="p-3 flex flex-col gap-1 bg-white">
+                <div className="text-xs uppercase tracking-wide text-stone-400 font-medium">Excedent Casă</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-500">{fmt(confirmareExcedent.excedentVechi.soldCasa)} lei</span>
+                  <span>→</span>
+                  <span className="font-semibold text-[#1F3864]">{fmt(confirmareExcedent.excedentNou.soldCasa)} lei</span>
+                </div>
+              </Card>
+              <Card className="p-3 flex flex-col gap-1 bg-white">
+                <div className="text-xs uppercase tracking-wide text-stone-400 font-medium">Excedent Bancă</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-500">{fmt(confirmareExcedent.excedentVechi.soldBanca)} lei</span>
+                  <span>→</span>
+                  <span className="font-semibold text-[#1F3864]">{fmt(confirmareExcedent.excedentNou.soldBanca)} lei</span>
+                </div>
+              </Card>
+            </div>
+            {eroareEdit && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroareEdit}</span>}
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setConfirmareExcedent(null)} disabled={salvandEdit}>Înapoi, mai verific</Btn>
+              <Btn variant="danger" onClick={salveazaEditare} disabled={salvandEdit}>
+                {salvandEdit ? "Se salvează..." : "Confirm modificarea și excedentul"}
+              </Btn>
+            </div>
+          </Card>
+        )}
+
+        {editMode && editData && !confirmareExcedent && (
+          <Card className="p-3 flex flex-col gap-3 border-[#B8860B]/40">
+            <Field label="Data">
+              <input type="date" className={inputCls} value={editData.data} onChange={(e) => setEditData((d) => ({ ...d, data: e.target.value }))} />
+              {editData.data && <span className="text-xs text-stone-400">{fmtDataJurnal(editData.data)}</span>}
+            </Field>
+            <Field label="Denumire partener">
+              <input className={inputCls} value={editData.tert || ""} onChange={(e) => setEditData((d) => ({ ...d, tert: e.target.value }))} />
+            </Field>
+            <div className="flex flex-col gap-2">
+              <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Linii</div>
+              {editData.linii.map((l, i) => {
+                const cheie = l.id || l.idTemporar;
+                return (
+                  <Card key={cheie} className="p-2 flex flex-col gap-2 bg-stone-50">
+                    <div className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-4">
+                        <Field label={`Articol bugetar nr. (linia ${i + 1})`}>
+                          <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinieEdit(cheie, { contId: e.target.value })}>
+                            <option value="">— selectați —</option>
+                            {conturiFiltrate.map((c) => <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>)}
+                          </select>
+                        </Field>
+                      </div>
+                      <div className="col-span-2">
+                        <Field label="Sumă">
+                          <input type="number" step="0.01" className={inputCls} value={l.suma} onChange={(e) => actualizeazaLinieEdit(cheie, { suma: e.target.value })} />
+                        </Field>
+                      </div>
+                      <div className="col-span-2">
+                        <Field label="Sursă">
+                          <select className={inputCls} value={l.modPlata} onChange={(e) => actualizeazaLinieEdit(cheie, { modPlata: e.target.value })}>
+                            <option value="numerar">Casă</option>
+                            <option value="transfer">Bancă</option>
+                          </select>
+                        </Field>
+                      </div>
+                      <div className="col-span-3">
+                        <Field label="Explicație">
+                          <input className={inputCls} value={l.explicatie} onChange={(e) => actualizeazaLinieEdit(cheie, { explicatie: e.target.value })} />
+                        </Field>
+                      </div>
+                      <div className="col-span-1 flex justify-center pb-1.5">
+                        <button type="button" onClick={() => stergeLinieEdit(cheie)} disabled={editData.linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    {tip === "plata" && l.contId === "106" && (
+                      <label className="flex items-center gap-2 text-xs text-stone-600 bg-white border border-stone-200 rounded-md p-2">
+                        <input type="checkbox" checked={l.ajustare106} onChange={(e) => actualizeazaLinieEdit(cheie, { ajustare106: e.target.checked })} />
+                        Linie de ajustare a contului 106 (surplus constatat) — exclusă din Total plăți-cheltuieli.
+                      </label>
+                    )}
+                  </Card>
+                );
+              })}
+              <Btn variant="ghost" onClick={adaugaLinieEdit} className="self-start">
+                <Plus size={14} /> Adaugă articol bugetar
+              </Btn>
+            </div>
+            {eroareEdit && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroareEdit}</span>}
+            <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+              <Btn variant="ghost" onClick={renuntaEditare} disabled={salvandEdit}>Renunță</Btn>
+              <Btn variant="gold" onClick={salveazaEditare} disabled={salvandEdit}>{salvandEdit ? "Se salvează..." : "Salvează"}</Btn>
+            </div>
+          </Card>
+        )}
+
+        <div className="flex items-center justify-between border-t border-stone-200 pt-3">
+          <button onClick={() => setModSelectie((v) => !v)} className="text-xs underline text-[#1F3864]">
+            {modSelectie ? "Ascunde selecția pentru printare" : "Selectează mai multe documente pentru printare"}
+          </button>
+        </div>
+
+        {modSelectie && (
+          <Card className="p-3 max-h-40 overflow-y-auto">
+            <div className="flex flex-col gap-1">
+              {documente.map((d) => {
+                const key = `${d.an}-${d.nr}`;
+                return (
+                  <label key={key} className="flex items-center gap-2 text-xs">
+                    <input type="checkbox" checked={selectie.has(key)} onChange={() => toggleSelectie(key)} />
+                    Nr. {d.nr}/{d.an} — {fmtDataJurnal(d.data)} — {d.tert || "—"} — {fmt(d.linii.reduce((s, l) => s + l.suma, 0))} lei
+                  </label>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
+          <Btn variant="ghost" onClick={() => printeazaDocumente([docCurent], tipEtichetat, contById, parohie, documente)}>
+            <Download size={14} /> Printează acest document
+          </Btn>
+          <Btn variant="ghost" onClick={() => {
+            const selectate = documente.filter((d) => selectie.has(`${d.an}-${d.nr}`));
+            if (selectate.length === 0) return;
+            printeazaDocumente(selectate, tipEtichetat, contById, parohie, documente);
+          }} disabled={selectie.size === 0}>
+            <Download size={14} /> Printează selecția ({selectie.size})
+          </Btn>
+          <Btn variant="gold" onClick={() => printeazaDocumente(documente, tipEtichetat, contById, parohie, documente)}>
+            <Download size={14} /> Printează toate ({documente.length})
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Navigator generic (NRCD / Bon consum / PV inventariere / Corespondență) -------------------------------- */
+
+function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloaneLinii, parohie, onClose }) {
+  const [index, setIndex] = useState(documente.length - 1);
+  const [saltNr, setSaltNr] = useState("");
+  const [modSelectie, setModSelectie] = useState(false);
+  const [selectie, setSelectie] = useState(new Set());
+  const [eroareSalt, setEroareSalt] = useState("");
+
+  const docCurent = documente[index];
+
+  function mergiLa(i) {
+    if (i < 0 || i >= documente.length) return;
+    setIndex(i);
+  }
+
+  function saltLaNr() {
+    const nr = Number(saltNr);
+    const gasit = documente.findIndex((d) => d.nr === nr);
+    if (gasit === -1) {
+      setEroareSalt(`Nu există documentul nr. ${saltNr}.`);
+      return;
+    }
+    setEroareSalt("");
+    setIndex(gasit);
+  }
+
+  function toggleSelectie(key) {
+    setSelectie((s) => {
+      const nou = new Set(s);
+      if (nou.has(key)) nou.delete(key);
+      else nou.add(key);
+      return nou;
+    });
+  }
+
+  if (documente.length === 0) {
+    return (
+      <Modal title={`${tipEtichetat} — niciun document`} onClose={onClose}>
+        <p className="text-sm text-stone-500">Nu există încă niciun document de acest tip.</p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={`Navigator documente — ${tipEtichetat}`} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Btn variant="ghost" onClick={() => mergiLa(index - 1)} disabled={index <= 0}>← Precedentul</Btn>
+            <Btn variant="ghost" onClick={() => mergiLa(index + 1)} disabled={index >= documente.length - 1}>Următorul →</Btn>
+            <Btn variant="ghost" onClick={() => mergiLa(documente.length - 1)}>Salt la ultimul doc.</Btn>
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number" className={inputCls + " w-24"} value={saltNr}
+              onChange={(e) => setSaltNr(e.target.value)} placeholder="Nr. doc"
+              onKeyDown={(e) => e.key === "Enter" && saltLaNr()}
+            />
+            <Btn variant="ghost" onClick={saltLaNr}>Salt la doc nr.</Btn>
+          </div>
+        </div>
+        {eroareSalt && <span className="text-rose-600 text-xs">{eroareSalt}</span>}
+        <div className="text-xs text-stone-400 text-center">Document {index + 1} din {documente.length}</div>
+
+        <DocumentHeader tip={tipEtichetat} nr={docCurent.nr} an={docCurent.an} />
+        <Card className="p-3 text-sm flex flex-col gap-1">
+          {campuriAntet.map((c) => (
+            <div key={c.label} className="flex justify-between">
+              <span className="text-stone-500">{c.label}</span>
+              <span>{c.value(docCurent)}</span>
+            </div>
+          ))}
+        </Card>
+
+        {coloaneLinii && Array.isArray(docCurent.linii) && (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left bg-stone-50 text-stone-500">
+                {coloaneLinii.map((c) => <th key={c.label} className={`px-2 py-1.5 ${c.right ? "text-right" : ""}`}>{c.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {docCurent.linii.map((l, i) => (
+                <tr key={i} className="border-t border-stone-100">
+                  {coloaneLinii.map((c) => <td key={c.label} className={`px-2 py-1.5 ${c.right ? "text-right tabular-nums" : ""}`}>{c.value(l)}</td>)}
+                </tr>
+              ))}
+              {coloaneLinii.some((c) => c.total) && (
+                <tr className="border-t-2 border-stone-300 font-semibold">
+                  <td className="px-2 py-1.5" colSpan={coloaneLinii.length - 1}>Total</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {coloaneLinii.find((c) => c.total)?.totalValue?.(docCurent)}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+
+        <div className="flex items-center justify-between border-t border-stone-200 pt-3">
+          <button onClick={() => setModSelectie((v) => !v)} className="text-xs underline text-[#1F3864]">
+            {modSelectie ? "Ascunde selecția pentru printare" : "Selectează mai multe documente pentru printare"}
+          </button>
+        </div>
+
+        {modSelectie && (
+          <Card className="p-3 max-h-40 overflow-y-auto">
+            <div className="flex flex-col gap-1">
+              {documente.map((d) => {
+                const key = `${d.an}-${d.nr}`;
+                return (
+                  <label key={key} className="flex items-center gap-2 text-xs">
+                    <input type="checkbox" checked={selectie.has(key)} onChange={() => toggleSelectie(key)} />
+                    Nr. {d.nr}/{d.an} — {fmtDataJurnal(d.data)}
+                  </label>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
+          <Btn variant="ghost" onClick={() => printeazaDocumenteGenerice([docCurent], tipEtichetat, campuriAntet, coloaneLinii, parohie)}>
+            <Download size={14} /> Printează acest document
+          </Btn>
+          <Btn variant="ghost" onClick={() => {
+            const selectate = documente.filter((d) => selectie.has(`${d.an}-${d.nr}`));
+            if (selectate.length === 0) return;
+            printeazaDocumenteGenerice(selectate, tipEtichetat, campuriAntet, coloaneLinii, parohie);
+          }} disabled={selectie.size === 0}>
+            <Download size={14} /> Printează selecția ({selectie.size})
+          </Btn>
+          <Btn variant="gold" onClick={() => printeazaDocumenteGenerice(documente, tipEtichetat, campuriAntet, coloaneLinii, parohie)}>
+            <Download size={14} /> Printează toate ({documente.length})
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Jurnal de audit -------------------------------- */
+
+function AuditModal({ jurnalAudit, onClose }) {
+  const sortate = useMemo(
+    () => [...jurnalAudit].sort((a, b) => (a.data !== b.data ? (a.data < b.data ? 1 : -1) : a.ora < b.ora ? 1 : -1)),
+    [jurnalAudit]
+  );
+  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, totalFiltrate } = useTabelFiltrat(sortate, ["rol", "actiune"], 12);
+
+  return (
+    <Modal title="Jurnal de audit" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Istoric read-only al acțiunilor semnificative (cine, ce, când). Nu poate fi modificat sau șters.
+        </p>
+        <BaraCautarePaginare
+          cautare={cautare} onCautare={setCautare}
+          pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
+          totalFiltrate={totalFiltrate} placeholder="Caută după rol sau acțiune..."
+        />
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+              <th className="px-2 py-1.5">Data</th>
+              <th className="px-2 py-1.5">Ora</th>
+              <th className="px-2 py-1.5">Rol</th>
+              <th className="px-2 py-1.5">Acțiune</th>
+            </tr>
+          </thead>
+          <tbody>
+            {afisate.length === 0 && (
+              <tr><td colSpan={4} className="px-2 py-6 text-center text-stone-400">Nicio înregistrare încă.</td></tr>
+            )}
+            {afisate.map((a) => (
+              <tr key={a.id} className="border-b border-stone-100">
+                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(a.data)}</td>
+                <td className="px-2 py-1.5 tabular-nums text-stone-500">{a.ora}</td>
+                <td className="px-2 py-1.5 text-stone-500">{a.rol}</td>
+                <td className="px-2 py-1.5">{a.actiune}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="flex justify-end">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
