@@ -2570,7 +2570,8 @@ export default function ParohieERP() {
     { id: "cimitir", label: "Cimitir Parohial", icon: Cross },
     { id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText },
     { id: "rapoarte", label: "Rapoarte", icon: FileBarChart },
-    { id: "profil", label: "Date parohie", icon: Building2 },
+   { id: "profil", label: "Date parohie", icon: Building2 },
+    { id: "import", label: "Import date", icon: Upload },
   ];
   const NAV = NAV_TOATE.filter((n) => permisiuni.tabs.includes(n.id) && (n.id !== "cimitir" || state.parohie?.areCimitir));
   const tabActiv = permisiuni.tabs.includes(tab) ? tab : NAV[0].id;
