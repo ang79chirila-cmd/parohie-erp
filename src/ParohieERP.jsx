@@ -629,7 +629,7 @@ const ROL_DB_LA_LOCAL = {
 const ROLURI = {
   preot_paroh: {
     id: "preot_paroh", label: "Preot paroh / Administrator parohie",
-    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte", "profil"],
+    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte", "profil", "import"],
     citireOnly: false, poateEmiteOP: true,
   },
   contabil: {
