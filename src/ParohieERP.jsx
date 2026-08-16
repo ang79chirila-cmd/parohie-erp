@@ -195,6 +195,35 @@ function buildCod(bazaCod, cost, pret) {
   return `${bazaCod}.${cost}.${pret}`;
 }
 
+// Categorisire pentru AFIȘARE (nomenclator + toate listele derulante de selecție produs) —
+// derivată din prefixul baza_cod, complet client-side, fără nicio schimbare de schemă. Ordinea
+// fixă a categoriilor e cea cerută explicit; în interiorul fiecărei categorii, sortare alfabetică
+// după denumire (locale română). LP = lumânări din parafină ("de cult"); LC = lumânări din
+// ceară ("de ceară") — distincție confirmată explicit.
+const ORDINE_CATEGORII_PANGAR = ["CANDELE DE CULT", "LUMÂNĂRI DE CULT", "LUMÂNĂRI DE CEARĂ", "COLPORTAJ", "VIN", "CALENDARE"];
+
+function categorieAfisarePangar(bazaCod) {
+  if (/^CC/.test(bazaCod)) return "CANDELE DE CULT";
+  if (/^LP/.test(bazaCod)) return "LUMÂNĂRI DE CULT";
+  if (/^LC/.test(bazaCod)) return "LUMÂNĂRI DE CEARĂ";
+  if (bazaCod === "COLPORTAJ") return "COLPORTAJ";
+  if (/^CAL/.test(bazaCod)) return "CALENDARE";
+  if (/^V/.test(bazaCod)) return "VIN";
+  return "ALTELE";
+}
+
+// Comparator: întâi ordinea fixă a categoriilor, apoi alfabetic (denumire) în interiorul ei.
+// Funcționează la fel pentru rânduri individuale (au bazaCod direct) și pentru grupuri FIFO
+// (au bazaCod la nivel de grup).
+function comparaCategorieSiDenumire(a, b) {
+  const idxA = ORDINE_CATEGORII_PANGAR.indexOf(categorieAfisarePangar(a.bazaCod));
+  const idxB = ORDINE_CATEGORII_PANGAR.indexOf(categorieAfisarePangar(b.bazaCod));
+  const ordA = idxA === -1 ? 999 : idxA;
+  const ordB = idxB === -1 ? 999 : idxB;
+  if (ordA !== ordB) return ordA - ordB;
+  return (a.denumire || "").localeCompare(b.denumire || "", "ro");
+}
+
 // Adaugă un număr de zile calendaristice la o dată ISO (yyyy-mm-dd), întoarce tot ISO.
 function adaugaZile(dataISO, zile) {
   const d = new Date(dataISO);
@@ -5285,7 +5314,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       const prag = Math.max(PRAG_STOC_PROCENT * (referintaTotal || 0), PRAG_STOC_MINIM);
       const stareLabel = stocTotal === 0 ? "Epuizat" : stocTotal <= prag ? "Scăzut" : "OK";
       return { bazaCod, denumire: sortate[0].denumire, um: sortate[0].um, coduri: sortate, stocTotal, valoareTotal, referintaTotal, imagineUrl, stareLabel };
-    });
+    }).sort(comparaCategorieSiDenumire);
   }, [state.articole]);
 
   const configColoanePangar = useMemo(() => ({
@@ -5298,7 +5327,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const { filtre: filtrePangar, setFiltre: setFiltrePangar, procesate: grupuriProcesate, sugestiiPentru: sugestiiPangar } =
     useFiltrareColoane(grupuri, configColoanePangar);
 
-  const articoleSortate = useMemo(() => [...state.articole].sort((a, b) => a.seq - b.seq), [state.articole]);
+  const articoleSortate = useMemo(() => [...state.articole].sort(comparaCategorieSiDenumire), [state.articole]);
   const { cautare: cautareCod, setCautare: setCautareCod, pagina: paginaCod, setPagina: setPaginaCod, totalPagini: totalPaginiCod, afisate: coduriAfisate, totalFiltrate: totalCoduriFiltrate } =
     useTabelFiltrat(articoleSortate, ["cod", "denumire", "bazaCod"], 15);
 
@@ -6091,6 +6120,7 @@ function ReceptieEditForm({ miscare, onClose, onSave }) {
 // asociat) e editabilă direct, cu butoane proprii Modifică/Șterge; sub listă, o linie separată
 // pentru adăugarea unui stoc inițial nou (produs existent din nomenclator + cantitate + dată).
 function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, onModifica, onSterge }) {
+  const articoleSortate = useMemo(() => [...articole].sort(comparaCategorieSiDenumire), [articole]);
   const [editari, setEditari] = useState({}); // miscareId -> { cantitate, data }
   const [salvandId, setSalvandId] = useState(null);
   const [confirmareStergereId, setConfirmareStergereId] = useState(null);
@@ -6259,7 +6289,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                   <td className="px-3 py-2">
                     <select className={`${inputCls} w-72`} value={l.articolId} onChange={(e) => actualizeazaLinieNoua(l.key, "articolId", e.target.value)}>
                       <option value="">— alege produs —</option>
-                      {articole.map((a) => <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>)}
+                      {articoleSortate.map((a) => <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>)}
                     </select>
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -6383,7 +6413,7 @@ function ReceptieNRCDForm({ articole, parteneri, onCreatPartener, furnizoriAutor
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
-  const articoleSortate = useMemo(() => [...articole].sort((a, b) => a.seq - b.seq), [articole]);
+  const articoleSortate = useMemo(() => [...articole].sort(comparaCategorieSiDenumire), [articole]);
   const articolById = useMemo(() => Object.fromEntries(articole.map((a) => [a.id, a])), [articole]);
 
   const liniiValide = linii.filter((l) => l.articolId && Number(l.cantitate) > 0);
@@ -6596,7 +6626,7 @@ function VanzareMultiplaForm({ grupuri, previewNr, parteneri, onCreatPartener, d
   const [salvand, setSalvand] = useState(false);
 
   const an = yearOf(data);
-  const grupuriDisponibile = useMemo(() => grupuri.filter((g) => g.stocTotal > 0).sort((a, b) => a.denumire.localeCompare(b.denumire)), [grupuri]);
+  const grupuriDisponibile = useMemo(() => grupuri.filter((g) => g.stocTotal > 0), [grupuri]);
   const grupByBazaCod = useMemo(() => Object.fromEntries(grupuri.map((g) => [g.bazaCod, g])), [grupuri]);
 
   function actualizeazaLinie(id, patch) {
