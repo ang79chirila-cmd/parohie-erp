@@ -7,7 +7,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, receptioneazaPangar, vanzareFIFOPangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
@@ -2203,13 +2203,31 @@ export default function ParohieERP() {
         // eliminată — a fost utilă o singură dată, la migrarea inițială, dar ulterior a început
         // să recreeze produse fantomă șterse manual, ori de câte ori memoria locală a browserului
         // (nesincronizată încă) mai păstra un cod vechi. Supabase e acum singura sursă de adevăr
-        // pentru nomenclatorul Pangar — orice produs nou se creează exclusiv prin "Produs nou".
+        // pentru nomenclatorul Pangar — orice produs nou se creează exclusiv prin "Produs nou"
+        // (și e propagat automat la toate parohiile, vezi creeazaArticolPangar).
+        // Excepție unică, sigură: dacă parohia are ZERO produse (niciodată populată), se creează
+        // automat, direct în Supabase, TOT nomenclatorul canonic curent — actualizat, din toate
+        // parohiile la un loc, nu doar lista fixă inițială de 56 — nicio parohie nu trebuie să
+        // rămână vreodată fără nomenclator. Fallback pe lista fixă doar dacă absolut nicio
+        // parohie n-are încă vreun produs (prima populare vreodată a aplicației).
+        let articolePangarFinale = articolePangarSupabase;
+        if (articolePangarFinale.length === 0) {
+          try {
+            let produseDeCreat = await getNomenclatorCanonicPangar();
+            if (produseDeCreat.length === 0) {
+              produseDeCreat = seedArticole().map(({ id, ...rest }) => rest);
+            }
+            articolePangarFinale = await creeazaNomenclatorStandardPangar(contActiv.parohieId, produseDeCreat);
+          } catch (eSeed) {
+            console.error("Eroare la crearea automată a nomenclatorului standard Pangar:", eSeed);
+          }
+        }
         setState((s) => ({
           ...s,
           prevederiBugetare: prevederiSupabase,
           buget: construiesteBugetDinPrevederi(prevederiSupabase),
           operatiuni: operatiuniSupabase,
-          articole: articolePangarSupabase,
+          articole: articolePangarFinale,
           miscariStoc: miscariStocPangarSupabase,
           datoriiFurnizori: datoriiFurnizoriSupabase,
           parteneri: partenerSupabase,
