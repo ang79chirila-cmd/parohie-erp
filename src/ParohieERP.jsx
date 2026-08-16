@@ -5162,6 +5162,35 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const { cautare: cautareCod, setCautare: setCautareCod, pagina: paginaCod, setPagina: setPaginaCod, totalPagini: totalPaginiCod, afisate: coduriAfisate, totalFiltrate: totalCoduriFiltrate } =
     useTabelFiltrat(articoleSortate, ["cod", "denumire", "bazaCod"], 15);
 
+  // Selector de an (exercițiu) pentru Recepții recente / Vânzări recente — implicit anul curent.
+  const anCurentPangar = new Date().getFullYear();
+  const [anPangar, setAnPangar] = useState(anCurentPangar);
+  const aniDisponibiliPangar = useMemo(() => {
+    const ani = new Set([anCurentPangar]);
+    for (const m of state.miscariStoc) {
+      if (m.tip === "intrare") ani.add(yearOf(m.data));
+      else if (m.tip === "iesire" && m.anChitanta) ani.add(m.anChitanta);
+    }
+    return Array.from(ani).sort((a, b) => b - a);
+  }, [state.miscariStoc, anCurentPangar]);
+
+  const receptiiAnFiltrate = useMemo(
+    () => [...state.miscariStoc].filter((m) => m.tip === "intrare" && yearOf(m.data) === anPangar).sort((a, b) => (a.data < b.data ? 1 : -1)),
+    [state.miscariStoc, anPangar]
+  );
+  const vanzariAnFiltrate = useMemo(
+    () => Object.values(
+      [...state.miscariStoc].filter((m) => m.tip === "iesire" && m.nrChitanta && m.anChitanta === anPangar).reduce((acc, m) => {
+        const key = `${m.anChitanta}-${m.nrChitanta}`;
+        if (!acc[key]) acc[key] = { nrChitanta: m.nrChitanta, anChitanta: m.anChitanta, data: m.data, cantitate: 0, valoare: 0, articolId: m.articolId };
+        acc[key].cantitate += m.cantitate;
+        acc[key].valoare += m.valoareTotala;
+        return acc;
+      }, {})
+    ).sort((a, b) => (a.data < b.data ? 1 : -1)),
+    [state.miscariStoc, anPangar]
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
@@ -5171,7 +5200,19 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             Nomenclator cu cod imutabil: Nume.Cost.Preț. Vânzarea aplică regula FIFO — se consumă întâi cel mai vechi cod cu stoc disponibil.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-stone-500">Exercițiu financiar</span>
+            <select
+              className={`${inputCls} w-28`}
+              value={anPangar}
+              onChange={(e) => setAnPangar(Number(e.target.value))}
+            >
+              {aniDisponibiliPangar.map((an) => (
+                <option key={an} value={an}>{an}</option>
+              ))}
+            </select>
+          </div>
           <Btn variant="ghost" onClick={() => setShowNomenclator((v) => !v)}>
             {showNomenclator ? "Ascunde nomenclatorul" : "Vezi nomenclatorul"}
           </Btn>
@@ -5312,7 +5353,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
 
       <Card className="overflow-x-auto">
         <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
-          Recepții recente — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+          Recepții {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
         </div>
         <table className="w-full text-sm">
           <thead>
@@ -5327,7 +5368,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </tr>
           </thead>
           <tbody>
-            {[...state.miscariStoc].filter((m) => m.tip === "intrare").sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 10).map((m) => {
+            {receptiiAnFiltrate.map((m) => {
               const art = state.articole.find((a) => a.id === m.articolId);
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[yearOf(m.data)]?.inchisDefinitiv;
               return (
@@ -5348,13 +5389,16 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 </tr>
               );
             })}
+            {receptiiAnFiltrate.length === 0 && (
+              <tr><td colSpan={7} className="px-3 py-4 text-center text-stone-400">Nicio recepție în {anPangar}.</td></tr>
+            )}
           </tbody>
         </table>
       </Card>
 
       <Card className="overflow-x-auto">
         <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
-          Vânzări recente — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+          Vânzări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
         </div>
         <table className="w-full text-sm">
           <thead>
@@ -5369,15 +5413,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </tr>
           </thead>
           <tbody>
-            {Object.values(
-              [...state.miscariStoc].filter((m) => m.tip === "iesire" && m.nrChitanta).reduce((acc, m) => {
-                const key = `${m.anChitanta}-${m.nrChitanta}`;
-                if (!acc[key]) acc[key] = { nrChitanta: m.nrChitanta, anChitanta: m.anChitanta, data: m.data, cantitate: 0, valoare: 0, articolId: m.articolId };
-                acc[key].cantitate += m.cantitate;
-                acc[key].valoare += m.valoareTotala;
-                return acc;
-              }, {})
-            ).sort((a, b) => (a.data < b.data ? 1 : -1)).slice(0, 10).map((v) => {
+            {vanzariAnFiltrate.map((v) => {
               const art = state.articole.find((a) => a.id === v.articolId);
               const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[v.anChitanta]?.inchisDefinitiv;
@@ -5403,6 +5439,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 </tr>
               );
             })}
+            {vanzariAnFiltrate.length === 0 && (
+              <tr><td colSpan={7} className="px-3 py-4 text-center text-stone-400">Nicio vânzare în {anPangar}.</td></tr>
+            )}
           </tbody>
         </table>
       </Card>
