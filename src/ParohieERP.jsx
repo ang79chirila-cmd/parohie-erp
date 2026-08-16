@@ -842,9 +842,9 @@ const inputCls =
 
 function Btn({ children, onClick, variant = "primary", type = "button", disabled, className = "" }) {
   const variants = {
-    primary: "bg-[#1F3864] text-white hover:bg-[#152848] disabled:bg-stone-300",
-    gold: "bg-[#B8860B] text-white hover:bg-[#9c7209] disabled:bg-stone-300",
-    verde: "bg-emerald-500 text-white hover:bg-emerald-600 disabled:bg-stone-300",
+    primary: "bg-[#1F3864] text-white border border-[#1F3864] hover:bg-[#152848] disabled:bg-stone-300 disabled:border-stone-300",
+    gold: "bg-[#B8860B] text-white border border-[#B8860B] hover:bg-[#9c7209] disabled:bg-stone-300 disabled:border-stone-300",
+    verde: "bg-emerald-500 text-white border border-emerald-500 hover:bg-emerald-600 disabled:bg-stone-300 disabled:border-stone-300",
     ghost: "bg-transparent text-stone-600 hover:bg-stone-100 border border-stone-300",
     danger: "bg-transparent text-rose-600 hover:bg-rose-50 border border-rose-200",
   };
@@ -2062,6 +2062,29 @@ function aplicaRenumerotari(s, renumerotari) {
 /* ------------------------------ App -------------------------------------- */
 
 export default function ParohieERP() {
+  // Stil global aplicat pe orice ecran (login inclusiv) — fonturi mai mari (scalează
+  // proporțional toate dimensiunile Tailwind bazate pe rem: text, padding, gap) și
+  // săgeată de select mai vizibilă. Injectat o singură dată, la montare.
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.id = "parohie-global-style";
+    style.textContent = `
+      html { font-size: 18px; }
+      select {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%231F3864'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.6rem center;
+        background-size: 1.15rem;
+        padding-right: 2.25rem !important;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+
   const [state, setState] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
@@ -2596,15 +2619,15 @@ export default function ParohieERP() {
             </div>
           </div>
         </div>
-        <nav className="flex-1 py-3 overflow-y-auto">
+        <nav className="flex-1 py-3 overflow-y-auto px-2 flex flex-col gap-1.5">
           {NAV.map((n) => (
             <button
               key={n.id}
               onClick={() => setTab(n.id)}
-              className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-colors ${
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-md border transition-colors ${
                 tabActiv === n.id
-                  ? "bg-white/10 text-white border-r-2 border-[#B8860B]"
-                  : "text-white/70 hover:bg-white/5 hover:text-white"
+                  ? "bg-white/10 text-white border-[#B8860B]"
+                  : "text-white/70 border-white/15 hover:bg-white/5 hover:text-white hover:border-white/30"
               }`}
             >
               <n.icon size={16} />
@@ -2625,32 +2648,50 @@ export default function ParohieERP() {
         <div className="px-5 py-2.5 border-t border-white/10">
           <span className="text-[11px] text-white/50">Rol activ: <span className="text-white/80">{permisiuni.label}</span></span>
         </div>
-        <div className="px-5 py-3 border-t border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-              <User size={12} className="text-white/70" />
-            </div>
-            <span className="text-xs text-white/70 truncate">CIF {session}</span>
+        <div className="px-5 py-2.5 border-t border-white/10 flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+            <User size={12} className="text-white/70" />
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button title="Jurnal de audit" onClick={() => setShowAudit(true)} className="text-white/50 hover:text-white p-1">
-              <ClipboardCheck size={14} />
+          <span className="text-xs text-white/70 truncate">CIF {session}</span>
+        </div>
+        <div className="px-2 py-2 border-t border-white/10 flex flex-col gap-1.5">
+          <button
+            title="Jurnal de audit — istoricul complet al acțiunilor efectuate în cont (cine, ce, când)"
+            onClick={() => setShowAudit(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
+          >
+            <ClipboardCheck size={14} /> Jurnal de audit
+          </button>
+          {rolActiv === "preot_paroh" && (
+            <button
+              title="Deblocare 2FA utilizatori — resetează autentificarea în doi pași pentru un alt utilizator din parohie, dacă și-a pierdut accesul"
+              onClick={() => setShowAdminMfaUnlock(true)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
+            >
+              <Unlock size={14} /> Deblocare 2FA
             </button>
-            {rolActiv === "preot_paroh" && (
-              <button title="Deblocare 2FA utilizatori" onClick={() => setShowAdminMfaUnlock(true)} className="text-white/50 hover:text-white p-1">
-                <Unlock size={14} />
-              </button>
-            )}
-            <button title="Securitate (autentificare în doi pași)" onClick={() => setShowSecuritate(true)} className="text-white/50 hover:text-white p-1">
-              <ShieldCheck size={14} />
-            </button>
-            <button title="Schimbă parola" onClick={() => setShowChangePw(true)} className="text-white/50 hover:text-white p-1">
-              <KeyRound size={14} />
-            </button>
-            <button title="Ieșire din cont" onClick={() => setShowLogoutConfirm(true)} className="text-white/50 hover:text-white p-1">
-              <LogOut size={14} />
-            </button>
-          </div>
+          )}
+          <button
+            title="Securitate — activează, dezactivează sau reconfigurează autentificarea în doi pași (2FA) pentru contul tău"
+            onClick={() => setShowSecuritate(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
+          >
+            <ShieldCheck size={14} /> Securitate
+          </button>
+          <button
+            title="Schimbă parola contului tău"
+            onClick={() => setShowChangePw(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
+          >
+            <KeyRound size={14} /> Schimbă parola
+          </button>
+          <button
+            title="Ieșire din cont — încheie sesiunea curentă"
+            onClick={() => setShowLogoutConfirm(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors"
+          >
+            <LogOut size={14} /> Ieșire
+          </button>
         </div>
         <div className="px-5 py-3 border-t border-white/10 text-[11px] text-white/40 leading-snug">
           Modul curent: Contabilitate &amp; Pangar.
