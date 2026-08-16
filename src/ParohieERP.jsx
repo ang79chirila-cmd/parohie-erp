@@ -3136,9 +3136,37 @@ function AdminMfaUnlockModal({ parohieId, utilizatorPropriuId, onClose }) {
 /* ------------------------------ Dashboard -------------------------------- */
 
 function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, prevederiInfo, inchidereInfo }) {
-  const { soldCasa, soldBanca, totalVenituri, totalCheltuieli, alerteStoc, alerteSold, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
-  const excedent = totalVenituri - totalCheltuieli;
+  const { alerteStoc, alerteSold, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
   const [achitareFor, setAchitareFor] = useState(null);
+
+  // Selector de an pentru cardurile Sold/Total — implicit anul curent.
+  const anCurent = new Date().getFullYear();
+  const [anTablou, setAnTablou] = useState(anCurent);
+  const aniDisponibiliTablou = useMemo(() => {
+    const ani = new Set([anCurent]);
+    for (const op of state.operatiuni) ani.add(yearOf(op.data));
+    return Array.from(ani).sort((a, b) => b - a);
+  }, [state.operatiuni, anCurent]);
+
+  const { totalVenituri, totalCheltuieli, soldCasa, soldBanca } = useMemo(() => {
+    let venituri = 0;
+    let cheltuieli = 0;
+    for (const op of state.operatiuni) {
+      if (yearOf(op.data) !== anTablou) continue;
+      const cont = derived.contById[op.contId];
+      const eViramente = cont?.clasa === "viramente";
+      const eAjustare106Plata = op.contId === "106" && op.tip === "plata" && op.ajustare106;
+      if (eViramente) continue;
+      if (op.tip === "incasare") venituri += op.suma;
+      else if (!eAjustare106Plata) cheltuieli += op.suma;
+    }
+    // Sold casă/bancă = soldul cumulat la finalul anului selectat (la zi, dacă e anul curent).
+    const dataLimita = anTablou >= anCurent ? todayISO() : `${anTablou}-12-31`;
+    const { soldCasa: sc, soldBanca: sb } = soldCasaBancaLaData(state.operatiuni, dataLimita);
+    return { totalVenituri: venituri, totalCheltuieli: cheltuieli, soldCasa: sc, soldBanca: sb };
+  }, [state.operatiuni, derived.contById, anTablou, anCurent]);
+
+  const excedent = totalVenituri - totalCheltuieli;
   const [showPrevederiUrmator, setShowPrevederiUrmator] = useState(false);
   const [showPrevederiPrecedent, setShowPrevederiPrecedent] = useState(false);
   const [showInchidere, setShowInchidere] = useState(false);
@@ -3185,21 +3213,35 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-serif text-2xl text-[#1F3864]">Tablou de bord</h1>
-        <p className="text-sm text-stone-500">Situația curentă a parohiei, la {fmtDataJurnal(todayISO())}.</p>
+      <header className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-serif text-2xl text-[#1F3864]">Tablou de bord</h1>
+          <p className="text-sm text-stone-500">Situația curentă a parohiei, la {fmtDataJurnal(todayISO())}.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-stone-500">Exercițiu financiar</span>
+          <select
+            className={`${inputCls} w-28`}
+            value={anTablou}
+            onChange={(e) => setAnTablou(Number(e.target.value))}
+          >
+            {aniDisponibiliTablou.map((an) => (
+              <option key={an} value={an}>{an}</option>
+            ))}
+          </select>
+        </div>
       </header>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Sold casă" value={`${fmt(soldCasa)} RON`} tone={soldCasa < PRAG_SOLD ? "bad" : "good"} />
-        <StatCard label="Sold bancă" value={`${fmt(soldBanca)} RON`} tone={soldBanca < PRAG_SOLD ? "bad" : "good"} />
-        <StatCard label="Total venituri" value={`${fmt(totalVenituri)} RON`} tone="neutral" />
-        <StatCard label="Total cheltuieli" value={`${fmt(totalCheltuieli)} RON`} tone="neutral" />
+        <StatCard label={`Sold casă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldCasa)} RON`} tone={soldCasa < PRAG_SOLD ? "bad" : "good"} />
+        <StatCard label={`Sold bancă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldBanca)} RON`} tone={soldBanca < PRAG_SOLD ? "bad" : "good"} />
+        <StatCard label={`Total venituri ${anTablou}`} value={`${fmt(totalVenituri)} RON`} tone="neutral" />
+        <StatCard label={`Total cheltuieli ${anTablou}`} value={`${fmt(totalCheltuieli)} RON`} tone="neutral" />
       </div>
 
       <Card className="p-4">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-stone-600">Excedent / deficit (Venituri − Cheltuieli)</span>
+          <span className="text-sm font-medium text-stone-600">Excedent / deficit {anTablou} (Venituri − Cheltuieli)</span>
           <span className={`font-serif text-xl tabular-nums ${excedent >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
             {excedent >= 0 ? "+" : ""}
             {fmt(excedent)} RON
