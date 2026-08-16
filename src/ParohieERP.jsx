@@ -3489,7 +3489,7 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
           modCorectie
           liniiInitiale={state.prevederiBugetare?.[anReconstituire]?.linii || []}
           onValidate={async (linii) => {
-            await salveazaPrevederiBugetare(contActiv.parohieId, anReconstituire, linii);
+            await salveazaPrevederiBugetare(parohieId, anReconstituire, linii);
             setState((s) => ({
               ...s,
               buget: linii.reduce((b, l) => ({ ...b, [l.contId]: { ...(b[l.contId] || {}), [anReconstituire]: l.suma } }), { ...s.buget }),
@@ -3519,7 +3519,7 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
           excedent={soldCasaBancaLaData(state.operatiuni, `${anReconstituire}-12-31`)}
           onConfirm={async () => {
             const excedent = soldCasaBancaLaData(state.operatiuni, `${anReconstituire}-12-31`);
-            const rezultat = await seteazaExcedentReportat(contActiv.parohieId, anReconstituire + 1, excedent);
+            const rezultat = await seteazaExcedentReportat(parohieId, anReconstituire + 1, excedent);
             setState((s) => {
               const { operatiuni, exercitiiFinanciare } = inchideExercitiuFinanciar(s, anReconstituire, "manuala-exceptie");
               const idsAtinse = new Set(rezultat.operatiuniActualizate.map((o) => o.id));
@@ -5575,11 +5575,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
 
 
       <Card className="overflow-x-auto">
-        <div className="px-3 pt-3 flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
-            Recepții {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
-          </div>
-          <ExportMenu titlu={`RECEPTII PANGAR PE ANUL ${anPangar}`} columns={coloaneReceptiiExport} rows={randuriReceptiiExport} parohie={state.parohie} />
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
+          Recepții {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
         </div>
         <table className="w-full text-sm">
           <thead>
@@ -5623,11 +5620,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       </Card>
 
       <Card className="overflow-x-auto">
-        <div className="px-3 pt-3 flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
-            Vânzări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
-          </div>
-          <ExportMenu titlu={`VANZARI PANGAR PE ANUL ${anPangar}`} columns={coloaneVanzariExport} rows={randuriVanzariExport} parohie={state.parohie} />
+        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
+          Vânzări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
         </div>
         <table className="w-full text-sm">
           <thead>
