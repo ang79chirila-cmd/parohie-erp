@@ -541,9 +541,15 @@ export async function getMiscariStocPangar(parohieId) {
       valoareTotala: Number(m.valoare_totala),
       documentId: m.document_id,
     };
-    if (m.tip === "intrare" && doc) {
-      const valoareAchizitie = articol ? Number(m.cantitate) * Number(articol.pret_achizitie) : null;
-      return { ...base, nrNRCD: doc.nr, furnizor: doc.furnizor, nrFactura: doc.nr_factura, valoareAchizitie };
+    const valoareAchizitieCalculata = articol ? Number(m.cantitate) * Number(articol.pret_achizitie) : null;
+    if (m.tip === "intrare") {
+      return {
+        ...base,
+        nrNRCD: doc?.nr ?? null,
+        furnizor: doc?.furnizor ?? "Stoc inițial",
+        nrFactura: doc?.nr_factura ?? null,
+        valoareAchizitie: valoareAchizitieCalculata,
+      };
     }
     if (m.tip === "iesire" && doc) {
       return { ...base, nrChitanta: doc.nr, anChitanta: doc.an };
