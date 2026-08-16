@@ -5036,6 +5036,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const [showVanzare, setShowVanzare] = useState(false);
   const [notice, setNotice] = useState(null);
   const [showNRCD, setShowNRCD] = useState(false);
+  const [showRapoarte, setShowRapoarte] = useState(false);
   // Aceeași sursă de sugestii ca la Chitanța generală — orice nume folosit vreodată la o
   // încasare (inclusiv vânzările Pangar) devine sugestie pentru viitor.
   const donatoriIstorici = useMemo(
@@ -5439,6 +5440,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           <Btn variant="ghost" onClick={() => setShowNomenclator((v) => !v)}>
             {showNomenclator ? "Ascunde nomenclatorul" : "Vezi nomenclatorul"}
           </Btn>
+          <Btn variant="ghost" onClick={() => setShowRapoarte(true)}>
+            <FileBarChart size={14} /> Rapoarte Pangar
+          </Btn>
           <Btn variant="ghost" onClick={() => setShowNRCD(true)}>
             <FileText size={14} /> Note de Recepție (NRCD)
           </Btn>
@@ -5457,6 +5461,44 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           )}
         </div>
       </header>
+
+      {showRapoarte && (
+        <Modal title={`Rapoarte Pangar — anul ${anPangar}`} onClose={() => setShowRapoarte(false)} wide>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
+              <div>
+                <div className="text-sm font-medium text-stone-700">Registru Pangar (cantitativ-valoric)</div>
+                <p className="text-xs text-stone-500">Toate tranzacțiile anului {anPangar} — toate produsele, în ordine cronologică (recepții înaintea vânzărilor la dată egală).</p>
+              </div>
+              <ExportMenu titlu={`REGISTRU PANGAR CANTITATIV-VALORIC PE ANUL ${anPangar}`} columns={coloaneRegistruPangar} rows={randuriRegistruPangar} parohie={state.parohie} />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Field label="Produs">
+                <select className={`${inputCls} min-w-[220px]`} value={produsSelectatPangar} onChange={(e) => setProdusSelectatPangar(e.target.value)}>
+                  {grupuri.map((g) => <option key={g.bazaCod} value={g.bazaCod}>{g.denumire}</option>)}
+                </select>
+              </Field>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
+              <div>
+                <div className="text-sm font-medium text-stone-700">Fișă cronologică de produs</div>
+                <p className="text-xs text-stone-500">Toate tranzacțiile din {anPangar} ale produsului „{produsInfoSelectat?.denumire || "—"}" — toate codurile lui, cronologic, cu stoc și valoare de stoc agregate la nivel de produs.</p>
+              </div>
+              <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaCronologica} rows={randuriFisaCronologica} parohie={state.parohie} />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-sm font-medium text-stone-700">Fișă sintetică de produs</div>
+                <p className="text-xs text-stone-500">Stoc inițial / intrări / ieșiri / stoc final pentru „{produsInfoSelectat?.denumire || "—"}" în {anPangar}, cantitativ și valoric (la preț de vânzare).</p>
+              </div>
+              <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaSintetica} rows={randuriFisaSintetica} parohie={state.parohie} />
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {notice && (
         <Card className="p-3 border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
@@ -5667,42 +5709,6 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             )}
           </tbody>
         </table>
-      </Card>
-
-      <Card className="p-4 flex flex-col gap-4">
-        <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Rapoarte Pangar — anul {anPangar}</div>
-
-        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
-          <div>
-            <div className="text-sm font-medium text-stone-700">Registru Pangar (cantitativ-valoric)</div>
-            <p className="text-xs text-stone-500">Toate tranzacțiile anului {anPangar} — toate produsele, în ordine cronologică (recepții înaintea vânzărilor la dată egală).</p>
-          </div>
-          <ExportMenu titlu={`REGISTRU PANGAR CANTITATIV-VALORIC PE ANUL ${anPangar}`} columns={coloaneRegistruPangar} rows={randuriRegistruPangar} parohie={state.parohie} />
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <Field label="Produs">
-            <select className={`${inputCls} min-w-[220px]`} value={produsSelectatPangar} onChange={(e) => setProdusSelectatPangar(e.target.value)}>
-              {grupuri.map((g) => <option key={g.bazaCod} value={g.bazaCod}>{g.denumire}</option>)}
-            </select>
-          </Field>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
-          <div>
-            <div className="text-sm font-medium text-stone-700">Fișă cronologică de produs</div>
-            <p className="text-xs text-stone-500">Toate tranzacțiile din {anPangar} ale produsului „{produsInfoSelectat?.denumire || "—"}" — toate codurile lui, cronologic, cu stoc și valoare de stoc agregate la nivel de produs.</p>
-          </div>
-          <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaCronologica} rows={randuriFisaCronologica} parohie={state.parohie} />
-        </div>
-
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div className="text-sm font-medium text-stone-700">Fișă sintetică de produs</div>
-            <p className="text-xs text-stone-500">Stoc inițial / intrări / ieșiri / stoc final pentru „{produsInfoSelectat?.denumire || "—"}" în {anPangar}, cantitativ și valoric (la preț de vânzare).</p>
-          </div>
-          <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaSintetica} rows={randuriFisaSintetica} parohie={state.parohie} />
-        </div>
       </Card>
 
       {editReceptieFor && (
