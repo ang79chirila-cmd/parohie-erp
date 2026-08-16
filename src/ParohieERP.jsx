@@ -7,14 +7,14 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, receptioneazaPangar, vanzareFIFOPangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, receptioneazaPangar, vanzareFIFOPangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
   ArrowDownCircle, ArrowUpCircle, AlertTriangle, ArrowLeftRight,
   Trash2, X, Church, Lock, User, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil,
   Download, ChevronDown, FileText, FileSpreadsheet, FileCode, Building2, Boxes, Archive, ClipboardCheck, MapPin, Mail,
-  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload,
+  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload, Settings,
 } from "lucide-react";
 
 // Font arhaic românesc (Arhaic_rom.ttf, furnizat de utilizator) — încorporat direct ca
@@ -2127,6 +2127,7 @@ export default function ParohieERP() {
   const [dateLocaleIncarcate, setDateLocaleIncarcate] = useState(false);
   const [showSecuritate, setShowSecuritate] = useState(false);
   const [showAdminMfaUnlock, setShowAdminMfaUnlock] = useState(false);
+  const [showSetari, setShowSetari] = useState(false);
   // Login în 2 pași (parolă → TOTP): ține datele contului deja validat prin parolă,
   // cât timp așteptăm codul din aplicația de autentificare (sau codul de recuperare).
   const [mfaPendingAuth, setMfaPendingAuth] = useState(null); // { cif, username, rol, parohieId, factorId } | null
@@ -2621,18 +2622,15 @@ export default function ParohieERP() {
       {/* Sidebar */}
       <aside className="w-60 bg-[#1F3864] text-white flex flex-col shrink-0">
         <div className="flex items-center gap-2 px-5 py-5 border-b border-white/10">
-          <div className="w-8 h-8 rounded-full bg-[#B8860B] flex items-center justify-center shrink-0">
-            <Church size={16} className="text-white" />
+          <div className="font-arhaic text-lg leading-snug text-[#F0E4C8]">
+            {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
           </div>
-          <div>
-            <div className="font-arhaic text-lg leading-snug text-[#F0E4C8]">
-              {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
-            </div>
-            <div className="text-[11px] text-white/50 leading-tight">
-              {session === DEMO_CIF
-                ? "mediu de test · date fictive"
-                : ([state.parohie?.localitate, state.parohie?.judet].filter(Boolean).join(", ") || "prototip · multi-parohie, izolat pe cont")}
-            </div>
+        </div>
+        <div className="px-5 pb-3 -mt-2 border-b border-white/10">
+          <div className="text-[11px] text-white/50 leading-tight">
+            {session === DEMO_CIF
+              ? "mediu de test · date fictive"
+              : ([state.parohie?.localitate, state.parohie?.judet].filter(Boolean).join(", ") || "prototip · multi-parohie, izolat pe cont")}
           </div>
         </div>
         <div className="px-5 py-2.5 border-b border-white/10 flex items-center gap-2 min-w-0">
@@ -2670,45 +2668,58 @@ export default function ParohieERP() {
         <div className="px-5 py-2.5 border-t border-white/10">
           <span className="text-[11px] text-white/50">Rol activ: <span className="text-white/80">{permisiuni.label}</span></span>
         </div>
-        <div className="px-2 py-2 border-t border-white/10 flex flex-col gap-1.5">
+        <div className="px-2 py-2 border-t border-white/10 flex items-center gap-1.5">
           <button
-            title="Jurnal de audit — istoricul complet al acțiunilor efectuate în cont (cine, ce, când)"
-            onClick={() => setShowAudit(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
+            title="Setări — jurnal de audit, deblocare 2FA, securitate, schimbă parola"
+            onClick={() => setShowSetari(true)}
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
           >
-            <ClipboardCheck size={14} /> Jurnal de audit
-          </button>
-          {rolActiv === "preot_paroh" && (
-            <button
-              title="Deblocare 2FA utilizatori — resetează autentificarea în doi pași pentru un alt utilizator din parohie, dacă și-a pierdut accesul"
-              onClick={() => setShowAdminMfaUnlock(true)}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
-            >
-              <Unlock size={14} /> Deblocare 2FA
-            </button>
-          )}
-          <button
-            title="Securitate — activează, dezactivează sau reconfigurează autentificarea în doi pași (2FA) pentru contul tău"
-            onClick={() => setShowSecuritate(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
-          >
-            <ShieldCheck size={14} /> Securitate
-          </button>
-          <button
-            title="Schimbă parola contului tău"
-            onClick={() => setShowChangePw(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
-          >
-            <KeyRound size={14} /> Schimbă parola
+            <Settings size={14} /> Setări
           </button>
           <button
             title="Ieșire din cont — încheie sesiunea curentă"
             onClick={() => setShowLogoutConfirm(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors"
           >
             <LogOut size={14} /> Ieșire
           </button>
         </div>
+        {showSetari && (
+          <Modal title="Setări" onClose={() => setShowSetari(false)}>
+            <div className="flex flex-col gap-1.5">
+              <button
+                title="Jurnal de audit — istoricul complet al acțiunilor efectuate în cont (cine, ce, când)"
+                onClick={() => { setShowSetari(false); setShowAudit(true); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-md border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
+              >
+                <ClipboardCheck size={15} /> Jurnal de audit
+              </button>
+              {rolActiv === "preot_paroh" && (
+                <button
+                  title="Deblocare 2FA utilizatori — resetează autentificarea în doi pași pentru un alt utilizator din parohie, dacă și-a pierdut accesul"
+                  onClick={() => { setShowSetari(false); setShowAdminMfaUnlock(true); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-md border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
+                >
+                  <Unlock size={15} /> Deblocare 2FA utilizatori
+                </button>
+              )}
+              <button
+                title="Securitate — activează, dezactivează sau reconfigurează autentificarea în doi pași (2FA) pentru contul tău"
+                onClick={() => { setShowSetari(false); setShowSecuritate(true); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-md border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
+              >
+                <ShieldCheck size={15} /> Securitate
+              </button>
+              <button
+                title="Schimbă parola contului tău"
+                onClick={() => { setShowSetari(false); setShowChangePw(true); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-md border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
+              >
+                <KeyRound size={15} /> Schimbă parola
+              </button>
+            </div>
+          </Modal>
+        )}
         <div className="px-5 py-3 border-t border-white/10 text-[11px] text-white/40 leading-snug">
           Modul curent: Contabilitate &amp; Pangar.
           <br />
@@ -5044,6 +5055,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const [notice, setNotice] = useState(null);
   const [showNRCD, setShowNRCD] = useState(false);
   const [showRapoarte, setShowRapoarte] = useState(false);
+  const [showStocInitial, setShowStocInitial] = useState(false);
   // Aceeași sursă de sugestii ca la Chitanța generală — orice nume folosit vreodată la o
   // încasare (inclusiv vânzările Pangar) devine sugestie pentru viitor.
   const donatoriIstorici = useMemo(
@@ -5130,6 +5142,50 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare recepție NRCD nr. ${miscare.nrNRCD}/${anNou}`),
     }));
   }
+
+  // Stoc inițial — intrare de stoc FĂRĂ document asociat (fără NRCD, fără datorie), pentru
+  // cantitatea deja existentă fizic în pangar la pornirea evidenței unui produs.
+  async function adaugaStocInitial(articolId, cantitate, data) {
+    const rezultat = await creeazaStocInitialPangar(parohieId, { articolId, cantitate, data });
+    const art = state.articole.find((a) => a.id === articolId);
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => (a.id === articolId ? { ...a, ...rezultat.articolPatch } : a)),
+      miscariStoc: [...s.miscariStoc, rezultat.miscareNoua],
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Stoc inițial adăugat — ${art?.cod || articolId}, cantitate ${cantitate}`),
+    }));
+  }
+
+  async function editeazaStocInitial(miscareId, cantitate, data) {
+    const miscare = state.miscariStoc.find((m) => m.id === miscareId);
+    if (!miscare || miscare.tip !== "intrare" || miscare.documentId) return;
+    const anNou = yearOf(data);
+    if (state.exercitiiFinanciare?.[anNou]?.inchisDefinitiv) {
+      setNotice(`Exercițiul financiar ${anNou} este închis definitiv — needitabil.`);
+      return;
+    }
+    const rezultat = await editeazaStocInitialPangar(miscareId, { cantitate, data });
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => (a.id === miscare.articolId ? { ...a, ...rezultat.articolActualizat } : a)),
+      miscariStoc: s.miscariStoc.map((m) => (m.id === miscareId ? { ...m, ...rezultat.miscareActualizata } : m)),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare stoc inițial — ${state.articole.find((a) => a.id === miscare.articolId)?.cod || miscare.articolId}`),
+    }));
+  }
+
+  async function stergeStocInitial(miscareId) {
+    const miscare = state.miscariStoc.find((m) => m.id === miscareId);
+    if (!miscare) return;
+    const rezultat = await stergeStocInitialPangar(miscareId);
+    const art = state.articole.find((a) => a.id === miscare.articolId);
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => (a.id === miscare.articolId ? { ...a, ...rezultat.articolActualizat } : a)),
+      miscariStoc: s.miscariStoc.filter((m) => m.id !== miscareId),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere stoc inițial — ${art?.cod || miscare.articolId}, cantitate ${miscare.cantitate}`),
+    }));
+  }
+
 
   // Vânzare FIFO completă: stocul, chitanța și mișcările de ieșire se citesc/scriu direct din
   // Supabase (sursă de adevăr), nu mai din starea locală — elimină riscul din trecut, când o
@@ -5455,6 +5511,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           </Btn>
           {!permisiuni.citireOnly && (
             <>
+              <Btn variant="ghost" onClick={() => setShowStocInitial(true)}>
+                <Boxes size={14} /> Stoc inițial
+              </Btn>
               <Btn variant="verde" onClick={() => setShowReceptieNRCD(true)}>
                 <FileText size={15} /> Recepție marfă (NRCD)
               </Btn>
@@ -5717,6 +5776,17 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           </tbody>
         </table>
       </Card>
+
+      {showStocInitial && (
+        <StocInitialModal
+          articole={state.articole}
+          miscariStocInitiale={state.miscariStoc.filter((m) => m.tip === "intrare" && !m.documentId).sort((a, b) => (a.data < b.data ? 1 : -1))}
+          onClose={() => setShowStocInitial(false)}
+          onAdauga={adaugaStocInitial}
+          onModifica={editeazaStocInitial}
+          onSterge={stergeStocInitial}
+        />
+      )}
 
       {editReceptieFor && (
         <ReceptieEditForm
@@ -5992,6 +6062,177 @@ function ReceptieEditForm({ miscare, onClose, onSave }) {
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
           <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Stoc inițial — formular multilinie: fiecare linie existentă (mișcare de intrare fără document
+// asociat) e editabilă direct, cu butoane proprii Modifică/Șterge; sub listă, o linie separată
+// pentru adăugarea unui stoc inițial nou (produs existent din nomenclator + cantitate + dată).
+function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, onModifica, onSterge }) {
+  const [editari, setEditari] = useState({}); // miscareId -> { cantitate, data }
+  const [salvandId, setSalvandId] = useState(null);
+  const [confirmareStergereId, setConfirmareStergereId] = useState(null);
+  const [error, setError] = useState("");
+
+  const [produsNouId, setProdusNouId] = useState(articole[0]?.id || "");
+  const [cantitateNoua, setCantitateNoua] = useState("");
+  const [dataNoua, setDataNoua] = useState(todayISO());
+  const [adaugand, setAdaugand] = useState(false);
+
+  function valoareEditata(m, camp) {
+    return editari[m.id]?.[camp] ?? (camp === "cantitate" ? String(m.cantitate) : m.data);
+  }
+  function actualizeazaEditare(miscareId, camp, valoare) {
+    setEditari((e) => ({ ...e, [miscareId]: { ...e[miscareId], [camp]: valoare } }));
+  }
+
+  async function submitModifica(m) {
+    const cantitate = Number(valoareEditata(m, "cantitate"));
+    const data = valoareEditata(m, "data");
+    if (!cantitate || cantitate <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (!data) { setError("Data este obligatorie."); return; }
+    setError("");
+    setSalvandId(m.id);
+    try {
+      await onModifica(m.id, cantitate, data);
+      setEditari((e) => { const nou = { ...e }; delete nou[m.id]; return nou; });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
+    } finally {
+      setSalvandId(null);
+    }
+  }
+
+  async function submitSterge(m) {
+    setSalvandId(m.id);
+    try {
+      await onSterge(m.id);
+      setConfirmareStergereId(null);
+    } catch (e) {
+      setError(e.message || "Eroare la ștergere. Încearcă din nou.");
+    } finally {
+      setSalvandId(null);
+    }
+  }
+
+  async function submitAdauga() {
+    const cantitate = Number(cantitateNoua);
+    if (!produsNouId) { setError("Selectați un produs."); return; }
+    if (!cantitate || cantitate <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (!dataNoua) { setError("Data este obligatorie."); return; }
+    setError("");
+    setAdaugand(true);
+    try {
+      await onAdauga(produsNouId, cantitate, dataNoua);
+      setCantitateNoua("");
+    } catch (e) {
+      setError(e.message || "Eroare la adăugarea stocului inițial. Încearcă din nou.");
+    } finally {
+      setAdaugand(false);
+    }
+  }
+
+  return (
+    <Modal title="Stoc inițial" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Pentru introducerea directă a stocului deja existent fizic în pangar, fără document (NRCD) asociat și fără
+          datorie către furnizor. Produsul trebuie să existe deja în nomenclator.
+        </p>
+
+        <Card className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                <th className="px-3 py-2">Cod</th>
+                <th className="px-3 py-2">Denumire</th>
+                <th className="px-3 py-2 text-right">Cantitate</th>
+                <th className="px-3 py-2">Data</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {miscariStocInitiale.map((m) => {
+                const art = articole.find((a) => a.id === m.articolId);
+                return (
+                  <tr key={m.id} className="border-b border-stone-100">
+                    <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
+                    <td className="px-3 py-2">{art?.denumire || "—"}</td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        className={`${inputCls} w-24 text-right`}
+                        value={valoareEditata(m, "cantitate")}
+                        onChange={(e) => actualizeazaEditare(m.id, "cantitate", e.target.value)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="date"
+                        className={`${inputCls} w-40`}
+                        value={valoareEditata(m, "data")}
+                        onChange={(e) => actualizeazaEditare(m.id, "data", e.target.value)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1.5 justify-end">
+                        <Btn variant="gold" onClick={() => submitModifica(m)} disabled={salvandId === m.id}>
+                          {salvandId === m.id ? "..." : "Modifică"}
+                        </Btn>
+                        {confirmareStergereId === m.id ? (
+                          <>
+                            <Btn variant="danger" onClick={() => submitSterge(m)} disabled={salvandId === m.id}>
+                              Confirmă
+                            </Btn>
+                            <Btn variant="ghost" onClick={() => setConfirmareStergereId(null)}>Anulează</Btn>
+                          </>
+                        ) : (
+                          <Btn variant="danger" onClick={() => setConfirmareStergereId(m.id)} disabled={salvandId === m.id}>
+                            Șterge
+                          </Btn>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {miscariStocInitiale.length === 0 && (
+                <tr><td colSpan={5} className="px-3 py-4 text-center text-stone-400">Niciun stoc inițial introdus încă.</td></tr>
+              )}
+              <tr className="bg-stone-50">
+                <td className="px-3 py-2" colSpan={2}>
+                  <select className={inputCls} value={produsNouId} onChange={(e) => setProdusNouId(e.target.value)}>
+                    {articole.map((a) => <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>)}
+                  </select>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <input
+                    type="number"
+                    placeholder="Cantitate"
+                    className={`${inputCls} w-24 text-right`}
+                    value={cantitateNoua}
+                    onChange={(e) => setCantitateNoua(e.target.value)}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <input type="date" className={`${inputCls} w-40`} value={dataNoua} onChange={(e) => setDataNoua(e.target.value)} />
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Btn variant="primary" onClick={submitAdauga} disabled={adaugand}>
+                    <Plus size={14} /> {adaugand ? "Se adaugă..." : "Adaugă"}
+                  </Btn>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </Card>
+
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
         </div>
       </div>
     </Modal>

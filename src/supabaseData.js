@@ -839,6 +839,105 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
   };
 }
 
+// Stoc inițial — intrare de stoc FĂRĂ document asociat (nu generează NRCD, nu generează
+// datorie către furnizor). Folosit o singură dată, la pornirea evidenței unui produs, pentru
+// cantitatea deja existentă fizic în pangar la acel moment.
+export async function creeazaStocInitialPangar(parohieId, { articolId, cantitate, data }) {
+  const { data: articol, error: errA } = await supabase.from("articole_pangar").select("*").eq("id", articolId).single();
+  if (errA) throw errA;
+
+  const stocNou = Number(articol.stoc) + Number(cantitate);
+  const { error: errUpdArt } = await supabase
+    .from("articole_pangar")
+    .update({ stoc: stocNou, stoc_referinta: stocNou })
+    .eq("id", articolId);
+  if (errUpdArt) throw errUpdArt;
+
+  const valoareTotala = Number(cantitate) * Number(articol.pret_vanzare);
+  const { data: miscareInserata, error: errMiscare } = await supabase
+    .from("miscari_stoc_pangar")
+    .insert({
+      parohie_id: parohieId, articol_id: articolId, tip: "intrare", data, cantitate,
+      valoare_unitara: articol.pret_vanzare, valoare_totala: valoareTotala, document_id: null,
+    })
+    .select()
+    .single();
+  if (errMiscare) throw errMiscare;
+
+  return {
+    articolPatch: { id: articolId, stoc: stocNou, stocReferinta: stocNou },
+    miscareNoua: {
+      id: miscareInserata.id, data, tip: "intrare", articolId, cantitate: Number(cantitate),
+      valoareUnitara: Number(articol.pret_vanzare), valoareTotala, furnizor: "Stoc inițial",
+      valoareAchizitie: Number(cantitate) * Number(articol.pret_achizitie), documentId: null,
+    },
+  };
+}
+
+// Editează o mișcare de stoc inițial existentă (fără document asociat) — cantitate și/sau dată.
+// Nu atinge NRCD/Ordin de plată, pentru că acestea nu există la stocul inițial.
+export async function editeazaStocInitialPangar(miscareId, { cantitate, data }) {
+  const { data: miscare, error: errM } = await supabase.from("miscari_stoc_pangar").select("*").eq("id", miscareId).single();
+  if (errM) throw errM;
+  if (miscare.tip !== "intrare" || miscare.document_id) {
+    throw new Error("Această mișcare nu este un stoc inițial editabil pe acest formular.");
+  }
+
+  const { data: articol, error: errA } = await supabase.from("articole_pangar").select("*").eq("id", miscare.articol_id).single();
+  if (errA) throw errA;
+
+  const delta = Number(cantitate) - Number(miscare.cantitate);
+  const stocNou = Number(articol.stoc) + delta;
+  if (stocNou < 0) {
+    throw new Error(`Nu poți reduce cantitatea sub ce s-a vândut deja din acest cod (stoc curent: ${articol.stoc}, reducere cerută: ${-delta}).`);
+  }
+
+  const { error: errUpdArt } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", articol.id);
+  if (errUpdArt) throw errUpdArt;
+
+  const valoareTotala = Number(cantitate) * Number(articol.pret_vanzare);
+  const { error: errUpdM } = await supabase
+    .from("miscari_stoc_pangar")
+    .update({ data, cantitate, valoare_totala: valoareTotala })
+    .eq("id", miscareId);
+  if (errUpdM) throw errUpdM;
+
+  return {
+    articolActualizat: { stoc: stocNou, stocReferinta: stocNou },
+    miscareActualizata: {
+      data, cantitate: Number(cantitate), valoareTotala,
+      valoareAchizitie: Number(cantitate) * Number(articol.pret_achizitie),
+    },
+  };
+}
+
+// Șterge o mișcare de stoc inițial (fără document asociat) și scade stocul corespunzător.
+// Blocată dacă stocul curent al codului e mai mic decât cantitatea de șters (înseamnă că s-a
+// vândut deja din acest stoc inițial — ștergerea ar duce stocul sub zero).
+export async function stergeStocInitialPangar(miscareId) {
+  const { data: miscare, error: errM } = await supabase.from("miscari_stoc_pangar").select("*").eq("id", miscareId).single();
+  if (errM) throw errM;
+  if (miscare.tip !== "intrare" || miscare.document_id) {
+    throw new Error("Această mișcare nu este un stoc inițial ce poate fi șters pe acest formular.");
+  }
+
+  const { data: articol, error: errA } = await supabase.from("articole_pangar").select("*").eq("id", miscare.articol_id).single();
+  if (errA) throw errA;
+
+  const stocNou = Number(articol.stoc) - Number(miscare.cantitate);
+  if (stocNou < 0) {
+    throw new Error(`Nu poți șterge acest stoc inițial — s-a vândut deja mai mult decât ar rămâne (stoc curent: ${articol.stoc}, cantitate stoc inițial: ${miscare.cantitate}).`);
+  }
+
+  const { error: errUpdArt } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", articol.id);
+  if (errUpdArt) throw errUpdArt;
+
+  const { error: errDel } = await supabase.from("miscari_stoc_pangar").delete().eq("id", miscareId);
+  if (errDel) throw errDel;
+
+  return { articolActualizat: { id: articol.id, stoc: stocNou, stocReferinta: stocNou } };
+}
+
 // Editează o vânzare FIFO existentă — restituie stocul din consumul vechi, verifică stocul
 // disponibil pentru noua cantitate, apoi reface consumul FIFO de la zero, PĂSTRÂND același
 // document (deci același nr de chitanță) — doar liniile și mișcările se rescriu.
