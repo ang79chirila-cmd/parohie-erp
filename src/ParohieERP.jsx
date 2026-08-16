@@ -5248,6 +5248,172 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     [state.miscariStoc, anPangar]
   );
 
+  // Simulare cronologică globală a TUTUROR mișcărilor de stoc (toate produsele, tot istoricul) —
+  // ordonare primară după dată ascendent, secundară recepții înaintea vânzărilor la dată egală.
+  // Pentru fiecare mișcare se calculează stocul rezultat AL CODULUI specific (imutabil ca preț) și,
+  // agregat, stocul + valoarea de stoc la preț de vânzare ALE PRODUSULUI (toate codurile lui).
+  // Rulează pe tot istoricul (nu doar anul selectat) ca soldurile per-an să pornească din contextul real.
+  const evenimentePangar = useMemo(() => {
+    const stocPerCod = {};
+    const articolePorBazaCod = {};
+    for (const a of state.articole) {
+      if (!articolePorBazaCod[a.bazaCod]) articolePorBazaCod[a.bazaCod] = [];
+      articolePorBazaCod[a.bazaCod].push(a);
+    }
+    const indexate = state.miscariStoc.map((m, idx) => ({ m, idx }));
+    indexate.sort((a, b) => {
+      if (a.m.data !== b.m.data) return a.m.data < b.m.data ? -1 : 1;
+      if (a.m.tip !== b.m.tip) return a.m.tip === "intrare" ? -1 : 1;
+      return a.idx - b.idx;
+    });
+    return indexate.map(({ m }) => {
+      const articol = state.articole.find((a) => a.id === m.articolId);
+      const bazaCod = articol?.bazaCod || m.articolId;
+      const semn = m.tip === "intrare" ? 1 : -1;
+      stocPerCod[m.articolId] = (stocPerCod[m.articolId] || 0) + semn * m.cantitate;
+      const stocCodDupa = stocPerCod[m.articolId];
+      const surori = articolePorBazaCod[bazaCod] || [];
+      let stocProdusDupa = 0;
+      let valoareProdusDupa = 0;
+      for (const s of surori) {
+        const stocS = stocPerCod[s.id] || 0;
+        stocProdusDupa += stocS;
+        valoareProdusDupa += stocS * (s.pretVanzare || 0);
+      }
+      let tert = "";
+      if (m.tip === "iesire" && m.nrChitanta) {
+        const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === m.nrChitanta && op.an === m.anChitanta);
+        tert = opChit?.tert || "";
+      } else if (m.tip === "intrare") {
+        tert = m.furnizor || "";
+      }
+      return {
+        data: m.data,
+        an: yearOf(m.data),
+        tip: m.tip,
+        document: m.tip === "intrare" ? `NRCD ${m.nrNRCD || "—"}` : `Chitanță ${m.nrChitanta}`,
+        articolId: m.articolId,
+        bazaCod,
+        cod: articol?.cod || m.articolId,
+        denumire: articol?.denumire || "",
+        um: articol?.um || "",
+        pretVanzare: articol?.pretVanzare || 0,
+        cantitate: m.cantitate,
+        tert,
+        stocCodDupa,
+        valoareCodDupa: stocCodDupa * (articol?.pretVanzare || 0),
+        stocProdusDupa,
+        valoareProdusDupa,
+      };
+    });
+  }, [state.miscariStoc, state.articole, state.operatiuni]);
+
+  // 1. REGISTRU PANGAR — toate tranzacțiile (toate produsele), strict anul selectat, cronologic.
+  const registruPangarAn = useMemo(() => evenimentePangar.filter((e) => e.an === anPangar), [evenimentePangar, anPangar]);
+  const coloaneRegistruPangar = [
+    { key: "nrCrt", label: "Nr. crt." },
+    { key: "data", label: "Data" },
+    { key: "document", label: "Document" },
+    { key: "cod", label: "Cod" },
+    { key: "denumire", label: "Denumire" },
+    { key: "cantitateIntrata", label: "Cantitate intrată" },
+    { key: "cantitateIesita", label: "Cantitate ieșită" },
+    { key: "stoc", label: "Stoc" },
+    { key: "valoareStoc", label: "Valoare stoc la preț vânzare (lei)" },
+  ];
+  const randuriRegistruPangar = useMemo(() => registruPangarAn.map((e, i) => ({
+    nrCrt: i + 1,
+    data: fmtDataJurnal(e.data),
+    document: e.document,
+    cod: e.cod,
+    denumire: e.denumire,
+    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
+    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
+    stoc: `${e.stocCodDupa} ${e.um}`,
+    valoareStoc: fmt(e.valoareCodDupa),
+  })), [registruPangarAn]);
+
+  // Selector de produs pentru fișele 2 și 3, implicit primul produs din nomenclator.
+  const [produsSelectatPangar, setProdusSelectatPangar] = useState("");
+  useEffect(() => {
+    if (!produsSelectatPangar && grupuri.length > 0) setProdusSelectatPangar(grupuri[0].bazaCod);
+  }, [grupuri, produsSelectatPangar]);
+  const produsInfoSelectat = grupuri.find((g) => g.bazaCod === produsSelectatPangar);
+
+  // 2. FIȘĂ CRONOLOGICĂ DE PRODUS — toate tranzacțiile unui singur produs (toate codurile lui),
+  // strict anul selectat, cronologic; Stoc/Valoare = agregat la nivel de PRODUS.
+  const evenimenteProdusAn = useMemo(
+    () => evenimentePangar.filter((e) => e.bazaCod === produsSelectatPangar && e.an === anPangar),
+    [evenimentePangar, produsSelectatPangar, anPangar]
+  );
+  const coloaneFisaCronologica = [
+    { key: "nrCrt", label: "Nr. crt." },
+    { key: "data", label: "Data" },
+    { key: "document", label: "Document" },
+    { key: "cod", label: "Cod" },
+    { key: "cantitateIntrata", label: "Cantitate intrată" },
+    { key: "cantitateIesita", label: "Cantitate ieșită" },
+    { key: "stoc", label: "Stoc produs" },
+    { key: "valoareStoc", label: "Valoare stoc produs la preț vânzare (lei)" },
+  ];
+  const randuriFisaCronologica = useMemo(() => evenimenteProdusAn.map((e, i) => ({
+    nrCrt: i + 1,
+    data: fmtDataJurnal(e.data),
+    document: e.document,
+    cod: e.cod,
+    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
+    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
+    stoc: `${e.stocProdusDupa} ${e.um}`,
+    valoareStoc: fmt(e.valoareProdusDupa),
+  })), [evenimenteProdusAn]);
+
+  // 3. FIȘĂ SINTETICĂ DE PRODUS — stoc inițial (snapshot înainte de an) / intrat / ieșit / stoc final,
+  // cantitativ și valoric (la preț de vânzare), pentru produsul selectat.
+  const fisaSinteticaProdus = useMemo(() => {
+    const toateProdus = evenimentePangar.filter((e) => e.bazaCod === produsSelectatPangar);
+    const inceputAn = `${anPangar}-01-01`;
+    const inainteDeAn = toateProdus.filter((e) => e.data < inceputAn);
+    const ultimulInainte = inainteDeAn[inainteDeAn.length - 1];
+    const stocInitial = ultimulInainte ? ultimulInainte.stocProdusDupa : 0;
+    const valoareInitial = ultimulInainte ? ultimulInainte.valoareProdusDupa : 0;
+
+    const dinAn = toateProdus.filter((e) => e.an === anPangar);
+    let cantitateIntrata = 0, valoareIntrata = 0, cantitateIesita = 0, valoareIesita = 0;
+    for (const e of dinAn) {
+      if (e.tip === "intrare") { cantitateIntrata += e.cantitate; valoareIntrata += e.cantitate * e.pretVanzare; }
+      else { cantitateIesita += e.cantitate; valoareIesita += e.cantitate * e.pretVanzare; }
+    }
+    const ultimulDinAn = dinAn[dinAn.length - 1];
+    const stocFinal = ultimulDinAn ? ultimulDinAn.stocProdusDupa : stocInitial;
+    const valoareFinal = ultimulDinAn ? ultimulDinAn.valoareProdusDupa : valoareInitial;
+
+    return { stocInitial, valoareInitial, cantitateIntrata, valoareIntrata, cantitateIesita, valoareIesita, stocFinal, valoareFinal };
+  }, [evenimentePangar, produsSelectatPangar, anPangar]);
+
+  const coloaneFisaSintetica = [
+    { key: "eticheta", label: "" },
+    { key: "stocInitial", label: "STOC INIȚIAL" },
+    { key: "cantitateIntrata", label: "CANTITATE TOTALĂ INTRATĂ" },
+    { key: "cantitateIesita", label: "CANTITATE TOTALĂ IEȘITĂ" },
+    { key: "stocFinal", label: "STOC FINAL" },
+  ];
+  const randuriFisaSintetica = [
+    {
+      eticheta: "Cantitate",
+      stocInitial: fisaSinteticaProdus.stocInitial,
+      cantitateIntrata: fisaSinteticaProdus.cantitateIntrata,
+      cantitateIesita: fisaSinteticaProdus.cantitateIesita,
+      stocFinal: fisaSinteticaProdus.stocFinal,
+    },
+    {
+      eticheta: "Valoare la preț de vânzare (lei)",
+      stocInitial: fmt(fisaSinteticaProdus.valoareInitial),
+      cantitateIntrata: fmt(fisaSinteticaProdus.valoareIntrata),
+      cantitateIesita: fmt(fisaSinteticaProdus.valoareIesita),
+      stocFinal: fmt(fisaSinteticaProdus.valoareFinal),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
@@ -5409,8 +5575,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
 
 
       <Card className="overflow-x-auto">
-        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
-          Recepții {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+        <div className="px-3 pt-3 flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
+            Recepții {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+          </div>
+          <ExportMenu titlu={`RECEPTII PANGAR PE ANUL ${anPangar}`} columns={coloaneReceptiiExport} rows={randuriReceptiiExport} parohie={state.parohie} />
         </div>
         <table className="w-full text-sm">
           <thead>
@@ -5454,8 +5623,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       </Card>
 
       <Card className="overflow-x-auto">
-        <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
-          Vânzări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+        <div className="px-3 pt-3 flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
+            Vânzări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+          </div>
+          <ExportMenu titlu={`VANZARI PANGAR PE ANUL ${anPangar}`} columns={coloaneVanzariExport} rows={randuriVanzariExport} parohie={state.parohie} />
         </div>
         <table className="w-full text-sm">
           <thead>
@@ -5501,6 +5673,42 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             )}
           </tbody>
         </table>
+      </Card>
+
+      <Card className="p-4 flex flex-col gap-4">
+        <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Rapoarte Pangar — anul {anPangar}</div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
+          <div>
+            <div className="text-sm font-medium text-stone-700">Registru Pangar (cantitativ-valoric)</div>
+            <p className="text-xs text-stone-500">Toate tranzacțiile anului {anPangar} — toate produsele, în ordine cronologică (recepții înaintea vânzărilor la dată egală).</p>
+          </div>
+          <ExportMenu titlu={`REGISTRU PANGAR CANTITATIV-VALORIC PE ANUL ${anPangar}`} columns={coloaneRegistruPangar} rows={randuriRegistruPangar} parohie={state.parohie} />
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Field label="Produs">
+            <select className={`${inputCls} min-w-[220px]`} value={produsSelectatPangar} onChange={(e) => setProdusSelectatPangar(e.target.value)}>
+              {grupuri.map((g) => <option key={g.bazaCod} value={g.bazaCod}>{g.denumire}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
+          <div>
+            <div className="text-sm font-medium text-stone-700">Fișă cronologică de produs</div>
+            <p className="text-xs text-stone-500">Toate tranzacțiile din {anPangar} ale produsului „{produsInfoSelectat?.denumire || "—"}" — toate codurile lui, cronologic, cu stoc și valoare de stoc agregate la nivel de produs.</p>
+          </div>
+          <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaCronologica} rows={randuriFisaCronologica} parohie={state.parohie} />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-sm font-medium text-stone-700">Fișă sintetică de produs</div>
+            <p className="text-xs text-stone-500">Stoc inițial / intrări / ieșiri / stoc final pentru „{produsInfoSelectat?.denumire || "—"}" în {anPangar}, cantitativ și valoric (la preț de vânzare).</p>
+          </div>
+          <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaSintetica} rows={randuriFisaSintetica} parohie={state.parohie} />
+        </div>
       </Card>
 
       {editReceptieFor && (
