@@ -3806,6 +3806,10 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
 
   const totalIncasariAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "incasare" ? r.op.suma : 0), 0);
   const totalPlatiAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "plata" ? r.op.suma : 0), 0);
+  const ultimulRand = randuri[randuri.length - 1];
+  const soldFinalAn = ultimulRand?.soldFinal || 0;
+  const soldBancaAn = ultimulRand?.soldBanca || 0;
+  const soldCasaAn = ultimulRand?.soldCasa || 0;
 
   const coloaneJurnal = [
     { key: "nr", label: "Nr. crt." },
@@ -3911,7 +3915,10 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <td colSpan={7} className="px-2 py-2 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
               <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
               <td className="px-2 py-2 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
-              <td colSpan={4}></td>
+              <td></td>
+              <td className="px-2 py-2 text-right tabular-nums">{fmt(soldFinalAn)}</td>
+              <td className="px-2 py-2 text-right tabular-nums">{fmt(soldBancaAn)}</td>
+              <td className="px-2 py-2 text-right tabular-nums">{fmt(soldCasaAn)}</td>
             </tr>
             {afisate.length === 0 && (
               <tr>
@@ -9828,6 +9835,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   const [confirmareExcedent, setConfirmareExcedent] = useState(null); // { excedentVechi, excedentNou } | null
 
   const tipEtichetat = tip === "incasare" ? "Chitanță" : "Ordin de plată";
+  const tipEtichetatPlural = tip === "incasare" ? "Chitanțe" : "Ordine de plată";
   const docCurent = documente[index];
   const anInchisDefinitiv = docCurent && !!exercitiiFinanciare?.[docCurent.an]?.inchisDefinitiv;
   const conturiFiltrate = conturi
@@ -10055,18 +10063,18 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
   if (documente.length === 0) {
     return (
-      <Modal title={`${tipEtichetat}e — niciun document emis`} onClose={onClose}>
+      <Modal title={`${tipEtichetatPlural} — niciun document emis`} onClose={onClose}>
         <p className="text-sm text-stone-500">Nu există încă niciun document de acest tip.</p>
       </Modal>
     );
   }
 
   return (
-    <Modal title={`Navigator documente — ${tipEtichetat}e`} onClose={onClose} wide>
+    <Modal title={`Navigator documente — ${tipEtichetatPlural}`} onClose={onClose} wide>
       <div className="flex flex-col gap-3">
         <Card className="p-3 bg-stone-50 flex items-center justify-between">
           <span className="text-sm font-medium text-stone-600">
-            TOTAL {tip === "incasare" ? "Încasări" : "Plăți"} ({documente.length} {tipEtichetat.toLowerCase()}{documente.length === 1 ? "ă" : "e"})
+            TOTAL {tip === "incasare" ? "Încasări" : "Plăți"} ({documente.length} {documente.length === 1 ? tipEtichetat.toLowerCase() : tipEtichetatPlural.toLowerCase()})
           </span>
           <span className={`font-serif text-lg tabular-nums ${tip === "incasare" ? "text-emerald-700" : "text-rose-700"}`}>
             {fmt(documente.reduce((sum, d) => sum + d.linii.reduce((s, l) => s + l.suma, 0), 0))} lei
