@@ -1065,11 +1065,12 @@ function exportPDF(titlu, columns, rows, parohie) {
 
   const style = `
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap');
       @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       h2 { color: #1F3864; }
       .coperta { padding: 32px 24px; page-break-after: always; }
-      .coperta h1 { color: #1F3864; font-size: 24px; margin-bottom: 4px; }
+      .coperta h1 { font-family: 'Cinzel Decorative', Georgia, serif; color: #1F3864; font-size: 22px; margin-bottom: 4px; }
       .coperta .hram { color: #8a6a2f; font-style: italic; margin-bottom: 20px; }
       .coperta table { width: 100%; border-collapse: collapse; font-size: 14px; }
       .coperta td { padding: 5px 6px; border-bottom: 1px solid #e7e5e4; }
@@ -1083,6 +1084,7 @@ function exportPDF(titlu, columns, rows, parohie) {
       table.raport tfoot { display: table-footer-group; }
       table.raport tfoot td { border: none; padding-top: 10px; font-size: 12px; color: #78716c; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; }
+      .nume-parohie-arhaic-alb { font-family: 'Cinzel Decorative', Georgia, serif; color: white; }
       @page { @bottom-right { content: "Pag. " counter(page) " / " counter(pages); font-size: 12px; color: #78716c; } }
     </style>`;
 
@@ -1108,7 +1110,7 @@ function exportPDF(titlu, columns, rows, parohie) {
   const headRepetat = `
     <thead class="antet-repetat">
       <tr><th colspan="${columns.length}" style="text-align:left;">
-        Denumirea unității de cult: ${xmlEscape(p.denumire)} &nbsp;&nbsp;|&nbsp;&nbsp; Cod fiscal: ${xmlEscape(p.cif)}
+        Denumirea unității de cult: <span class="nume-parohie-arhaic-alb">${xmlEscape(p.denumire)}</span> &nbsp;&nbsp;|&nbsp;&nbsp; Cod fiscal: ${xmlEscape(p.cif)}
       </th></tr>
       <tr>${columns.map((c) => `<th>${xmlEscape(c.label)}</th>`).join("")}</tr>
     </thead>`;
@@ -1178,6 +1180,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
 
   const style = `
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap');
       @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
@@ -1187,6 +1190,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
       table.doc th { background: #1F3864; color: white; font-weight: normal; }
       .total-row td { font-weight: bold; background: #f5f5f4; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+      .nume-parohie-arhaic { font-family: 'Cinzel Decorative', Georgia, serif; font-size: 13px; color: #1F3864; }
     </style>`;
 
   const paginile = docs
@@ -1205,9 +1209,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
               ${doc.serie && doc.numarIdentificare ? `<br/><span style="font-family: monospace; font-size:12px; color:#78716c;">Serie ${xmlEscape(doc.serie)} nr. ${doc.numarIdentificare}</span>` : ""}
             </div>
           </div>
-          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: ${xmlEscape(p.denumire)} &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
-          <table class="doc">
-            <tr><td style="width:25%; color:#78716c;">Data</td><td colspan="3">${fmtDataJurnal(doc.data)}</td></tr>
+          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: <span class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</span> &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
             <tr><td style="color:#78716c;">Denumire partener</td><td colspan="3">${xmlEscape(doc.tert || "—")}</td></tr>
             <tr><td style="color:#78716c;">Mod</td><td colspan="3">${doc.modPlata === "numerar" ? "Numerar (casă)" : "Transfer bancar"}</td></tr>
           </table>
@@ -1293,6 +1295,7 @@ function printeazaRaportAnualComplet(raport, parohie) {
 
   const style = `
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap');
       @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       .pagina { padding: 0 8mm; page-break-after: always; }
@@ -1306,17 +1309,19 @@ function printeazaRaportAnualComplet(raport, parohie) {
       .kpi .label { font-size: 12px; color: #78716c; text-transform: uppercase; }
       .kpi .value { font-size: 16px; color: #1F3864; font-weight: bold; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+      .nume-parohie-arhaic { font-family: 'Cinzel Decorative', Georgia, serif; color: #1F3864; }
     </style>`;
 
   const coperta = `
     <div class="pagina">
       <div style="text-align:center; margin-top:60px;">
         <div style="width:70px;height:70px;border-radius:50%;background:#B8860B;margin:0 auto 16px;"></div>
-        <h1 style="color:#1F3864; font-size:26px;">Raport anual de sinteză — ${raport.an}</h1>
+        <h1 class="nume-parohie-arhaic" style="font-size:22px; margin-bottom:4px;">${xmlEscape(p.denumire || "Parohia")}</h1>
+        <h2 style="border:none; margin-top:4px; font-size:16px;">RAPORT ANUAL DE SINTEZĂ PE ANUL ${raport.an}</h2>
         <p style="color:#78716c;">Toate modulele: Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență</p>
       </div>
       <table class="raport" style="margin-top:40px;">
-        <tr><td style="width:35%; color:#78716c;">Denumirea unității de cult</td><td>${xmlEscape(p.denumire)}</td></tr>
+        <tr><td style="width:35%; color:#78716c;">Denumirea unității de cult</td><td class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</td></tr>
         <tr><td style="color:#78716c;">Eparhia / Protoieria</td><td>${xmlEscape(p.eparhie)} / ${xmlEscape(p.protoierie)}</td></tr>
         <tr><td style="color:#78716c;">Cod fiscal (CIF)</td><td>${xmlEscape(p.cif)}</td></tr>
         <tr><td style="color:#78716c;">Nr. Registrul ANAF</td><td>${xmlEscape(p.nrAnaf)}</td></tr>
@@ -1438,6 +1443,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
 
   const style = `
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap');
       @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
@@ -1447,6 +1453,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
       table.doc th { background: #1F3864; color: white; font-weight: normal; }
       .total-row td { font-weight: bold; background: #f5f5f4; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+      .nume-parohie-arhaic { font-family: 'Cinzel Decorative', Georgia, serif; font-size: 13px; color: #1F3864; }
     </style>`;
 
   const paginile = docs
@@ -1473,8 +1480,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
             <span style="font-size:18px; color:#1F3864; text-transform:uppercase; letter-spacing:0.5px;">${xmlEscape(tipEtichetat)}</span>
             <span style="font-family: monospace; font-size:14px; color:#1F3864; font-weight:bold;">Nr. ${doc.nr}/${doc.an}</span>
           </div>
-          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: ${xmlEscape(p.denumire)} &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
-          <table class="doc">${antetRanduri}</table>
+          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: <span class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</span> &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
           ${tabelLinii}
           <div class="footer-line">
             <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
@@ -2069,7 +2075,9 @@ export default function ParohieERP() {
     const style = document.createElement("style");
     style.id = "parohie-global-style";
     style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&display=swap');
       html { font-size: 18px; }
+      .font-arhaic { font-family: 'Cinzel Decorative', Georgia, serif; letter-spacing: 0.02em; }
       select {
         -webkit-appearance: none;
         -moz-appearance: none;
@@ -2609,7 +2617,7 @@ export default function ParohieERP() {
             <Church size={16} className="text-white" />
           </div>
           <div>
-            <div className="font-serif text-base leading-tight">
+            <div className="font-arhaic text-lg leading-snug text-[#F0E4C8]">
               {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
             </div>
             <div className="text-[11px] text-white/50 leading-tight">
@@ -3809,8 +3817,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const randuriExportJurnal = randuri.map((r) => ({
     nr: r.nrCrt,
     data: fmtDataJurnal(r.op.data),
-    nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}/${r.op.an}` : "",
-    nrOP: r.op.tip === "plata" ? `${r.op.nr}/${r.op.an}` : "",
+    nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}` : "",
+    nrOP: r.op.tip === "plata" ? `${r.op.nr}` : "",
     artBug: r.cont ? r.cont.simbol : r.op.contId,
     partener: r.op.tert || "",
     explicatie: r.op.explicatie || r.cont?.denumire || "",
@@ -3862,7 +3870,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <ArrowLeftRight size={15} /> Transfer casă/bancă
             </Btn>
           )}
-          <ExportMenu titlu="Jurnal de Venituri si Cheltuieli" columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
+          <ExportMenu titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`} columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
         </div>
       </header>
 
@@ -6346,8 +6354,11 @@ function RapoarteTab({ state, setState, derived }) {
     const rows = venituriConturi.map((c) => ({
       cont: c.simbol, denumire: c.denumire, incasari: fmt(stats.rulajPeCont[c.id]?.incasari || 0),
     }));
+    const titlu = modInterval === "an"
+      ? `PARTIZI VENITURI - INCASARI PE ANUL ${anSelectat}`
+      : `PARTIZI VENITURI - INCASARI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
     exportPDF(
-      `Partizi Venituri - Încasări (${fmtDataJurnal(interval.start)} – ${fmtDataJurnal(interval.final)})`,
+      titlu,
       [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "incasari", label: "Încasări (lei)" }],
       rows, state.parohie
     );
@@ -6357,8 +6368,11 @@ function RapoarteTab({ state, setState, derived }) {
     const rows = cheltuieliConturi.map((c) => ({
       cont: c.simbol, denumire: c.denumire, plati: fmt(stats.rulajPeCont[c.id]?.plati || 0),
     }));
+    const titlu = modInterval === "an"
+      ? `PARTIZI CHELTUIELI - PLATI PE ANUL ${anSelectat}`
+      : `PARTIZI CHELTUIELI - PLATI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
     exportPDF(
-      `Partizi Cheltuieli - Plăți (${fmtDataJurnal(interval.start)} – ${fmtDataJurnal(interval.final)})`,
+      titlu,
       [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "plati", label: "Plăți (lei)" }],
       rows, state.parohie
     );
@@ -6371,7 +6385,7 @@ function RapoarteTab({ state, setState, derived }) {
       bugetat: fmt((state.buget[c.id] || {})[anSelectat] || 0),
     }));
     exportPDF(
-      `Buget — Prevederi (anul ${anSelectat})`,
+      `BUGET - PREVEDERI PE ANUL ${anSelectat}`,
       [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" }, { key: "bugetat", label: "Prevăzut (lei)" }],
       rows, state.parohie
     );
@@ -6390,7 +6404,7 @@ function RapoarteTab({ state, setState, derived }) {
       };
     });
     exportPDF(
-      `Buget — Execuție (anul ${anSelectat})`,
+      `BUGET - EXECUTIE PE ANUL ${anSelectat}`,
       [
         { key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" },
         { key: "bugetat", label: "Prevăzut (lei)" }, { key: "realizat", label: "Realizat (lei)" },
