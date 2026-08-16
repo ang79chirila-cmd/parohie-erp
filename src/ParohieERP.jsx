@@ -2635,6 +2635,12 @@ export default function ParohieERP() {
             </div>
           </div>
         </div>
+        <div className="px-5 py-2.5 border-b border-white/10 flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+            <User size={12} className="text-white/70" />
+          </div>
+          <span className="text-xs text-white/70 truncate">CIF {session}</span>
+        </div>
         <nav className="flex-1 py-3 overflow-y-auto px-2 flex flex-col gap-1.5">
           {NAV.map((n) => (
             <button
@@ -2663,12 +2669,6 @@ export default function ParohieERP() {
         )}
         <div className="px-5 py-2.5 border-t border-white/10">
           <span className="text-[11px] text-white/50">Rol activ: <span className="text-white/80">{permisiuni.label}</span></span>
-        </div>
-        <div className="px-5 py-2.5 border-t border-white/10 flex items-center gap-2 min-w-0">
-          <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-            <User size={12} className="text-white/70" />
-          </div>
-          <span className="text-xs text-white/70 truncate">CIF {session}</span>
         </div>
         <div className="px-2 py-2 border-t border-white/10 flex flex-col gap-1.5">
           <button
