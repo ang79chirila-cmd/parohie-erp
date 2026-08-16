@@ -6196,7 +6196,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                 return (
                   <tr key={m.id} className="border-b border-stone-100">
                     <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
-                    <td className="px-3 py-2">{art?.denumire || "—"}</td>
+                    <td className="px-3 py-2 max-w-xs truncate" title={art?.denumire || "—"}>{art?.denumire || "—"}</td>
                     <td className="px-3 py-2 text-right">
                       <input
                         type="number"
@@ -6257,7 +6257,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
               {liniiNoi.map((l) => (
                 <tr key={l.key} className="border-b border-stone-100">
                   <td className="px-3 py-2">
-                    <select className={inputCls} value={l.articolId} onChange={(e) => actualizeazaLinieNoua(l.key, "articolId", e.target.value)}>
+                    <select className={`${inputCls} w-72`} value={l.articolId} onChange={(e) => actualizeazaLinieNoua(l.key, "articolId", e.target.value)}>
                       <option value="">— alege produs —</option>
                       {articole.map((a) => <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>)}
                     </select>
