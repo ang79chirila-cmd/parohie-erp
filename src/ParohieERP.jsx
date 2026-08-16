@@ -519,7 +519,7 @@ function emptyState() {
     dataCreareInstanta: todayISO(), // folosită pentru a calcula termenul excepției de reconstituire, individual per parohie
     conturi: seedAccounts(),
     operatiuni: [],
-    articole: seedArticole(),
+    articole: [],
     miscariStoc: [],
     datoriiFurnizori: [], // { id, furnizor, suma, dataFactura, dataScadenta, status, nrFactura, nrNRCD, contId, opId }
     contoare: {}, // { "2026": { chitanta: 0, ordinPlata: 0, nrcd: 0 } }
@@ -962,10 +962,11 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
 }
 
 function Modal({ title, onClose, children, wide }) {
+  const maxWidthCls = wide === "xl" ? "max-w-5xl" : wide ? "max-w-2xl" : "max-w-md";
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose || undefined}>
       <div
-        className={`bg-[#FAF8F3] rounded-lg shadow-xl w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto`}
+        className={`bg-[#FAF8F3] rounded-lg shadow-xl w-full ${maxWidthCls} max-h-[90vh] overflow-y-auto`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 bg-[#FAF8F3]">
@@ -2208,9 +2209,9 @@ export default function ParohieERP() {
           prevederiBugetare: prevederiSupabase,
           buget: construiesteBugetDinPrevederi(prevederiSupabase),
           operatiuni: operatiuniSupabase,
-          articole: articolePangarSupabase.length > 0 ? articolePangarSupabase : s.articole,
-          miscariStoc: articolePangarSupabase.length > 0 ? miscariStocPangarSupabase : s.miscariStoc,
-          datoriiFurnizori: articolePangarSupabase.length > 0 ? datoriiFurnizoriSupabase : s.datoriiFurnizori,
+          articole: articolePangarSupabase,
+          miscariStoc: miscariStocPangarSupabase,
+          datoriiFurnizori: datoriiFurnizoriSupabase,
           parteneri: partenerSupabase,
           locuriInhumare: locuriSupabase.length > 0 ? locuriSupabase : s.locuriInhumare,
           concesiuni: locuriSupabase.length > 0 ? concesiuniSupabase : s.concesiuni,
@@ -6077,10 +6078,44 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
   const [confirmareStergereId, setConfirmareStergereId] = useState(null);
   const [error, setError] = useState("");
 
-  const [produsNouId, setProdusNouId] = useState(articole[0]?.id || "");
-  const [cantitateNoua, setCantitateNoua] = useState("");
-  const [dataNoua, setDataNoua] = useState(todayISO());
-  const [adaugand, setAdaugand] = useState(false);
+  let idLinieNoua = 0;
+  function linieGoala() {
+    idLinieNoua += 1;
+    return { key: `linie-noua-${Date.now()}-${idLinieNoua}`, articolId: articole[0]?.id || "", cantitate: "", data: todayISO() };
+  }
+
+  const [liniiNoi, setLiniiNoi] = useState(() => [linieGoala()]);
+  const [salvandKeyNou, setSalvandKeyNou] = useState(null);
+
+  function actualizeazaLinieNoua(key, camp, valoare) {
+    setLiniiNoi((linii) => linii.map((l) => (l.key === key ? { ...l, [camp]: valoare } : l)));
+  }
+  function adaugaLinieNoua() {
+    setLiniiNoi((linii) => [...linii, linieGoala()]);
+  }
+  function eliminaLinieNoua(key) {
+    setLiniiNoi((linii) => {
+      const ramase = linii.filter((l) => l.key !== key);
+      return ramase.length > 0 ? ramase : [linieGoala()];
+    });
+  }
+
+  async function submitLinieNoua(l) {
+    if (!l.articolId) { setError("Selectați un produs pentru această linie."); return; }
+    const cantitate = Number(l.cantitate);
+    if (!cantitate || cantitate <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (!l.data) { setError("Data este obligatorie."); return; }
+    setError("");
+    setSalvandKeyNou(l.key);
+    try {
+      await onAdauga(l.articolId, cantitate, l.data);
+      eliminaLinieNoua(l.key);
+    } catch (e) {
+      setError(e.message || "Eroare la adăugarea stocului inițial. Încearcă din nou.");
+    } finally {
+      setSalvandKeyNou(null);
+    }
+  }
 
   function valoareEditata(m, camp) {
     return editari[m.id]?.[camp] ?? (camp === "cantitate" ? String(m.cantitate) : m.data);
@@ -6118,25 +6153,8 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
     }
   }
 
-  async function submitAdauga() {
-    const cantitate = Number(cantitateNoua);
-    if (!produsNouId) { setError("Selectați un produs."); return; }
-    if (!cantitate || cantitate <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
-    if (!dataNoua) { setError("Data este obligatorie."); return; }
-    setError("");
-    setAdaugand(true);
-    try {
-      await onAdauga(produsNouId, cantitate, dataNoua);
-      setCantitateNoua("");
-    } catch (e) {
-      setError(e.message || "Eroare la adăugarea stocului inițial. Încearcă din nou.");
-    } finally {
-      setAdaugand(false);
-    }
-  }
-
   return (
-    <Modal title="Stoc inițial" onClose={onClose} wide>
+    <Modal title="Stoc inițial" onClose={onClose} wide="xl">
       <div className="flex flex-col gap-3">
         <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
           Pentru introducerea directă a stocului deja existent fizic în pangar, fără document (NRCD) asociat și fără
@@ -6202,32 +6220,66 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
               {miscariStocInitiale.length === 0 && (
                 <tr><td colSpan={5} className="px-3 py-4 text-center text-stone-400">Niciun stoc inițial introdus încă.</td></tr>
               )}
-              <tr className="bg-stone-50">
-                <td className="px-3 py-2" colSpan={2}>
-                  <select className={inputCls} value={produsNouId} onChange={(e) => setProdusNouId(e.target.value)}>
-                    {articole.map((a) => <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>)}
-                  </select>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <input
-                    type="number"
-                    placeholder="Cantitate"
-                    className={`${inputCls} w-24 text-right`}
-                    value={cantitateNoua}
-                    onChange={(e) => setCantitateNoua(e.target.value)}
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input type="date" className={`${inputCls} w-40`} value={dataNoua} onChange={(e) => setDataNoua(e.target.value)} />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <Btn variant="primary" onClick={submitAdauga} disabled={adaugand}>
-                    <Plus size={14} /> {adaugand ? "Se adaugă..." : "Adaugă"}
-                  </Btn>
-                </td>
-              </tr>
             </tbody>
           </table>
+        </Card>
+
+        <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mt-1">Linii noi de adăugat</div>
+        <Card className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                <th className="px-3 py-2">Produs</th>
+                <th className="px-3 py-2 text-right">Cantitate</th>
+                <th className="px-3 py-2">Data</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {liniiNoi.map((l) => (
+                <tr key={l.key} className="border-b border-stone-100">
+                  <td className="px-3 py-2">
+                    <select className={inputCls} value={l.articolId} onChange={(e) => actualizeazaLinieNoua(l.key, "articolId", e.target.value)}>
+                      <option value="">— alege produs —</option>
+                      {articole.map((a) => <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <input
+                      type="number"
+                      placeholder="Cantitate"
+                      className={`${inputCls} w-24 text-right`}
+                      value={l.cantitate}
+                      onChange={(e) => actualizeazaLinieNoua(l.key, "cantitate", e.target.value)}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="date"
+                      className={`${inputCls} w-40`}
+                      value={l.data}
+                      onChange={(e) => actualizeazaLinieNoua(l.key, "data", e.target.value)}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex gap-1.5 justify-end">
+                      <Btn variant="gold" onClick={() => submitLinieNoua(l)} disabled={salvandKeyNou === l.key}>
+                        {salvandKeyNou === l.key ? "..." : "Modifică"}
+                      </Btn>
+                      <Btn variant="danger" onClick={() => eliminaLinieNoua(l.key)} disabled={salvandKeyNou === l.key}>
+                        Șterge
+                      </Btn>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="p-3 border-t border-stone-100">
+            <Btn variant="ghost" onClick={adaugaLinieNoua}>
+              <Plus size={14} /> Adaugă linie
+            </Btn>
+          </div>
         </Card>
 
         {error && <span className="text-rose-600 text-xs">{error}</span>}
