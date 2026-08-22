@@ -4025,6 +4025,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           conturi={state.conturi}
           exercitiiFinanciare={state.exercitiiFinanciare}
           operatiuni={state.operatiuni}
+          anImplicit={anSelectat}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           donatoriIstorici={donatoriIstorici}
@@ -4043,6 +4044,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           derived={derived}
           exercitiiFinanciare={state.exercitiiFinanciare}
           operatiuni={state.operatiuni}
+          anImplicit={anSelectat}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           eparhie={state.parohie?.eparhie}
@@ -4431,8 +4433,12 @@ function PrevederiBugetareForm({ conturi, an, obligatoriu, modCorectie, liniiIni
   );
 }
 
-function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
-  const [data, setData] = useState(todayISO());
+function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
+  // Dacă userul lucra pe un an anterior (reconstituire) în Registru Jurnal, formularul pornește
+  // cu 1 ianuarie din acel an, nu cu data de azi — altfel prima dată implicită "trăgea" documentul
+  // spre anul curent, indiferent pe ce an lucra efectiv userul.
+  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  const [data, setData] = useState(dataImplicita);
   const [modPlataImplicit, setModPlataImplicit] = useState("numerar"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
   const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "numerar" }]);
@@ -4632,8 +4638,10 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, parteneri, onC
   );
 }
 
-function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, parteneri, onCreatPartener, eparhie, protoierie, onClose, onSave }) {
-  const [data, setData] = useState(todayISO());
+function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, eparhie, protoierie, onClose, onSave }) {
+  // Aceeași corecție ca la ChitantaForm — vezi explicația de-acolo.
+  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  const [data, setData] = useState(dataImplicita);
   const [modPlataImplicit, setModPlataImplicit] = useState("transfer"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
   const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "transfer", ajustare106: false }]);
@@ -5926,6 +5934,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       {showReceptieNRCD && (
         <ReceptieNRCDForm
           articole={state.articole}
+          anImplicit={anPangar}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           furnizoriAutorizati={[state.parohie?.eparhie, state.parohie?.protoierie].filter(Boolean)}
@@ -5937,6 +5946,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         <VanzareMultiplaForm
           grupuri={grupuri}
           operatiuni={state.operatiuni}
+          anImplicit={anPangar}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           donatoriIstorici={donatoriIstorici}
@@ -6464,11 +6474,13 @@ function VanzareEditForm({ vanzare, onClose, onSave }) {
 // Recepție NRCD cu linii multiple — mai multe produse diferite, pe aceeași factură, exact ca la
 // o factură reală. Produsele se aleg strict din nomenclator (fără introducere manuală de text),
 // din listă derulantă — orice produs nou creat apare automat aici, fără nimic suplimentar.
-function ReceptieNRCDForm({ articole, parteneri, onCreatPartener, furnizoriAutorizati, onClose, onSave }) {
+function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, onClose, onSave }) {
   const [pas, setPas] = useState("detalii"); // detalii | decizie | acum | amanata
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
-  const [data, setData] = useState(todayISO());
+  // Aceeași corecție ca la ChitantaForm/OrdinPlataForm/VanzareMultiplaForm — vezi explicația de-acolo.
+  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  const [data, setData] = useState(dataImplicita);
   const [linii, setLinii] = useState([{ id: uid(), articolId: "", cantitate: "" }]);
   const [modPlata, setModPlata] = useState("transfer");
   const [dataScadenta, setDataScadenta] = useState("");
@@ -6679,8 +6691,10 @@ function ReceptieNRCDForm({ articole, parteneri, onCreatPartener, furnizoriAutor
   );
 }
 
-function VanzareMultiplaForm({ grupuri, operatiuni, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
-  const [data, setData] = useState(todayISO());
+function VanzareMultiplaForm({ grupuri, operatiuni, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
+  // Aceeași corecție ca la ChitantaForm/OrdinPlataForm — vezi explicația de-acolo.
+  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  const [data, setData] = useState(dataImplicita);
   const [tert, setTert] = useState("");
   const [modPlata, setModPlata] = useState("numerar");
   const [linii, setLinii] = useState([{ id: uid(), bazaCod: "", cantitate: "" }]);
