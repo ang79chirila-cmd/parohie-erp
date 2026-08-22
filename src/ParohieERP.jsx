@@ -2317,21 +2317,28 @@ export default function ParohieERP() {
 
   // Închidere automată: dacă am trecut de 31.03 al anului curent, exercițiul anului precedent
   // trebuie închis (dacă nu a fost deja închis manual până atunci) — DAR doar dacă anul respectiv
-  // a avut efectiv activitate (operațiuni sau prevederi bugetare validate). O parohie nou creată,
-  // aflată încă în reconstituirea anului precedent, nu trebuie "închisă" automat pe un an gol.
+  // a avut efectiv activitate (operațiuni sau prevederi bugetare validate) ȘI doar dacă e un an de
+  // funcționare normală, nu unul aflat încă în reconstituire retroactivă (anterior creării contului
+  // — ex. contul creat în 2026, dar userul reconstituie 2025). Pentru un an retroactiv, SINGURUL
+  // declanșator de închidere e acțiunea explicită a userului (butonul "Închide exercițiul" din
+  // Tabloul de bord) — altfel, orice document introdus acolo ar redeschide-reînchide la nesfârșit,
+  // de fiecare dată când userul reintră în aplicație pe parcursul unei reconstituiri pe mai multe
+  // sesiuni de lucru.
   useEffect(() => {
     if (!loaded || !state) return;
     const azi0 = new Date();
     const anCurent0 = azi0.getFullYear();
     const luna0 = azi0.getMonth() + 1;
     const anDeInchis = anCurent0 - 1;
+    const anCreareCont = state.dataCreareInstanta ? new Date(state.dataCreareInstanta).getFullYear() : anCurent0;
+    const esteAnReconstituitRetroactiv = anDeInchis < anCreareCont;
     const areActivitate =
       state.operatiuni.some((op) => op.an === anDeInchis) || !!state.prevederiBugetare?.[anDeInchis];
-    if (luna0 > 3 && areActivitate && !state.exercitiiFinanciare?.[anDeInchis]?.inchis) {
+    if (luna0 > 3 && areActivitate && !esteAnReconstituitRetroactiv && !state.exercitiiFinanciare?.[anDeInchis]?.inchis) {
       const { operatiuni, exercitiiFinanciare } = inchideExercitiuFinanciar(state, anDeInchis, "automata");
       setState((s) => ({ ...s, operatiuni, exercitiiFinanciare }));
     }
-  }, [loaded, state?.exercitiiFinanciare]);
+  }, [loaded, state?.exercitiiFinanciare, state?.dataCreareInstanta]);
 
   // Închidere DEFINITIVĂ, automată: orice exercițiu închis moale (inchis: true), dar nu încă definitiv,
   // devine ireversibil la 31.12 al anului următor celui închis — abia acum se anonimizează GDPR.
@@ -2357,23 +2364,26 @@ export default function ParohieERP() {
     });
   }, [loaded, state?.exercitiiFinanciare, state?.dataCreareInstanta]);
   // Reparație unică: dacă anul precedent a fost deja închis automat de versiunea anterioară a acestei
-  // reguli — greșit, fără nicio activitate reală în spate — anulăm acea închidere, ca reconstituirea
-  // datelor pentru anul respectiv să rămână posibilă.
+  // reguli — greșit, fie fără nicio activitate reală, fie pentru că era un an aflat în reconstituire
+  // retroactivă (anterior creării contului) — anulăm acea închidere, ca reconstituirea datelor pentru
+  // anul respectiv să rămână posibilă. Butonul manual "Închide exercițiul" rămâne mereu disponibil.
   useEffect(() => {
     if (!loaded || !state) return;
     const anDeInchis = new Date().getFullYear() - 1;
     const info = state.exercitiiFinanciare?.[anDeInchis];
     if (!info?.inchis || info.tipInchidere !== "automata") return;
+    const anCreareCont = state.dataCreareInstanta ? new Date(state.dataCreareInstanta).getFullYear() : new Date().getFullYear();
+    const esteAnReconstituitRetroactiv = anDeInchis < anCreareCont;
     const areActivitate =
       state.operatiuni.some((op) => op.an === anDeInchis) || !!state.prevederiBugetare?.[anDeInchis];
-    if (!areActivitate) {
+    if (!areActivitate || esteAnReconstituitRetroactiv) {
       setState((s) => {
         const exercitiiFinanciare = { ...s.exercitiiFinanciare };
         delete exercitiiFinanciare[anDeInchis];
         return { ...s, exercitiiFinanciare };
       });
     }
-  }, [loaded, state?.exercitiiFinanciare]);
+  }, [loaded, state?.exercitiiFinanciare, state?.dataCreareInstanta]);
 
   // Reparație unică: conturile create înainte de introducerea câmpului dataCreareInstanta nu-l au
   // încă — îl completăm cu data curentă, ca punct de plecare corect pentru termenul individual al
