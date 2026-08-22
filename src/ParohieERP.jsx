@@ -7,7 +7,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
@@ -5368,8 +5368,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     const documentId = iesiriVechi[0].documentId;
     let rezultat;
     try {
-      rezultat = await editeazaVanzarePangar(documentId, {
-        cantitate: opts.cantitate, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, categoriiPangar: CATEGORII_PANGAR,
+      rezultat = await editeazaVanzareMultiplaPangar(documentId, {
+        linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, categoriiPangar: CATEGORII_PANGAR,
       });
     } catch (e) {
       setNotice(e.message || "Eroare la editarea vânzării. Încearcă din nou.");
@@ -5470,18 +5470,24 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     () => [...state.miscariStoc].filter((m) => m.tip === "intrare" && yearOf(m.data) === anPangar).sort((a, b) => (a.data < b.data ? 1 : -1)),
     [state.miscariStoc, anPangar]
   );
-  const vanzariAnFiltrate = useMemo(
-    () => Object.values(
-      [...state.miscariStoc].filter((m) => m.tip === "iesire" && m.nrChitanta && m.anChitanta === anPangar).reduce((acc, m) => {
-        const key = `${m.anChitanta}-${m.nrChitanta}`;
-        if (!acc[key]) acc[key] = { nrChitanta: m.nrChitanta, anChitanta: m.anChitanta, data: m.data, cantitate: 0, valoare: 0, articolId: m.articolId };
-        acc[key].cantitate += m.cantitate;
-        acc[key].valoare += m.valoareTotala;
-        return acc;
-      }, {})
-    ).sort((a, b) => (a.data < b.data ? 1 : -1)),
-    [state.miscariStoc, anPangar]
-  );
+  const vanzariAnFiltrate = useMemo(() => {
+    const iesiri = state.miscariStoc.filter((m) => m.tip === "iesire" && m.nrChitanta && m.anChitanta === anPangar);
+    const perChitanta = {};
+    for (const m of iesiri) {
+      const key = `${m.anChitanta}-${m.nrChitanta}`;
+      if (!perChitanta[key]) perChitanta[key] = { nrChitanta: m.nrChitanta, anChitanta: m.anChitanta, data: m.data, linii: {}, valoare: 0 };
+      const art = state.articole.find((a) => a.id === m.articolId);
+      const bazaCod = art?.bazaCod || m.articolId;
+      if (!perChitanta[key].linii[bazaCod]) {
+        perChitanta[key].linii[bazaCod] = { bazaCod, denumire: art?.denumire || bazaCod, um: art?.um || "", cantitate: 0 };
+      }
+      perChitanta[key].linii[bazaCod].cantitate += m.cantitate;
+      perChitanta[key].valoare += m.valoareTotala;
+    }
+    return Object.values(perChitanta)
+      .map((v) => ({ ...v, linii: Object.values(v.linii) }))
+      .sort((a, b) => (a.data < b.data ? 1 : -1));
+  }, [state.miscariStoc, state.articole, anPangar]);
 
   // Simulare cronologică globală a TUTUROR mișcărilor de stoc (toate produsele, tot istoricul) —
   // ordonare primară după dată ascendent, secundară recepții înaintea vânzărilor la dată egală.
@@ -5916,15 +5922,18 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           </thead>
           <tbody>
             {vanzariAnFiltrate.map((v) => {
-              const art = state.articole.find((a) => a.id === v.articolId);
               const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[v.anChitanta]?.inchisDefinitiv;
               return (
                 <tr key={`${v.anChitanta}-${v.nrChitanta}`} className="border-b border-stone-100 hover:bg-stone-50">
                   <td className="px-3 py-2 tabular-nums">{v.nrChitanta}/{v.anChitanta}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(v.data)}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{art?.bazaCod || "—"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{v.cantitate}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {v.linii.map((l) => <div key={l.bazaCod}>{l.bazaCod}</div>)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {v.linii.map((l) => <div key={l.bazaCod}>{l.cantitate} {l.um}</div>)}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmt(v.valoare)}</td>
                   <td className="px-3 py-2 text-stone-500">{opChit?.tert || "—"}</td>
                   <td className="px-3 py-2">
@@ -5984,6 +5993,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       {editVanzareFor && (
         <VanzareEditForm
           vanzare={editVanzareFor}
+          grupuri={grupuri}
           onClose={() => setEditVanzareFor(null)}
           onSave={async (opts) => { await editeazaVanzare(editVanzareFor.nrChitanta, editVanzareFor.anChitanta, opts); setEditVanzareFor(null); }}
         />
@@ -6506,22 +6516,45 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
   );
 }
 
-function VanzareEditForm({ vanzare, onClose, onSave }) {
-  const [cantitate, setCantitate] = useState(String(vanzare.cantitate));
+function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
+  // Pornim cu liniile deja existente pe chitanță (fiecare produs distinct = o linie), plus
+  // posibilitatea de a adăuga produse noi, complet diferite, pe aceeași chitanță deja emisă.
+  const [linii, setLinii] = useState(
+    vanzare.linii.map((l) => ({ id: uid(), bazaCod: l.bazaCod, cantitate: String(l.cantitate) }))
+  );
   const [data, setData] = useState(vanzare.data);
   const [tert, setTert] = useState(vanzare.tert || "");
   const [modPlata, setModPlata] = useState(vanzare.modPlata || "numerar");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
+  const grupuriDisponibile = useMemo(() => grupuri, [grupuri]);
+  const grupByBazaCod = useMemo(() => Object.fromEntries(grupuri.map((g) => [g.bazaCod, g])), [grupuri]);
+
+  function actualizeazaLinie(id, patch) {
+    setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+  function adaugaLinie() {
+    setLinii((ls) => [...ls, { id: uid(), bazaCod: "", cantitate: "" }]);
+  }
+  function stergeLinie(id) {
+    setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
+  }
+
   async function submit() {
-    const cant = Number(cantitate);
-    if (!cant || cant <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (linii.some((l) => !l.bazaCod)) { setError("Fiecare linie trebuie să aibă un produs selectat."); return; }
+    if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return; }
     if (!data) { setError("Data e obligatorie."); return; }
+    // Liniile care se referă la același produs se cumulează, ca stocul să fie verificat corect.
+    const cerutePerBaza = {};
+    for (const l of linii) cerutePerBaza[l.bazaCod] = (cerutePerBaza[l.bazaCod] || 0) + Number(l.cantitate);
     setError("");
     setSalvand(true);
     try {
-      await onSave({ cantitate: cant, data, tert: tert.trim(), modPlata });
+      await onSave({
+        linii: Object.entries(cerutePerBaza).map(([bazaCod, cantitateTotala]) => ({ bazaCod, cantitateTotala })),
+        data, tert: tert.trim(), modPlata,
+      });
     } catch (e) {
       setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
     } finally {
@@ -6533,17 +6566,9 @@ function VanzareEditForm({ vanzare, onClose, onSave }) {
     <Modal title={`Modifică vânzarea — chitanță nr. ${vanzare.nrChitanta}/${vanzare.anChitanta}`} onClose={onClose} wide>
       <div className="flex flex-col gap-3">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Cantitate vândută">
-            <input type="number" className={inputCls} value={cantitate} onChange={(e) => setCantitate(e.target.value)} />
-          </Field>
           <Field label="Data">
             <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
             {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
-          </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Terț (credincios/cumpărător)">
-            <input className={inputCls} value={tert} onChange={(e) => setTert(e.target.value)} />
           </Field>
           <Field label="Mod plată">
             <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
@@ -6552,9 +6577,45 @@ function VanzareEditForm({ vanzare, onClose, onSave }) {
             </select>
           </Field>
         </div>
+        <Field label="Terț (credincios/cumpărător)">
+          <input className={inputCls} value={tert} onChange={(e) => setTert(e.target.value)} />
+        </Field>
+
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Produse vândute</div>
+          {linii.map((l, i) => (
+            <div key={l.id} className="grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-8">
+                <Field label={`Produs (linia ${i + 1})`}>
+                  <select className={inputCls} value={l.bazaCod} onChange={(e) => actualizeazaLinie(l.id, { bazaCod: e.target.value })}>
+                    <option value="">— selectați —</option>
+                    {grupuriDisponibile.map((g) => (
+                      <option key={g.bazaCod} value={g.bazaCod}>{g.denumire} (stoc: {g.stocTotal} {g.um})</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="col-span-3">
+                <Field label="Cantitate">
+                  <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-1 flex justify-center pb-1.5">
+                <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start">
+            <Plus size={14} /> Adaugă produs
+          </Btn>
+        </div>
+
         <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
-          Modificarea cantității reface automat defalcarea FIFO (venit propriu / venit tranzitoriu), consumând din
-          loturile disponibile în ordinea vechimii lor. Blocată dacă stocul disponibil nu acoperă noua cantitate.
+          Modificarea reface automat defalcarea FIFO (venit propriu / venit tranzitoriu) pentru TOATE liniile —
+          consumând din loturile disponibile în ordinea vechimii lor. Poți adăuga produse noi, complet diferite,
+          pe aceeași chitanță. Blocată dacă stocul disponibil nu acoperă cantitățile cerute.
         </p>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">

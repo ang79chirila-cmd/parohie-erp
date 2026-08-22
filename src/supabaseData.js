@@ -1107,6 +1107,125 @@ export async function editeazaVanzarePangar(documentId, { cantitate, data, tert,
   };
 }
 
+// Editează o vânzare pangar CU MAI MULTE PRODUSE — spre deosebire de editeazaVanzarePangar (un
+// singur produs, doar cantitatea), aici `linii` e setul COMPLET și final de produse dorite pe
+// chitanța respectivă ({ bazaCod, cantitateTotala }[]) — poate include produse complet noi, care
+// nu erau pe chitanța inițială, sau poate elimina produse existente. Se restituie mai întâi TOT
+// stocul consumat anterior de acest document (indiferent de produs), apoi se reconsumă FIFO din
+// nou, conform noului set de linii.
+export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, tert, modPlata, categoriiPangar }) {
+  const { data: miscariVechi, error: errMV } = await supabase
+    .from("miscari_stoc_pangar")
+    .select("*")
+    .eq("document_id", documentId)
+    .eq("tip", "iesire");
+  if (errMV) throw errMV;
+  if (!miscariVechi || miscariVechi.length === 0) throw new Error("Nu s-au găsit mișcări de stoc pentru această vânzare.");
+
+  const parohieId = miscariVechi[0].parohie_id;
+
+  // Restituim TOT stocul consumat anterior (indiferent de produs) — verificarea de stoc suficient
+  // pentru noul set de linii se face DUPĂ restituire, ca disponibilitatea reală să fie corectă.
+  for (const m of miscariVechi) {
+    const { data: art, error: errArt } = await supabase.from("articole_pangar").select("stoc").eq("id", m.articol_id).single();
+    if (errArt) throw errArt;
+    const { error: errRest } = await supabase
+      .from("articole_pangar")
+      .update({ stoc: Number(art.stoc) + Number(m.cantitate) })
+      .eq("id", m.articol_id);
+    if (errRest) throw errRest;
+  }
+
+  const consumuriTotale = [];
+  for (const linie of linii) {
+    const { data: coduri, error } = await supabase
+      .from("articole_pangar")
+      .select("*")
+      .eq("parohie_id", parohieId)
+      .eq("baza_cod", linie.bazaCod)
+      .gt("stoc", 0)
+      .order("seq");
+    if (error) throw error;
+
+    let ramas = linie.cantitateTotala;
+    for (const cod of coduri || []) {
+      if (ramas <= 0) break;
+      const cantDinCod = Math.min(Number(cod.stoc), ramas);
+      ramas -= cantDinCod;
+      consumuriTotale.push({ articol: cod, cantitate: cantDinCod });
+    }
+    if (ramas > 0) {
+      throw new Error(`Stoc insuficient pentru ${linie.bazaCod} (verificat direct în Supabase, după restituirea stocului vechi).`);
+    }
+  }
+
+  const { error: errDelM } = await supabase.from("miscari_stoc_pangar").delete().eq("document_id", documentId).eq("tip", "iesire");
+  if (errDelM) throw errDelM;
+  const { error: errDelL } = await supabase.from("linii_document").delete().eq("document_id", documentId);
+  if (errDelL) throw errDelL;
+
+  const miscariNoi = [];
+  const liniiNoi = [];
+  for (const c of consumuriTotale) {
+    const { error: errUpdStoc } = await supabase
+      .from("articole_pangar")
+      .update({ stoc: Number(c.articol.stoc) - c.cantitate })
+      .eq("id", c.articol.id);
+    if (errUpdStoc) throw errUpdStoc;
+
+    const valoareTotala = c.cantitate * Number(c.articol.pret_vanzare);
+    const { data: miscareInserata, error: errIns } = await supabase
+      .from("miscari_stoc_pangar")
+      .insert({
+        parohie_id: c.articol.parohie_id, articol_id: c.articol.id, tip: "iesire", data, cantitate: c.cantitate,
+        valoare_unitara: c.articol.pret_vanzare, valoare_totala: valoareTotala, document_id: documentId,
+      })
+      .select()
+      .single();
+    if (errIns) throw errIns;
+
+    const cat = categoriiPangar[c.articol.categorie_bvc];
+    const cost = c.cantitate * Number(c.articol.pret_achizitie);
+    const propriu = valoareTotala - cost;
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod}`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} (marjă)`, mod_plata: modPlata });
+
+    miscariNoi.push({
+      id: miscareInserata.id, data, tip: "iesire", articolId: c.articol.id, cantitate: c.cantitate,
+      valoareUnitara: Number(c.articol.pret_vanzare), valoareTotala, documentId,
+    });
+  }
+
+  const { data: liniiInserate, error: errInsL } = await supabase.from("linii_document").insert(liniiNoi).select();
+  if (errInsL) throw errInsL;
+
+  const { data: docActualizat, error: errUpdDoc } = await supabase
+    .from("documente")
+    .update({ data, tert, mod_plata: modPlata })
+    .eq("id", documentId)
+    .select()
+    .single();
+  if (errUpdDoc) throw errUpdDoc;
+
+  const operatiuniNoi = liniiInserate.map((l) => ({
+    id: l.id, tip: "incasare", contId: l.cont_id, data, suma: Number(l.suma), modPlata: l.mod_plata,
+    tert, explicatie: l.explicatie || "", nr: docActualizat.nr, an: docActualizat.an, documentId,
+  }));
+
+  // Stocul final real, pentru toate codurile atinse (fie prin restituire, fie prin noul consum).
+  const idsAtinse = [...new Set([...miscariVechi.map((m) => m.articol_id), ...consumuriTotale.map((c) => c.articol.id)])];
+  const { data: articoleFinale, error: errFinale } = await supabase.from("articole_pangar").select("id, stoc").in("id", idsAtinse);
+  if (errFinale) throw errFinale;
+
+  return {
+    articolePatch: articoleFinale.map((a) => ({ id: a.id, stocNou: Number(a.stoc) })),
+    miscariNoi,
+    operatiuniNoi,
+    nrChitanta: docActualizat.nr,
+    anChitanta: docActualizat.an,
+  };
+}
+
 // Șterge definitiv o vânzare pangar (chitanța + toate liniile ei bugetare + mișcările de stoc
 // asociate) — restituie mai întâi cantitatea consumată la FIFO înapoi în stoc, pentru fiecare
 // cod atins (o vânzare poate fi acoperit de mai multe coduri, dacă FIFO a trecut prin ele).
