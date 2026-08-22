@@ -5368,7 +5368,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       const imagineUrl = sortate.find((a) => a.imagineUrl)?.imagineUrl || null;
       const prag = Math.max(PRAG_STOC_PROCENT * (referintaTotal || 0), PRAG_STOC_MINIM);
       const stareLabel = stocTotal === 0 ? "Epuizat" : stocTotal <= prag ? "Scăzut" : "OK";
-      return { bazaCod, denumire: sortate[0].denumire, um: sortate[0].um, coduri: sortate, stocTotal, valoareTotal, referintaTotal, imagineUrl, stareLabel };
+      return { bazaCod, denumire: sortate[0].denumire, um: sortate[0].um, categorieBVC: sortate[0].categorieBVC, coduri: sortate, stocTotal, valoareTotal, referintaTotal, imagineUrl, stareLabel };
     }).sort(comparaCategorieSiDenumire);
   }, [state.articole]);
 
@@ -5994,6 +5994,18 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
   const [confirming, setConfirming] = useState(false);
   const [salvand, setSalvand] = useState(false);
 
+  // Colportaj (obiecte de cult) are o marjă OBLIGATORIE de 25% peste cost, impusă de regulament —
+  // prețul de vânzare se calculează automat și nu mai e editabil manual, ca să nu mai fie posibilă
+  // greșeala (produs introdus cu preț de vânzare = preț de achiziție, marjă/venit propriu zero).
+  const categorieEfectiva = variantaDin?.categorieBVC || categorieBVC;
+  const ePangarColportaj = categorieEfectiva === "colportaj";
+  useEffect(() => {
+    if (ePangarColportaj && pretAchizitie) {
+      const calculat = Math.round(Number(pretAchizitie) * 1.25 * 100) / 100;
+      setPretVanzare(String(calculat));
+    }
+  }, [ePangarColportaj, pretAchizitie]);
+
   const codPreview = bazaCod && pretAchizitie && pretVanzare ? buildCod(bazaCod, pretAchizitie, pretVanzare) : null;
 
   function validate() {
@@ -6007,6 +6019,13 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
     if (/\s/.test(bazaCod.trim())) {
       setError("Codul de bază (acronimul) nu poate conține spații.");
       return false;
+    }
+    if (ePangarColportaj) {
+      const asteptat = Math.round(Number(pretAchizitie) * 1.25 * 100) / 100;
+      if (Math.abs(Number(pretVanzare) - asteptat) > 0.01) {
+        setError(`Colportaj are marjă obligatorie de 25% peste cost — prețul de vânzare trebuie să fie ${fmt(asteptat)} lei.`);
+        return false;
+      }
     }
     return true;
   }
@@ -6105,7 +6124,15 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
             <input type="number" step="0.01" className={inputCls} value={pretAchizitie} onChange={(e) => setPretAchizitie(e.target.value)} />
           </Field>
           <Field label="Preț vânzare">
-            <input type="number" step="0.01" className={inputCls} value={pretVanzare} onChange={(e) => setPretVanzare(e.target.value)} />
+            <input
+              type="number" step="0.01" className={inputCls}
+              value={pretVanzare}
+              onChange={(e) => setPretVanzare(e.target.value)}
+              disabled={ePangarColportaj}
+            />
+            {ePangarColportaj && (
+              <span className="text-xs text-stone-400">Calculat automat — marjă obligatorie 25% peste cost.</span>
+            )}
           </Field>
         </div>
         {codPreview && (
@@ -6878,7 +6905,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, anImplicit, parteneri, onCre
                 <div className="grid grid-cols-12 gap-2 items-end">
                   <div className="col-span-6">
                     <Field label={`Produs (linia ${i + 1})`}>
-                      <select className={inputCls} value={l.bazaCod} onChange={(e) => actualizeazaLinie(l.id, { bazaCod: e.target.value })}>
+                      <select className={inputCls} value={l.bazaCod} onChange={(e) => actualizeazaLinie(l.id, { bazaCod: e.target.value, cantitate: "", sumaIncasata: undefined })}>
                         <option value="">— selectați —</option>
                         {grupuriDisponibile.map((g) => (
                           <option key={g.bazaCod} value={g.bazaCod}>{g.denumire} (stoc: {g.stocTotal} {g.um})</option>
@@ -6887,9 +6914,30 @@ function VanzareMultiplaForm({ grupuri, operatiuni, anImplicit, parteneri, onCre
                     </Field>
                   </div>
                   <div className="col-span-3">
-                    <Field label="Cantitate">
-                      <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} />
-                    </Field>
+                    {grupByBazaCod[l.bazaCod]?.categorieBVC === "colportaj" ? (
+                      <Field label="Sumă încasată (lei)">
+                        <input
+                          type="number" step="0.01" className={inputCls}
+                          value={l.sumaIncasata ?? ""}
+                          onChange={(e) => {
+                            const suma = e.target.value;
+                            const g = grupByBazaCod[l.bazaCod];
+                            const pretRef = g?.coduri.find((c) => c.stoc > 0)?.pretVanzare || g?.coduri[0]?.pretVanzare || 1;
+                            const cantitateEchivalenta = suma ? Number(suma) / pretRef : "";
+                            actualizeazaLinie(l.id, { sumaIncasata: suma, cantitate: cantitateEchivalenta });
+                          }}
+                        />
+                        <span className="text-xs text-stone-400">Colportaj: introdu suma TOTALĂ încasată (cost + adaos 25%) — cantitatea se calculează automat.</span>
+                      </Field>
+                    ) : (
+                      <Field label="Cantitate">
+                        <input
+                          type="number" className={inputCls}
+                          value={l.cantitate}
+                          onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value, sumaIncasata: undefined })}
+                        />
+                      </Field>
+                    )}
                   </div>
                   <div className="col-span-2 text-xs text-stone-500 pb-1.5">
                     {dl && dl.rezultat.length > 0 && (
