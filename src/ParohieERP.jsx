@@ -7,7 +7,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
@@ -4024,7 +4024,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         <ChitantaForm
           conturi={state.conturi}
           exercitiiFinanciare={state.exercitiiFinanciare}
-          previewNr={previzualizeazaUrmatorulNumar(state.operatiuni, yearOf(todayISO()), "incasare")}
+          operatiuni={state.operatiuni}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           donatoriIstorici={donatoriIstorici}
@@ -4042,7 +4042,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           conturi={state.conturi}
           derived={derived}
           exercitiiFinanciare={state.exercitiiFinanciare}
-          previewNr={previzualizeazaUrmatorulNumar(state.operatiuni, yearOf(todayISO()), "plata")}
+          operatiuni={state.operatiuni}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           eparhie={state.parohie?.eparhie}
@@ -4431,13 +4431,19 @@ function PrevederiBugetareForm({ conturi, an, obligatoriu, modCorectie, liniiIni
   );
 }
 
-function ChitantaForm({ conturi, exercitiiFinanciare, previewNr, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
+function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
   const [data, setData] = useState(todayISO());
   const [modPlataImplicit, setModPlataImplicit] = useState("numerar"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
   const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "numerar" }]);
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+
+  // Numărul următor se recalculează pe anul EFECTIV ales în câmpul Data (nu pe anul curent) — altfel,
+  // la lucrul pe un an anterior (reconstituire), previzualizarea arăta numărul greșit (al anului
+  // curent), ceea ce declanșa incorect verificarea de mai jos ("prima chitanță dintr-un chitanțier nou").
+  const an = yearOf(data);
+  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, an, "incasare"), [operatiuni, an]);
 
   // Chitanțiere de 50 de chitanțe/volum: la fiecare prag (1, 51, 101, 151...), utilizatorul TREBUIE
   // să introducă Seria+Numărul real, de pe chitanța fizică — pentru restul, se continuă automat.
@@ -4451,7 +4457,6 @@ function ChitantaForm({ conturi, exercitiiFinanciare, previewNr, parteneri, onCr
   // butonul dedicat "Transfer casă/bancă", care generează ambele părți simetrice, sincron.
   // Selectarea lui manuală aici ar putea genera o singură parte a transferului, dezechilibrat.
   const conturiFiltrate = conturi.filter((c) => c.clasa !== "cheltuiala" && c.clasa !== "viramente");
-  const an = yearOf(data);
   const totalGeneral = linii.reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
 
   function actualizeazaLinie(id, patch) {
@@ -4627,7 +4632,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, previewNr, parteneri, onCr
   );
 }
 
-function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, previewNr, parteneri, onCreatPartener, eparhie, protoierie, onClose, onSave }) {
+function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, parteneri, onCreatPartener, eparhie, protoierie, onClose, onSave }) {
   const [data, setData] = useState(todayISO());
   const [modPlataImplicit, setModPlataImplicit] = useState("transfer"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
@@ -4638,6 +4643,9 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, previewNr, part
   // La fel ca la Chitanță: 581 e exclus, se folosește exclusiv prin "Transfer casă/bancă".
   const conturiFiltrate = conturi.filter((c) => (c.clasa !== "venit" || c.id === "106") && c.clasa !== "viramente");
   const an = yearOf(data);
+  // Numărul următor se recalculează pe anul EFECTIV ales în câmpul Data, nu pe anul curent — vezi
+  // explicația identică la ChitantaForm.
+  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, an, "plata"), [operatiuni, an]);
   const totalGeneral = linii.reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
   // Totalul se verifică separat pe fiecare sursă — o linie pe Casă nu poate fi acoperită de
   // fonduri din Bancă, și invers, chiar dacă totalul general ar părea suficient.
@@ -5110,8 +5118,17 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     () => [...new Set(state.operatiuni.filter((op) => op.tip === "incasare" && op.tert).map((op) => op.tert))].sort(),
     [state.operatiuni]
   );
+  // Ultima Serie+Număr de pe chitanțier folosită — pentru continuarea automată a numerotării
+  // fizice (aceeași sursă/logică ca la Chitanța generală din OperatiuniTab; un singur chitanțier
+  // fizic, indiferent dacă chitanța provine dintr-o vânzare Pangar sau dintr-o încasare generală).
+  const ultimaSerieNumarChitanta = useMemo(() => {
+    const cuIdentificare = state.operatiuni.filter((op) => op.tip === "incasare" && op.serie && op.numarIdentificare);
+    if (cuIdentificare.length === 0) return null;
+    return cuIdentificare.reduce((max, op) => (op.numarIdentificare > max.numarIdentificare ? op : max));
+  }, [state.operatiuni]);
   const [editReceptieFor, setEditReceptieFor] = useState(null);
   const [editVanzareFor, setEditVanzareFor] = useState(null);
+  const [confirmareStergereVanzare, setConfirmareStergereVanzare] = useState(null); // { nrChitanta, anChitanta } | null
 
   function nextSeq(s) {
     return (s.articole.reduce((max, a) => Math.max(max, a.seq || 0), 0)) + 1;
@@ -5238,9 +5255,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // Vânzare FIFO completă: stocul, chitanța și mișcările de ieșire se citesc/scriu direct din
   // Supabase (sursă de adevăr), nu mai din starea locală — elimină riscul din trecut, când o
   // vânzare părea reușită dar dispărea la următoarea repornire a aplicației.
-  async function vanzareMultipla(linii, data, tert, modPlata) {
+  async function vanzareMultipla(linii, data, tert, modPlata, serie, numarIdentificare) {
     const rezultat = await vanzareFIFOPangar(parohieId, {
-      linii, data, tert, modPlata, categoriiPangar: CATEGORII_PANGAR,
+      linii, data, tert, modPlata, categoriiPangar: CATEGORII_PANGAR, serie, numarIdentificare,
     });
     setState((s) => {
       const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
@@ -5295,6 +5312,36 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         ...rezultat.operatiuniNoi,
       ],
       jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare vânzare pangar — chitanță nr. ${nrChitanta}/${anChitanta}`),
+    }));
+  }
+
+  // Ștergere vânzare pangar: restituie stocul consumat FIFO, elimină mișcările de ieșire și
+  // documentul (chitanță + linii bugetare). Blocată dacă exercițiul e închis definitiv.
+  async function stergeVanzare(nrChitanta, anChitanta) {
+    const iesiriVechi = state.miscariStoc.filter((m) => m.tip === "iesire" && m.nrChitanta === nrChitanta && m.anChitanta === anChitanta);
+    if (iesiriVechi.length === 0) return;
+    if (state.exercitiiFinanciare?.[anChitanta]?.inchisDefinitiv) {
+      setNotice(`Exercițiul financiar ${anChitanta} este închis definitiv — vânzarea nu mai poate fi ștearsă.`);
+      return;
+    }
+    const documentId = iesiriVechi[0].documentId;
+    let rezultat;
+    try {
+      rezultat = await stergeVanzarePangar(documentId);
+    } catch (e) {
+      setNotice(e.message || "Eroare la ștergerea vânzării. Încearcă din nou.");
+      return;
+    }
+    const idsVechi = new Set(iesiriVechi.map((m) => m.id));
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => {
+        const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+        return patch ? { ...a, stoc: patch.stocNou } : a;
+      }),
+      miscariStoc: s.miscariStoc.filter((m) => !idsVechi.has(m.id)),
+      operatiuni: s.operatiuni.filter((op) => !(op.tip === "incasare" && op.nr === nrChitanta && op.an === anChitanta)),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere vânzare pangar — chitanță nr. ${nrChitanta}/${anChitanta}`),
     }));
   }
 
@@ -5809,9 +5856,23 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                       <span className="text-xs text-stone-400">Închis definitiv</span>
                     ) : (
                       !permisiuni.citireOnly && (
-                        <Btn variant="gold" onClick={() => setEditVanzareFor({ ...v, tert: opChit?.tert || "", modPlata: opChit?.modPlata || "numerar" })}>
-                          Modifică
-                        </Btn>
+                        <div className="flex gap-1.5 justify-end">
+                          <Btn variant="gold" onClick={() => setEditVanzareFor({ ...v, tert: opChit?.tert || "", modPlata: opChit?.modPlata || "numerar" })}>
+                            Modifică
+                          </Btn>
+                          {confirmareStergereVanzare?.nrChitanta === v.nrChitanta && confirmareStergereVanzare?.anChitanta === v.anChitanta ? (
+                            <>
+                              <Btn variant="danger" onClick={async () => { await stergeVanzare(v.nrChitanta, v.anChitanta); setConfirmareStergereVanzare(null); }}>
+                                Confirmă
+                              </Btn>
+                              <Btn variant="ghost" onClick={() => setConfirmareStergereVanzare(null)}>Anulează</Btn>
+                            </>
+                          ) : (
+                            <Btn variant="danger" onClick={() => setConfirmareStergereVanzare({ nrChitanta: v.nrChitanta, anChitanta: v.anChitanta })}>
+                              Șterge
+                            </Btn>
+                          )}
+                        </div>
                       )
                     )}
                   </td>
@@ -5875,12 +5936,13 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       {showVanzare && (
         <VanzareMultiplaForm
           grupuri={grupuri}
-          previewNr={previzualizeazaUrmatorulNumar(state.operatiuni, yearOf(todayISO()), "incasare")}
+          operatiuni={state.operatiuni}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           donatoriIstorici={donatoriIstorici}
+          ultimaSerieNumar={ultimaSerieNumarChitanta}
           onClose={() => setShowVanzare(false)}
-          onSave={async (linii, data, tert, modPlata) => { await vanzareMultipla(linii, data, tert, modPlata); setShowVanzare(false); }}
+          onSave={async (linii, data, tert, modPlata, serie, numarIdentificare) => { await vanzareMultipla(linii, data, tert, modPlata, serie, numarIdentificare); setShowVanzare(false); }}
         />
       )}
       {showNRCD && (
@@ -6617,13 +6679,26 @@ function ReceptieNRCDForm({ articole, parteneri, onCreatPartener, furnizoriAutor
   );
 }
 
-function VanzareMultiplaForm({ grupuri, previewNr, parteneri, onCreatPartener, donatoriIstorici, onClose, onSave }) {
+function VanzareMultiplaForm({ grupuri, operatiuni, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
   const [data, setData] = useState(todayISO());
   const [tert, setTert] = useState("");
   const [modPlata, setModPlata] = useState("numerar");
   const [linii, setLinii] = useState([{ id: uid(), bazaCod: "", cantitate: "" }]);
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+
+  // Numărul următor se recalculează pe anul EFECTIV ales în câmpul Data, nu pe anul curent — vezi
+  // explicația identică la ChitantaForm.
+  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, yearOf(data), "incasare"), [operatiuni, data]);
+
+  // Chitanțiere de 50 de chitanțe/volum: la fiecare prag (1, 51, 101, 151...), utilizatorul TREBUIE
+  // să introducă Seria+Numărul real, de pe chitanța fizică — pentru restul, se continuă automat.
+  // Aceeași regulă și aceeași secvență ca la Chitanța generală — un singur chitanțier fizic.
+  const inceputVolumNou = (previewNr - 1) % 50 === 0;
+  const [serie, setSerie] = useState(inceputVolumNou ? "" : (ultimaSerieNumar?.serie || ""));
+  const [numarIdentificare, setNumarIdentificare] = useState(
+    inceputVolumNou ? "" : (ultimaSerieNumar ? String(ultimaSerieNumar.numarIdentificare + 1) : "")
+  );
 
   const an = yearOf(data);
   const grupuriDisponibile = useMemo(() => grupuri.filter((g) => g.stocTotal > 0), [grupuri]);
@@ -6688,6 +6763,10 @@ function VanzareMultiplaForm({ grupuri, previewNr, parteneri, onCreatPartener, d
   }, [defalcarePeLinie]);
 
   async function submit() {
+    if (inceputVolumNou && (!serie.trim() || !numarIdentificare)) {
+      setError("Aceasta e prima chitanță dintr-un chitanțier nou (nr. de gestiune " + previewNr + ") — introdu Seria și Numărul real, de pe chitanța fizică.");
+      return;
+    }
     if (linii.some((l) => !l.bazaCod)) {
       setError("Fiecare linie trebuie să aibă un produs selectat.");
       return;
@@ -6711,7 +6790,7 @@ function VanzareMultiplaForm({ grupuri, previewNr, parteneri, onCreatPartener, d
     try {
       await onSave(
         Object.entries(cerutePerBaza).map(([bazaCod, cantitateTotala]) => ({ bazaCod, cantitateTotala })),
-        data, tert.trim(), modPlata
+        data, tert.trim(), modPlata, serie.trim(), numarIdentificare ? Number(numarIdentificare) : null
       );
     } catch (e) {
       setError(e.message || "Eroare la salvarea vânzării. Încearcă din nou.");
@@ -6741,6 +6820,35 @@ function VanzareMultiplaForm({ grupuri, previewNr, parteneri, onCreatPartener, d
             </select>
           </Field>
         </div>
+
+        {inceputVolumNou ? (
+          <Card className="p-3 border-amber-300 bg-amber-50">
+            <p className="text-xs text-amber-800 mb-2 flex items-start gap-1.5">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              Aceasta e prima chitanță dintr-un chitanțier nou (nr. de gestiune {previewNr}) — introdu Seria și
+              Numărul real, tipărite pe chitanța fizică. Următoarele 49 se vor completa automat.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Serie (de pe chitanțier)">
+                <input className={inputCls} value={serie} onChange={(e) => setSerie(e.target.value)} />
+              </Field>
+              <Field label="Număr (de pe chitanțier)">
+                <input type="number" className={inputCls} value={numarIdentificare} onChange={(e) => setNumarIdentificare(e.target.value)} />
+              </Field>
+            </div>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Serie (de pe chitanțier)">
+              <input className={inputCls} value={serie} onChange={(e) => setSerie(e.target.value)} />
+              <span className="text-xs text-stone-400">Completată automat, continuând chitanțierul curent — modificabilă dacă e nevoie.</span>
+            </Field>
+            <Field label="Număr (de pe chitanțier)">
+              <input type="number" className={inputCls} value={numarIdentificare} onChange={(e) => setNumarIdentificare(e.target.value)} />
+            </Field>
+          </div>
+        )}
+
         <SelectorPartener
           id="vanzare-pangar" label="Cumpărător (opțional)"
           value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
@@ -10192,25 +10300,42 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
       .reduce((sum, d) => sum + d.linii.reduce((s, l) => s + l.suma, 0), 0);
   }, [tip, docCurent, documente]);
 
-  // Ștergerea NU e permisă pentru: excedentul reportat (Chitanța nr. 1/an), documentele legate
-  // de stocuri (Pangar) sau viramentele interne (articol bugetar 581).
+  // Ștergerea NU e permisă pentru: excedentul reportat (Chitanța nr. 1/an) sau viramentele
+  // interne (articol bugetar 581). Documentele legate de stocuri (Pangar) SUNT permise la
+  // ștergere — vezi stergeDocumentCurent, care restituie stocul FIFO consumat înainte de a
+  // șterge documentul, exact ca la ștergerea din tabelul de Vânzări al tab-ului Pangar.
   const documentIdCurent = docCurent?.linii[0]?.documentId;
+  const miscariPangarLegate = (miscariStoc || []).filter((m) => m.documentId === documentIdCurent && m.tip === "iesire");
   const motivBlocareStergere = !docCurent ? null
     : docCurent.linii.some((l) => l.esteExcedentReportat) ? "reprezintă excedentul reportat din anul precedent"
     : docCurent.linii.some((l) => l.contId === "581") ? "reprezintă un virament intern (articol bugetar 581)"
-    : (miscariStoc || []).some((m) => m.documentId === documentIdCurent) ? "este legat de gestiunea stocurilor (Pangar) — ștergerea ar desincroniza stocul"
     : null;
 
   async function stergeDocumentCurent() {
     if (!documentIdCurent) { setConfirmareStergere(false); return; }
     setStergand(true);
     try {
-      await stergeDocument(documentIdCurent);
-      setState((s) => ({
-        ...s,
-        operatiuni: s.operatiuni.filter((op) => op.documentId !== documentIdCurent),
-        jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`),
-      }));
+      if (miscariPangarLegate.length > 0) {
+        const rezultat = await stergeVanzarePangar(documentIdCurent);
+        const idsMiscariVechi = new Set(miscariPangarLegate.map((m) => m.id));
+        setState((s) => ({
+          ...s,
+          articole: s.articole.map((a) => {
+            const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+            return patch ? { ...a, stoc: patch.stocNou } : a;
+          }),
+          miscariStoc: s.miscariStoc.filter((m) => !idsMiscariVechi.has(m.id)),
+          operatiuni: s.operatiuni.filter((op) => op.documentId !== documentIdCurent),
+          jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an} (vânzare pangar — stoc restituit)`),
+        }));
+      } else {
+        await stergeDocument(documentIdCurent);
+        setState((s) => ({
+          ...s,
+          operatiuni: s.operatiuni.filter((op) => op.documentId !== documentIdCurent),
+          jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`),
+        }));
+      }
       setConfirmareStergere(false);
       setIndex((i) => Math.max(0, i - 1));
     } catch (e) {
