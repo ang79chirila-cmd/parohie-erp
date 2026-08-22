@@ -1107,7 +1107,7 @@ function exportXML(titlu, columns, rows, parohie, dataRaportCurenta) {
   URL.revokeObjectURL(url);
 }
 
-function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta) {
+function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
@@ -1116,7 +1116,7 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta) {
   const style = `
     <style>
       ${ARHAIC_FONT_FACE_CSS}
-      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       h2 { color: #1F3864; }
       .coperta { padding: 32px 24px; page-break-after: always; }
@@ -1209,7 +1209,7 @@ function grupeazaDocumente(operatiuni, tip) {
   return Object.values(grupuri).sort((a, b) => (a.an !== b.an ? a.an - b.an : a.nr - b.nr));
 }
 
-function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele, dataTiparireCurenta) {
+function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele, dataTiparireCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
@@ -1232,7 +1232,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
   const style = `
     <style>
       ${ARHAIC_FONT_FACE_CSS}
-      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
       .pagina-doc:last-child { page-break-after: auto; }
@@ -1341,7 +1341,7 @@ function construiesteRaportAnualComplet(state, an) {
   };
 }
 
-function printeazaRaportAnualComplet(raport, parohie) {
+function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
@@ -1352,7 +1352,7 @@ function printeazaRaportAnualComplet(raport, parohie) {
   const style = `
     <style>
       ${ARHAIC_FONT_FACE_CSS}
-      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       .pagina { padding: 0 8mm; page-break-after: always; }
       .pagina:last-child { page-break-after: auto; }
@@ -1492,7 +1492,7 @@ function exportRaportAnualXLSX(raport, parohie) {
   XLSX.writeFile(wb, `Raport-anual-sinteza-${raport.an}.xlsx`);
 }
 
-function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta) {
+function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
@@ -1501,7 +1501,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
   const style = `
     <style>
       ${ARHAIC_FONT_FACE_CSS}
-      @page { size: A4; margin: 20mm 14mm 22mm 14mm; }
+      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
       .pagina-doc:last-child { page-break-after: auto; }
@@ -1560,6 +1560,8 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
 function ExportMenu({ titlu, columns, rows, parohie }) {
   const [open, setOpen] = useState(false);
   const [dataRaport, setDataRaport] = useState(todayISO());
+  const [orientare, setOrientare] = useState("portrait");
+  const [formatHartie, setFormatHartie] = useState("A4");
 
   // Câmpul de dată e relevant doar dacă raportul e pe anul curent (sau fără an explicit în titlu,
   // ex. un interval manual) — pentru un an anterior, exportul folosește oricum automat 31.12.{an}.
@@ -1569,7 +1571,7 @@ function ExportMenu({ titlu, columns, rows, parohie }) {
   const eDataRelevanta = !anRaport || anRaport === anCurent;
 
   function run(fn) {
-    fn(titlu, columns, rows, parohie, dataRaport);
+    fn(titlu, columns, rows, parohie, dataRaport, orientare, formatHartie);
     setOpen(false);
   }
 
@@ -1582,6 +1584,24 @@ function ExportMenu({ titlu, columns, rows, parohie }) {
           title="Data raportului (pentru anul curent)"
         />
       )}
+      <select
+        className={`${inputCls} w-32`}
+        value={orientare} onChange={(e) => setOrientare(e.target.value)}
+        title="Orientarea paginii (relevantă doar pentru PDF)"
+      >
+        <option value="portrait">Portret</option>
+        <option value="landscape">Peisaj</option>
+      </select>
+      <select
+        className={`${inputCls} w-24`}
+        value={formatHartie} onChange={(e) => setFormatHartie(e.target.value)}
+        title="Formatul hârtiei (relevant doar pentru PDF)"
+      >
+        <option value="A4">A4</option>
+        <option value="A3">A3</option>
+        <option value="letter">Letter</option>
+        <option value="legal">Legal</option>
+      </select>
       <Btn variant="ghost" onClick={() => setOpen((o) => !o)}>
         <Download size={14} /> Generează raport <ChevronDown size={12} />
       </Btn>
@@ -7074,6 +7094,8 @@ function RapoarteTab({ state, setState, derived }) {
 
   const [modInterval, setModInterval] = useState("an"); // "an" | "manual"
   const [anSelectat, setAnSelectat] = useState(aniDisponibili[0]);
+  const [orientareRaportAnual, setOrientareRaportAnual] = useState("portrait");
+  const [formatHartieRaportAnual, setFormatHartieRaportAnual] = useState("A4");
   const [dataStart, setDataStart] = useState(`${aniDisponibili[0]}-01-01`);
   const [dataFinal, setDataFinal] = useState(todayISO());
 
@@ -7215,7 +7237,17 @@ function RapoarteTab({ state, setState, derived }) {
             <Btn variant="ghost" onClick={() => exportRaportAnualXLSX(raportAnual, state.parohie)}>
               <FileSpreadsheet size={14} /> XLSX
             </Btn>
-            <Btn variant="gold" onClick={() => printeazaRaportAnualComplet(raportAnual, state.parohie)}>
+            <select className={`${inputCls} w-28`} value={orientareRaportAnual} onChange={(e) => setOrientareRaportAnual(e.target.value)} title="Orientarea paginii">
+              <option value="portrait">Portret</option>
+              <option value="landscape">Peisaj</option>
+            </select>
+            <select className={`${inputCls} w-24`} value={formatHartieRaportAnual} onChange={(e) => setFormatHartieRaportAnual(e.target.value)} title="Formatul hârtiei">
+              <option value="A4">A4</option>
+              <option value="A3">A3</option>
+              <option value="letter">Letter</option>
+              <option value="legal">Legal</option>
+            </select>
+            <Btn variant="gold" onClick={() => printeazaRaportAnualComplet(raportAnual, state.parohie, orientareRaportAnual, formatHartieRaportAnual)}>
               <Download size={14} /> Generează raport PDF
             </Btn>
           </div>
@@ -10390,6 +10422,8 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   // Pentru documentele din anul curent, data tipăririi e aleasă manual (documentele din ani
   // anteriori se datează automat 31.12.{an}, indiferent de această valoare).
   const [dataTiparireCurenta, setDataTiparireCurenta] = useState(todayISO());
+  const [orientarePrintare, setOrientarePrintare] = useState("portrait");
+  const [formatHartiePrintare, setFormatHartiePrintare] = useState("A4");
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState(null); // { data, tert, linii: [{id, idTemporar, contId, suma, explicatie, modPlata, ajustare106}] }
   const [idsDeSters, setIdsDeSters] = useState([]);
@@ -10886,10 +10920,20 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
         <div className="flex items-center justify-end gap-2 mt-2">
           <span className="text-xs text-stone-500">Data tipăririi (pt. documente din anul curent):</span>
           <input type="date" className={`${inputCls} w-40`} value={dataTiparireCurenta} onChange={(e) => setDataTiparireCurenta(e.target.value)} />
+          <select className={`${inputCls} w-28`} value={orientarePrintare} onChange={(e) => setOrientarePrintare(e.target.value)} title="Orientarea paginii">
+            <option value="portrait">Portret</option>
+            <option value="landscape">Peisaj</option>
+          </select>
+          <select className={`${inputCls} w-24`} value={formatHartiePrintare} onChange={(e) => setFormatHartiePrintare(e.target.value)} title="Formatul hârtiei">
+            <option value="A4">A4</option>
+            <option value="A3">A3</option>
+            <option value="letter">Letter</option>
+            <option value="legal">Legal</option>
+          </select>
         </div>
         <div className="flex flex-wrap justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose}>Închide</Btn>
-          <Btn variant="ghost" onClick={() => printeazaDocumente([docCurent], tipEtichetat, contById, parohie, documente, dataTiparireCurenta)}>
+          <Btn variant="ghost" onClick={() => printeazaDocumente([docCurent], tipEtichetat, contById, parohie, documente, dataTiparireCurenta, orientarePrintare, formatHartiePrintare)}>
             <Download size={14} /> Printează acest document
           </Btn>
           <Btn variant="ghost" onClick={() => {
@@ -10901,13 +10945,13 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
               return;
             }
             setEroarePrintare("");
-            printeazaDocumente(selectate, tipEtichetat, contById, parohie, documente, dataTiparireCurenta);
+            printeazaDocumente(selectate, tipEtichetat, contById, parohie, documente, dataTiparireCurenta, orientarePrintare, formatHartiePrintare);
           }} disabled={selectie.size === 0}>
             <Download size={14} /> Printează selecția ({selectie.size})
           </Btn>
           <Btn variant="gold" onClick={() => {
             const dinAnulCurent = documente.filter((d) => d.an === docCurent.an);
-            printeazaDocumente(dinAnulCurent, tipEtichetat, contById, parohie, documente, dataTiparireCurenta);
+            printeazaDocumente(dinAnulCurent, tipEtichetat, contById, parohie, documente, dataTiparireCurenta, orientarePrintare, formatHartiePrintare);
           }}>
             <Download size={14} /> Printează toate din {docCurent?.an} ({documente.filter((d) => d.an === docCurent?.an).length})
           </Btn>
@@ -10930,6 +10974,8 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
   // Pentru documentele din anul curent, data tipăririi e aleasă manual (documentele din ani
   // anteriori se datează automat 31.12.{an}, indiferent de această valoare).
   const [dataTiparireCurenta, setDataTiparireCurenta] = useState(todayISO());
+  const [orientarePrintare, setOrientarePrintare] = useState("portrait");
+  const [formatHartiePrintare, setFormatHartiePrintare] = useState("A4");
 
   const docCurent = documente[index];
 
@@ -11047,10 +11093,20 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
         <div className="flex items-center justify-end gap-2 mt-2">
           <span className="text-xs text-stone-500">Data tipăririi (pt. documente din anul curent):</span>
           <input type="date" className={`${inputCls} w-40`} value={dataTiparireCurenta} onChange={(e) => setDataTiparireCurenta(e.target.value)} />
+          <select className={`${inputCls} w-28`} value={orientarePrintare} onChange={(e) => setOrientarePrintare(e.target.value)} title="Orientarea paginii">
+            <option value="portrait">Portret</option>
+            <option value="landscape">Peisaj</option>
+          </select>
+          <select className={`${inputCls} w-24`} value={formatHartiePrintare} onChange={(e) => setFormatHartiePrintare(e.target.value)} title="Formatul hârtiei">
+            <option value="A4">A4</option>
+            <option value="A3">A3</option>
+            <option value="letter">Letter</option>
+            <option value="legal">Legal</option>
+          </select>
         </div>
         <div className="flex flex-wrap justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose}>Închide</Btn>
-          <Btn variant="ghost" onClick={() => printeazaDocumenteGenerice([docCurent], tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta)}>
+          <Btn variant="ghost" onClick={() => printeazaDocumenteGenerice([docCurent], tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientarePrintare, formatHartiePrintare)}>
             <Download size={14} /> Printează acest document
           </Btn>
           <Btn variant="ghost" onClick={() => {
@@ -11062,13 +11118,13 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
               return;
             }
             setEroarePrintare("");
-            printeazaDocumenteGenerice(selectate, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta);
+            printeazaDocumenteGenerice(selectate, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientarePrintare, formatHartiePrintare);
           }} disabled={selectie.size === 0}>
             <Download size={14} /> Printează selecția ({selectie.size})
           </Btn>
           <Btn variant="gold" onClick={() => {
             const dinAnulCurent = documente.filter((d) => d.an === docCurent.an);
-            printeazaDocumenteGenerice(dinAnulCurent, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta);
+            printeazaDocumenteGenerice(dinAnulCurent, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientarePrintare, formatHartiePrintare);
           }}>
             <Download size={14} /> Printează toate din {docCurent?.an} ({documente.filter((d) => d.an === docCurent?.an).length})
           </Btn>
