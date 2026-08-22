@@ -4152,6 +4152,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           parohie={state.parohie}
           parohieId={parohieId}
           miscariStoc={state.miscariStoc}
+          articole={state.articole}
           onClose={() => setBrowseTip(null)}
         />
       )}
@@ -10467,7 +10468,7 @@ function DocumentArhivaForm({ onClose, onSave }) {
 
 /* ------------------------------ Navigator documente (Chitanțe / Ordine de plată) -------------------------------- */
 
-function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, onClose }) {
+function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, onClose }) {
   // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
   // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
   const documente = useMemo(() => grupeazaDocumente(operatiuni, tip), [operatiuni, tip]);
@@ -10491,6 +10492,23 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   const [eroareEdit, setEroareEdit] = useState("");
   const [salvandEdit, setSalvandEdit] = useState(false);
   const [confirmareExcedent, setConfirmareExcedent] = useState(null); // { excedentVechi, excedentNou } | null
+  const [editareVanzarePangar, setEditareVanzarePangar] = useState(false);
+
+  // Grupare simplă pe bazaCod (aceeași logică ca în Pangar), doar ce e nevoie pentru dropdown-ul
+  // de produs din formularul de editare a unei vânzări — denumire, um și stoc total per produs.
+  const grupuriPangar = useMemo(() => {
+    if (!articole) return [];
+    const map = new Map();
+    for (const a of articole) {
+      if (!map.has(a.bazaCod)) map.set(a.bazaCod, []);
+      map.get(a.bazaCod).push(a);
+    }
+    return Array.from(map.entries()).map(([bazaCod, coduri]) => {
+      const sortate = [...coduri].sort((x, y) => x.seq - y.seq);
+      const stocTotal = sortate.reduce((sum, a) => sum + a.stoc, 0);
+      return { bazaCod, denumire: sortate[0].denumire, um: sortate[0].um, stocTotal };
+    });
+  }, [articole]);
 
   const tipEtichetat = tip === "incasare" ? "Chitanță" : "Ordin de plată";
   const tipEtichetatPlural = tip === "incasare" ? "Chitanțe" : "Ordine de plată";
@@ -10519,6 +10537,46 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     : docCurent.linii.some((l) => l.esteExcedentReportat) ? "reprezintă excedentul reportat din anul precedent"
     : docCurent.linii.some((l) => l.contId === "581") ? "reprezintă un virament intern (articol bugetar 581)"
     : null;
+
+  // Vânzarea Pangar, în forma cerută de VanzareEditForm (aceeași formă ca în tab-ul Pangar) —
+  // liniile de produs grupate pe bazaCod, nu pe cod individual (mai multe FIFO pot acoperi
+  // aceeași linie de produs).
+  const vanzarePangarPentruEditare = useMemo(() => {
+    if (!docCurent || miscariPangarLegate.length === 0) return null;
+    const opChit = operatiuni.find((op) => op.tip === "incasare" && op.nr === docCurent.nr && op.an === docCurent.an);
+    const liniiMap = {};
+    for (const m of miscariPangarLegate) {
+      const art = (articole || []).find((a) => a.id === m.articolId);
+      const bazaCod = art?.bazaCod || m.articolId;
+      if (!liniiMap[bazaCod]) liniiMap[bazaCod] = { bazaCod, denumire: art?.denumire || bazaCod, um: art?.um || "", cantitate: 0 };
+      liniiMap[bazaCod].cantitate += m.cantitate;
+    }
+    return {
+      nrChitanta: docCurent.nr, anChitanta: docCurent.an, data: docCurent.data,
+      tert: opChit?.tert || docCurent.tert || "", modPlata: opChit?.modPlata || docCurent.modPlata || "numerar",
+      linii: Object.values(liniiMap),
+    };
+  }, [docCurent, miscariPangarLegate, articole, operatiuni]);
+
+  async function editeazaVanzarePangarDinJurnal(documentId, opts) {
+    const rezultat = await editeazaVanzareMultiplaPangar(documentId, {
+      linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, categoriiPangar: CATEGORII_PANGAR,
+    });
+    const idsVechi = new Set(miscariPangarLegate.map((m) => m.id));
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => {
+        const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+        return patch ? { ...a, stoc: patch.stocNou } : a;
+      }),
+      miscariStoc: [...s.miscariStoc.filter((m) => !idsVechi.has(m.id)), ...rezultat.miscariNoi],
+      operatiuni: [
+        ...s.operatiuni.filter((op) => !(op.tip === "incasare" && op.nr === docCurent.nr && op.an === docCurent.an)),
+        ...rezultat.operatiuniNoi,
+      ],
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare vânzare pangar — chitanță nr. ${docCurent.nr}/${docCurent.an}`),
+    }));
+  }
 
   async function stergeDocumentCurent() {
     if (!documentIdCurent) { setConfirmareStergere(false); return; }
@@ -10786,7 +10844,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
             </span>
             {!permisiuni.citireOnly && !anInchisDefinitiv && (
               <div className="flex gap-2">
-                <Btn variant="gold" onClick={intraInEditare}>Modifică</Btn>
+                <Btn variant="gold" onClick={() => (miscariPangarLegate.length > 0 ? setEditareVanzarePangar(true) : intraInEditare())}>Modifică</Btn>
                 <Btn
                   variant="danger"
                   onClick={() => { setEroareStergere(""); setConfirmareStergere(true); }}
@@ -10954,6 +11012,15 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
               <Btn variant="gold" onClick={salveazaEditare} disabled={salvandEdit}>{salvandEdit ? "Se salvează..." : "Salvează"}</Btn>
             </div>
           </Card>
+        )}
+
+        {editareVanzarePangar && vanzarePangarPentruEditare && (
+          <VanzareEditForm
+            vanzare={vanzarePangarPentruEditare}
+            grupuri={grupuriPangar}
+            onClose={() => setEditareVanzarePangar(false)}
+            onSave={async (opts) => { await editeazaVanzarePangarDinJurnal(documentIdCurent, opts); setEditareVanzarePangar(false); }}
+          />
         )}
 
         <div className="flex items-center justify-between border-t border-stone-200 pt-3">
