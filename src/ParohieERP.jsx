@@ -1052,13 +1052,27 @@ function valideazaBackup(payload) {
   return null;
 }
 
-function exportXLSX(titlu, columns, rows, parohie) {
+// Data afișată pe un raport generat (PDF/XLSX/XML): dacă titlul conține "PE ANUL {an}" și acel an
+// e anterior celui curent, data e 31.12.{an} — data firească de închidere a acelui exercițiu —
+// indiferent de data reală la care se generează/reprintă raportul. Altfel (an curent, sau titlu
+// fără an explicit — ex. interval manual), se folosește data aleasă manual de utilizator (implicit
+// azi, dar editabilă din ExportMenu).
+function calculeazaDataRaport(titlu, dataRaportCurenta) {
+  const anRaportMatch = /PE ANUL (\d{4})/.exec(titlu);
+  const anRaport = anRaportMatch ? Number(anRaportMatch[1]) : null;
+  const anCurent = new Date().getFullYear();
+  return anRaport && anRaport < anCurent
+    ? fmtDataJurnal(`${anRaport}-12-31`)
+    : fmtDataJurnal(dataRaportCurenta || todayISO());
+}
+
+function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta) {
   const p = parohie || {};
   const antet = [
     [`Denumirea unității de cult: ${p.denumire || ""}`],
     [`Cod fiscal: ${p.cif || ""}`],
     [`Preot Paroh: ${p.preotParoh || ""}`],
-    [`Data: ${fmtDataJurnal(todayISO())}`],
+    [`Data: ${calculeazaDataRaport(titlu, dataRaportCurenta)}`],
     [],
   ];
   const aoa = [...antet, columns.map((c) => c.label), ...rows.map((r) => columns.map((c) => r[c.key] ?? ""))];
@@ -1068,7 +1082,7 @@ function exportXLSX(titlu, columns, rows, parohie) {
   XLSX.writeFile(wb, `${titlu}.xlsx`);
 }
 
-function exportXML(titlu, columns, rows, parohie) {
+function exportXML(titlu, columns, rows, parohie, dataRaportCurenta) {
   const p = parohie || {};
   const antet = `<Antet>
     <DenumireUnitateCult>${xmlEscape(p.denumire)}</DenumireUnitateCult>
@@ -1076,7 +1090,7 @@ function exportXML(titlu, columns, rows, parohie) {
     <Eparhie>${xmlEscape(p.eparhie)}</Eparhie>
     <Protoierie>${xmlEscape(p.protoierie)}</Protoierie>
     <PreotParoh>${xmlEscape(p.preotParoh)}</PreotParoh>
-    <DataGenerare>${xmlEscape(fmtDataJurnal(todayISO()))}</DataGenerare>
+    <DataGenerare>${xmlEscape(calculeazaDataRaport(titlu, dataRaportCurenta))}</DataGenerare>
   </Antet>`;
   const randuri = rows
     .map((r) => `  <Rand>${columns.map((c) => `<${c.key}>${xmlEscape(r[c.key])}</${c.key}>`).join("")}</Rand>`)
@@ -1093,11 +1107,11 @@ function exportXML(titlu, columns, rows, parohie) {
   URL.revokeObjectURL(url);
 }
 
-function exportPDF(titlu, columns, rows, parohie) {
+function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
-  const azi = fmtDataJurnal(todayISO());
+  const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
 
   const style = `
     <style>
@@ -1195,11 +1209,11 @@ function grupeazaDocumente(operatiuni, tip) {
   return Object.values(grupuri).sort((a, b) => (a.an !== b.an ? a.an - b.an : a.nr - b.nr));
 }
 
-function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele) {
+function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele, dataTiparireCurenta) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
-  const azi = fmtDataJurnal(todayISO());
+  const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
 
   // Soldul cumulat trebuie calculat mereu pe TOT registrul anului (nu doar pe ce se tipărește
   // acum) — altfel, printarea unei singure chitanțe/selecții ar arăta un sold greșit, redus
@@ -1234,6 +1248,9 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
     .map((doc) => {
       const total = doc.linii.reduce((s, l) => s + l.suma, 0);
       const soldCumulatPlati = soldCumulatPeDoc[`${doc.an}-${doc.nr}`];
+      // Documentele din ani anteriori celui curent se datează la reprintare 31.12.{an} — data
+      // firească de închidere a acelui exercițiu — nu data reală a reprintării (azi).
+      const dataTiparire = doc.an < new Date().getFullYear() ? fmtDataJurnal(`${doc.an}-12-31`) : azi;
       const randuri = doc.linii
         .map((l) => `<tr><td>${xmlEscape(contById[l.contId]?.simbol || l.contId)}</td><td>${xmlEscape(contById[l.contId]?.denumire || "")}</td><td>${xmlEscape(l.explicatie || "")}</td><td style="text-align:right;">${fmt(l.suma)}</td></tr>`)
         .join("");
@@ -1260,7 +1277,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
           </table>
           <div class="footer-line">
             <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
-            <span>Data tipăririi: ${azi}</span>
+            <span>Data tipăririi: ${dataTiparire}</span>
           </div>
         </div>`;
     })
@@ -1328,7 +1345,9 @@ function printeazaRaportAnualComplet(raport, parohie) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
-  const azi = fmtDataJurnal(todayISO());
+  // Raportul anual de sinteză e prin definiție un document de sfârșit de exercițiu — datat mereu
+  // 31.12.{an}, indiferent de data reală la care se generează/reprintă (azi).
+  const azi = fmtDataJurnal(`${raport.an}-12-31`);
 
   const style = `
     <style>
@@ -1473,11 +1492,11 @@ function exportRaportAnualXLSX(raport, parohie) {
   XLSX.writeFile(wb, `Raport-anual-sinteza-${raport.an}.xlsx`);
 }
 
-function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie) {
+function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta) {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
-  const azi = fmtDataJurnal(todayISO());
+  const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
 
   const style = `
     <style>
@@ -1512,6 +1531,10 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
         tabelLinii = `<table class="doc"><thead><tr>${capete}</tr></thead><tbody>${randuri}${total}</tbody></table>`;
       }
 
+      // Documentele din ani anteriori celui curent se datează la reprintare 31.12.{an} — vezi
+      // explicația identică din printeazaDocumente.
+      const dataTiparire = doc.an < new Date().getFullYear() ? fmtDataJurnal(`${doc.an}-12-31`) : azi;
+
       return `
         <div class="pagina-doc">
           <div style="border:2px solid #1F3864; border-radius:4px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
@@ -1522,7 +1545,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
           ${tabelLinii}
           <div class="footer-line">
             <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
-            <span>Data tipăririi: ${azi}</span>
+            <span>Data tipăririi: ${dataTiparire}</span>
           </div>
         </div>`;
     })
@@ -1536,21 +1559,36 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
 
 function ExportMenu({ titlu, columns, rows, parohie }) {
   const [open, setOpen] = useState(false);
+  const [dataRaport, setDataRaport] = useState(todayISO());
+
+  // Câmpul de dată e relevant doar dacă raportul e pe anul curent (sau fără an explicit în titlu,
+  // ex. un interval manual) — pentru un an anterior, exportul folosește oricum automat 31.12.{an}.
+  const anRaportMatch = /PE ANUL (\d{4})/.exec(titlu);
+  const anRaport = anRaportMatch ? Number(anRaportMatch[1]) : null;
+  const anCurent = new Date().getFullYear();
+  const eDataRelevanta = !anRaport || anRaport === anCurent;
 
   function run(fn) {
-    fn(titlu, columns, rows, parohie);
+    fn(titlu, columns, rows, parohie, dataRaport);
     setOpen(false);
   }
 
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-flex items-center gap-2">
+      {eDataRelevanta && (
+        <input
+          type="date" className={`${inputCls} w-36`}
+          value={dataRaport} onChange={(e) => setDataRaport(e.target.value)}
+          title="Data raportului (pentru anul curent)"
+        />
+      )}
       <Btn variant="ghost" onClick={() => setOpen((o) => !o)}>
         <Download size={14} /> Generează raport <ChevronDown size={12} />
       </Btn>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-20 py-1 min-w-[140px]">
+          <div className="absolute right-0 top-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-20 py-1 min-w-[140px]">
             <button onClick={() => run(exportPDF)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
               <FileText size={14} className="text-rose-600" /> PDF
             </button>
@@ -10348,6 +10386,10 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   const [modSelectie, setModSelectie] = useState(false);
   const [selectie, setSelectie] = useState(new Set());
   const [eroareSalt, setEroareSalt] = useState("");
+  const [eroarePrintare, setEroarePrintare] = useState("");
+  // Pentru documentele din anul curent, data tipăririi e aleasă manual (documentele din ani
+  // anteriori se datează automat 31.12.{an}, indiferent de această valoare).
+  const [dataTiparireCurenta, setDataTiparireCurenta] = useState(todayISO());
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState(null); // { data, tert, linii: [{id, idTemporar, contId, suma, explicatie, modPlata, ajustare106}] }
   const [idsDeSters, setIdsDeSters] = useState([]);
@@ -10841,22 +10883,36 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
           </Card>
         )}
 
+        <div className="flex items-center justify-end gap-2 mt-2">
+          <span className="text-xs text-stone-500">Data tipăririi (pt. documente din anul curent):</span>
+          <input type="date" className={`${inputCls} w-40`} value={dataTiparireCurenta} onChange={(e) => setDataTiparireCurenta(e.target.value)} />
+        </div>
         <div className="flex flex-wrap justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose}>Închide</Btn>
-          <Btn variant="ghost" onClick={() => printeazaDocumente([docCurent], tipEtichetat, contById, parohie, documente)}>
+          <Btn variant="ghost" onClick={() => printeazaDocumente([docCurent], tipEtichetat, contById, parohie, documente, dataTiparireCurenta)}>
             <Download size={14} /> Printează acest document
           </Btn>
           <Btn variant="ghost" onClick={() => {
             const selectate = documente.filter((d) => selectie.has(`${d.an}-${d.nr}`));
             if (selectate.length === 0) return;
-            printeazaDocumente(selectate, tipEtichetat, contById, parohie, documente);
+            const aniDistincti = new Set(selectate.map((d) => d.an));
+            if (aniDistincti.size > 1) {
+              setEroarePrintare("Selecția acoperă mai mulți ani — tipărirea amestecată din ani diferiți nu e permisă. Selectează documente doar dintr-un singur an.");
+              return;
+            }
+            setEroarePrintare("");
+            printeazaDocumente(selectate, tipEtichetat, contById, parohie, documente, dataTiparireCurenta);
           }} disabled={selectie.size === 0}>
             <Download size={14} /> Printează selecția ({selectie.size})
           </Btn>
-          <Btn variant="gold" onClick={() => printeazaDocumente(documente, tipEtichetat, contById, parohie, documente)}>
-            <Download size={14} /> Printează toate ({documente.length})
+          <Btn variant="gold" onClick={() => {
+            const dinAnulCurent = documente.filter((d) => d.an === docCurent.an);
+            printeazaDocumente(dinAnulCurent, tipEtichetat, contById, parohie, documente, dataTiparireCurenta);
+          }}>
+            <Download size={14} /> Printează toate din {docCurent?.an} ({documente.filter((d) => d.an === docCurent?.an).length})
           </Btn>
         </div>
+        {eroarePrintare && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroarePrintare}</span>}
       </div>
     </Modal>
   );
@@ -10870,6 +10926,10 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
   const [modSelectie, setModSelectie] = useState(false);
   const [selectie, setSelectie] = useState(new Set());
   const [eroareSalt, setEroareSalt] = useState("");
+  const [eroarePrintare, setEroarePrintare] = useState("");
+  // Pentru documentele din anul curent, data tipăririi e aleasă manual (documentele din ani
+  // anteriori se datează automat 31.12.{an}, indiferent de această valoare).
+  const [dataTiparireCurenta, setDataTiparireCurenta] = useState(todayISO());
 
   const docCurent = documente[index];
 
@@ -10984,22 +11044,36 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
           </Card>
         )}
 
+        <div className="flex items-center justify-end gap-2 mt-2">
+          <span className="text-xs text-stone-500">Data tipăririi (pt. documente din anul curent):</span>
+          <input type="date" className={`${inputCls} w-40`} value={dataTiparireCurenta} onChange={(e) => setDataTiparireCurenta(e.target.value)} />
+        </div>
         <div className="flex flex-wrap justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose}>Închide</Btn>
-          <Btn variant="ghost" onClick={() => printeazaDocumenteGenerice([docCurent], tipEtichetat, campuriAntet, coloaneLinii, parohie)}>
+          <Btn variant="ghost" onClick={() => printeazaDocumenteGenerice([docCurent], tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta)}>
             <Download size={14} /> Printează acest document
           </Btn>
           <Btn variant="ghost" onClick={() => {
             const selectate = documente.filter((d) => selectie.has(`${d.an}-${d.nr}`));
             if (selectate.length === 0) return;
-            printeazaDocumenteGenerice(selectate, tipEtichetat, campuriAntet, coloaneLinii, parohie);
+            const aniDistincti = new Set(selectate.map((d) => d.an));
+            if (aniDistincti.size > 1) {
+              setEroarePrintare("Selecția acoperă mai mulți ani — tipărirea amestecată din ani diferiți nu e permisă. Selectează documente doar dintr-un singur an.");
+              return;
+            }
+            setEroarePrintare("");
+            printeazaDocumenteGenerice(selectate, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta);
           }} disabled={selectie.size === 0}>
             <Download size={14} /> Printează selecția ({selectie.size})
           </Btn>
-          <Btn variant="gold" onClick={() => printeazaDocumenteGenerice(documente, tipEtichetat, campuriAntet, coloaneLinii, parohie)}>
-            <Download size={14} /> Printează toate ({documente.length})
+          <Btn variant="gold" onClick={() => {
+            const dinAnulCurent = documente.filter((d) => d.an === docCurent.an);
+            printeazaDocumenteGenerice(dinAnulCurent, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta);
+          }}>
+            <Download size={14} /> Printează toate din {docCurent?.an} ({documente.filter((d) => d.an === docCurent?.an).length})
           </Btn>
         </div>
+        {eroarePrintare && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroarePrintare}</span>}
       </div>
     </Modal>
   );
