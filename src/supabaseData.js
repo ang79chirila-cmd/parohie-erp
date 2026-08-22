@@ -753,7 +753,7 @@ export async function receptioneazaPangar(parohieId, { linii, data, furnizor, nr
 // Vânzare FIFO cu linii multiple — mai multe produse diferite, vândute simultan, pe o singură
 // chitanță (exact ca la o vânzare reală, cu mai multe articole în același coș). `linii` =
 // [{ bazaCod, cantitateTotala }, ...]. `categoriiPangar` = constanta CATEGORII_PANGAR.
-export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata, categoriiPangar }) {
+export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata, categoriiPangar, serie, numarIdentificare }) {
   const consumuriTotale = [];
 
   for (const linie of linii) {
@@ -789,7 +789,7 @@ export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata
 
   // Creăm ÎNTÂI chitanța (stocul a fost deja verificat mai sus, doar citire) — dacă scrierea
   // documentului eșuează, stocul rămâne neschimbat, în loc să fie scăzut fără niciun document.
-  const rezultatDoc = await salveazaDocument(parohieId, { tip: "incasare", data, tert, modPlata, linii: liniiBugetare });
+  const rezultatDoc = await salveazaDocument(parohieId, { tip: "incasare", data, tert, modPlata, linii: liniiBugetare, serie, numarIdentificare });
 
   for (const c of consumuriTotale) {
     const stocNou = Number(c.articol.stoc) - c.cantitate;
@@ -1105,6 +1105,41 @@ export async function editeazaVanzarePangar(documentId, { cantitate, data, tert,
     nrChitanta: docActualizat.nr,
     anChitanta: docActualizat.an,
   };
+}
+
+// Șterge definitiv o vânzare pangar (chitanța + toate liniile ei bugetare + mișcările de stoc
+// asociate) — restituie mai întâi cantitatea consumată la FIFO înapoi în stoc, pentru fiecare
+// cod atins (o vânzare poate fi acoperit de mai multe coduri, dacă FIFO a trecut prin ele).
+export async function stergeVanzarePangar(documentId) {
+  const { data: miscariVechi, error: errMV } = await supabase
+    .from("miscari_stoc_pangar")
+    .select("*")
+    .eq("document_id", documentId)
+    .eq("tip", "iesire");
+  if (errMV) throw errMV;
+  if (!miscariVechi || miscariVechi.length === 0) throw new Error("Nu s-au găsit mișcări de stoc pentru această vânzare.");
+
+  for (const m of miscariVechi) {
+    const { data: art, error: errArt } = await supabase.from("articole_pangar").select("stoc").eq("id", m.articol_id).single();
+    if (errArt) throw errArt;
+    const { error: errRest } = await supabase
+      .from("articole_pangar")
+      .update({ stoc: Number(art.stoc) + Number(m.cantitate) })
+      .eq("id", m.articol_id);
+    if (errRest) throw errRest;
+  }
+
+  const idsAtinse = miscariVechi.map((m) => m.articol_id);
+
+  const { error: errDelM } = await supabase.from("miscari_stoc_pangar").delete().eq("document_id", documentId).eq("tip", "iesire");
+  if (errDelM) throw errDelM;
+
+  await stergeDocument(documentId);
+
+  const { data: articoleFinale, error: errFinale } = await supabase.from("articole_pangar").select("id, stoc").in("id", idsAtinse);
+  if (errFinale) throw errFinale;
+
+  return { articolePatch: articoleFinale.map((a) => ({ id: a.id, stocNou: Number(a.stoc) })) };
 }
 
 // Datoriile către furnizori NU au un tabel propriu — un NRCD cu status='neachitata' ESTE
