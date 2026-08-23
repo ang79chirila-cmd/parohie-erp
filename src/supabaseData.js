@@ -1113,7 +1113,7 @@ export async function editeazaVanzarePangar(documentId, { cantitate, data, tert,
 // nu erau pe chitanța inițială, sau poate elimina produse existente. Se restituie mai întâi TOT
 // stocul consumat anterior de acest document (indiferent de produs), apoi se reconsumă FIFO din
 // nou, conform noului set de linii.
-export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, tert, modPlata, categoriiPangar }) {
+export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, tert, modPlata, serie, numarIdentificare, categoriiPangar }) {
   const { data: miscariVechi, error: errMV } = await supabase
     .from("miscari_stoc_pangar")
     .select("*")
@@ -1201,7 +1201,7 @@ export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, t
 
   const { data: docActualizat, error: errUpdDoc } = await supabase
     .from("documente")
-    .update({ data, tert, mod_plata: modPlata })
+    .update({ data, tert, mod_plata: modPlata, serie: serie || null, numar_identificare: numarIdentificare || null })
     .eq("id", documentId)
     .select()
     .single();

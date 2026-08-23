@@ -1232,6 +1232,92 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
   setTimeout(() => win.print(), 300);
 }
 
+// Variantă a exportPDF pentru rapoarte cu tabele SEPARATE per grup (ex. Partizi — un tabel
+// distinct per articol bugetar, cu codul+denumirea articolului scrise deasupra tabelului, nu ca
+// rând în el). `grupuri` = [{ eticheta, columns, rows }, ...] — fiecare grup e independent, poate
+// avea propriul set de coloane (deși, în practică, toate grupurile unui raport folosesc aceleași).
+function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, formatHartie) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const p = parohie || {};
+  const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
+
+  const style = `
+    <style>
+      ${ARHAIC_FONT_FACE_CSS}
+      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      h2 { color: #1F3864; }
+      .coperta { padding: 32px 24px; page-break-after: always; }
+      .coperta h1 { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; font-size: 24px; margin-bottom: 4px; }
+      .coperta .hram { color: #8a6a2f; font-style: italic; margin-bottom: 20px; }
+      .coperta table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      .coperta td { padding: 5px 6px; border-bottom: 1px solid #e7e5e4; }
+      .coperta td.label { color: #78716c; width: 45%; }
+      .continut { padding: 0 24px; }
+      .grup-articol { margin-bottom: 18px; page-break-inside: avoid; }
+      .grup-articol h3 { color: #1F3864; font-size: 13px; margin: 0 0 4px; }
+      table.raport { width: 100%; border-collapse: collapse; font-size: 12px; }
+      table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
+      table.raport thead th { background: #1F3864; color: white; font-weight: normal; padding: 6px 8px; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; margin-top: 10px; }
+      .nume-parohie-arhaic-alb { font-family: 'Arhaic Romanesc', Georgia, serif; color: white; }
+      .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 20px; letter-spacing: 0.02em; }
+      @page { @bottom-right { content: "Pag. " counter(page) " / " counter(pages); font-size: 12px; color: #78716c; } }
+    </style>`;
+
+  const coperta = `
+    <div class="coperta">
+      <h1>${xmlEscape(p.denumire || "Parohia")}</h1>
+      <div class="hram">${xmlEscape(p.hram || "")}</div>
+      <table>
+        <tr><td class="label">Eparhia</td><td>${xmlEscape(p.eparhie)}</td></tr>
+        <tr><td class="label">Protoieria</td><td>${xmlEscape(p.protoierie)}</td></tr>
+        <tr><td class="label">Cod fiscal (CIF)</td><td>${xmlEscape(p.cif)}</td></tr>
+        <tr><td class="label">Înscrisă în Registrul ANAF</td><td>${p.inscrisAnaf === "inscris" ? "Da" : p.inscrisAnaf === "neinscris" ? "Nu" : "—"}</td></tr>
+        ${p.codLMI ? `<tr><td class="label">Cod LMI</td><td>${xmlEscape(p.codLMI)}</td></tr>` : ""}
+        <tr><td class="label">Adresă</td><td>${xmlEscape([p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", "))}</td></tr>
+        <tr><td class="label">Telefon / E-mail</td><td>${xmlEscape([p.telefon, p.email].filter(Boolean).join(" / "))}</td></tr>
+        <tr><td class="label">Preot paroh</td><td>${xmlEscape(p.preotParoh)}</td></tr>
+        <tr><td class="label">Bancă / IBAN</td><td>${xmlEscape([p.banca, p.iban].filter(Boolean).join(" / "))}</td></tr>
+      </table>
+      <h2 class="titlu-raport-arhaic" style="margin-top:28px;">${xmlEscape(titlu)}</h2>
+      <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
+    </div>`;
+
+  const corpGrupuri = grupuri.map((g) => {
+    const coloaneNumerice = g.columns.map((c) => {
+      const valoriNegoale = g.rows.map((r) => r[c.key]).filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
+      return valoriNegoale.length > 0 && valoriNegoale.every(esteValoareNumericaAfisata);
+    });
+    const head = `<thead><tr>${g.columns.map((c, i) => `<th${coloaneNumerice[i] ? ' style="text-align:right;"' : ""}>${xmlEscape(c.label)}</th>`).join("")}</tr></thead>`;
+    const body = g.rows.map((r, i) => `<tr style="background:${i % 2 ? "#f5f5f4" : "white"};">${g.columns.map((c, j) => `<td${coloaneNumerice[j] ? ' style="text-align:right;"' : ""}>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`).join("");
+    return `
+      <div class="grup-articol">
+        <h3>${xmlEscape(g.eticheta)}</h3>
+        <table class="raport">
+          ${head}
+          <tbody>${body}</tbody>
+        </table>
+      </div>`;
+  }).join("");
+
+  win.document.write(`<html><head><title>${xmlEscape(titlu)}</title>${style}</head><body>
+    ${coperta}
+    <div class="continut">
+      <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: <span style="font-family:'Arhaic Romanesc', Georgia, serif;">${xmlEscape(p.denumire)}</span> &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
+      ${corpGrupuri}
+      <div class="footer-line">
+        <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
+        <span>Data: ${azi}</span>
+      </div>
+    </div>
+  </body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+}
+
 // Reconstituie documentele (Chitanță/Ordin de plată) din operațiunile-linie individuale,
 // grupate după (an, nr) — o chitanță/OP cu mai multe linii bugetare rămâne un singur document.
 function grupeazaDocumente(operatiuni, tip) {
@@ -5409,7 +5495,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     let rezultat;
     try {
       rezultat = await editeazaVanzareMultiplaPangar(documentId, {
-        linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, categoriiPangar: CATEGORII_PANGAR,
+        linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata,
+        serie: opts.serie, numarIdentificare: opts.numarIdentificare, categoriiPangar: CATEGORII_PANGAR,
       });
     } catch (e) {
       setNotice(e.message || "Eroare la editarea vânzării. Încearcă din nou.");
@@ -5525,9 +5612,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       perChitanta[key].valoare += m.valoareTotala;
     }
     return Object.values(perChitanta)
-      .map((v) => ({ ...v, linii: Object.values(v.linii) }))
+      .map((v) => {
+        const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
+        return { ...v, linii: Object.values(v.linii), serie: opChit?.serie || null, numarIdentificare: opChit?.numarIdentificare || null };
+      })
       .sort((a, b) => (a.data < b.data ? 1 : -1));
-  }, [state.miscariStoc, state.articole, anPangar]);
+  }, [state.miscariStoc, state.articole, state.operatiuni, anPangar]);
 
   // Simulare cronologică globală a TUTUROR mișcărilor de stoc (toate produsele, tot istoricul) —
   // ordonare primară după dată ascendent, secundară recepții înaintea vânzărilor la dată egală.
@@ -6565,6 +6655,8 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
   const [data, setData] = useState(vanzare.data);
   const [tert, setTert] = useState(vanzare.tert || "");
   const [modPlata, setModPlata] = useState(vanzare.modPlata || "numerar");
+  const [serie, setSerie] = useState(vanzare.serie || "");
+  const [numarIdentificare, setNumarIdentificare] = useState(vanzare.numarIdentificare ? String(vanzare.numarIdentificare) : "");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
@@ -6594,6 +6686,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
       await onSave({
         linii: Object.entries(cerutePerBaza).map(([bazaCod, cantitateTotala]) => ({ bazaCod, cantitateTotala })),
         data, tert: tert.trim(), modPlata,
+        serie: serie.trim(), numarIdentificare: numarIdentificare ? Number(numarIdentificare) : null,
       });
     } catch (e) {
       setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
@@ -6620,6 +6713,14 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
         <Field label="Terț (credincios/cumpărător)">
           <input className={inputCls} value={tert} onChange={(e) => setTert(e.target.value)} />
         </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Serie (de pe chitanțier)">
+            <input className={inputCls} value={serie} onChange={(e) => setSerie(e.target.value)} />
+          </Field>
+          <Field label="Număr (de pe chitanțier)">
+            <input type="number" className={inputCls} value={numarIdentificare} onChange={(e) => setNumarIdentificare(e.target.value)} />
+          </Field>
+        </div>
 
         <div className="flex flex-col gap-2">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Produse vândute</div>
@@ -7257,70 +7358,60 @@ function RapoarteTab({ state, setState, derived }) {
 
   function genereazaPartiziVenituri() {
     const coloane = [
-      { key: "cont", label: "Art. bug. nr." },
-      { key: "denumire", label: "Denumire" },
       { key: "data", label: "Data" },
       { key: "nrDoc", label: "Nr. chitanță" },
       { key: "partener", label: "Denumire partener" },
       { key: "explicatie", label: "Explicație" },
       { key: "suma", label: "Sumă (lei)" },
     ];
-    const rows = [];
+    const grupuriRaport = [];
     for (const c of venituriConturi) {
       const totalCont = stats.rulajPeCont[c.id]?.incasari || 0;
       if (totalCont === 0) continue; // doar articolele cu valoare sintetică diferită de zero
-      rows.push({
-        cont: c.simbol, denumire: c.denumire, data: "", nrDoc: "", partener: "", explicatie: "",
-        suma: fmt(totalCont), _sectiune: true,
-      });
       const tranzactii = state.operatiuni
         .filter((op) => op.contId === c.id && op.tip === "incasare" && op.data >= interval.start && op.data <= interval.final)
         .sort((a, b) => (a.data !== b.data ? (a.data < b.data ? -1 : 1) : a.nr - b.nr));
-      for (const op of tranzactii) {
-        rows.push({
-          cont: "", denumire: "", data: fmtDataJurnal(op.data), nrDoc: String(op.nr),
-          partener: op.tert || "", explicatie: op.explicatie || "", suma: fmt(op.suma),
-        });
-      }
+      grupuriRaport.push({
+        eticheta: `${c.simbol} — ${c.denumire}   (Total: ${fmt(totalCont)} lei)`,
+        columns: coloane,
+        rows: tranzactii.map((op) => ({
+          data: fmtDataJurnal(op.data), nrDoc: String(op.nr), partener: op.tert || "", explicatie: op.explicatie || "", suma: fmt(op.suma),
+        })),
+      });
     }
     const titlu = modInterval === "an"
       ? `PARTIZI VENITURI - INCASARI PE ANUL ${anSelectat}`
       : `PARTIZI VENITURI - INCASARI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
-    exportPDF(titlu, coloane, rows, state.parohie);
+    exportPDFGrupat(titlu, grupuriRaport, state.parohie);
   }
 
   function genereazaPartiziCheltuieli() {
     const coloane = [
-      { key: "cont", label: "Art. bug. nr." },
-      { key: "denumire", label: "Denumire" },
       { key: "data", label: "Data" },
       { key: "nrDoc", label: "Nr. OP" },
       { key: "partener", label: "Denumire partener" },
       { key: "explicatie", label: "Explicație" },
       { key: "suma", label: "Sumă (lei)" },
     ];
-    const rows = [];
+    const grupuriRaport = [];
     for (const c of cheltuieliConturi) {
       const totalCont = stats.rulajPeCont[c.id]?.plati || 0;
       if (totalCont === 0) continue; // doar articolele cu valoare sintetică diferită de zero
-      rows.push({
-        cont: c.simbol, denumire: c.denumire, data: "", nrDoc: "", partener: "", explicatie: "",
-        suma: fmt(totalCont), _sectiune: true,
-      });
       const tranzactii = state.operatiuni
         .filter((op) => op.contId === c.id && op.tip === "plata" && op.data >= interval.start && op.data <= interval.final)
         .sort((a, b) => (a.data !== b.data ? (a.data < b.data ? -1 : 1) : a.nr - b.nr));
-      for (const op of tranzactii) {
-        rows.push({
-          cont: "", denumire: "", data: fmtDataJurnal(op.data), nrDoc: String(op.nr),
-          partener: op.tert || "", explicatie: op.explicatie || "", suma: fmt(op.suma),
-        });
-      }
+      grupuriRaport.push({
+        eticheta: `${c.simbol} — ${c.denumire}   (Total: ${fmt(totalCont)} lei)`,
+        columns: coloane,
+        rows: tranzactii.map((op) => ({
+          data: fmtDataJurnal(op.data), nrDoc: String(op.nr), partener: op.tert || "", explicatie: op.explicatie || "", suma: fmt(op.suma),
+        })),
+      });
     }
     const titlu = modInterval === "an"
       ? `PARTIZI CHELTUIELI - PLATI PE ANUL ${anSelectat}`
       : `PARTIZI CHELTUIELI - PLATI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
-    exportPDF(titlu, coloane, rows, state.parohie);
+    exportPDFGrupat(titlu, grupuriRaport, state.parohie);
   }
 
   function genereazaBugetPrevederi() {
@@ -10633,13 +10724,15 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     return {
       nrChitanta: docCurent.nr, anChitanta: docCurent.an, data: docCurent.data,
       tert: opChit?.tert || docCurent.tert || "", modPlata: opChit?.modPlata || docCurent.modPlata || "numerar",
+      serie: docCurent.serie || null, numarIdentificare: docCurent.numarIdentificare || null,
       linii: Object.values(liniiMap),
     };
   }, [docCurent, miscariPangarLegate, articole, operatiuni]);
 
   async function editeazaVanzarePangarDinJurnal(documentId, opts) {
     const rezultat = await editeazaVanzareMultiplaPangar(documentId, {
-      linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, categoriiPangar: CATEGORII_PANGAR,
+      linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata,
+      serie: opts.serie, numarIdentificare: opts.numarIdentificare, categoriiPangar: CATEGORII_PANGAR,
     });
     const idsVechi = new Set(miscariPangarLegate.map((m) => m.id));
     setState((s) => ({
