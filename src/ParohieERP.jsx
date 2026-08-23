@@ -11181,7 +11181,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
                     <div className="grid grid-cols-12 gap-2 items-end">
                       <div className="col-span-4">
                         <Field label={`Articol bugetar nr. (linia ${i + 1})`}>
-                          <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinieEdit(cheie, { contId: e.target.value })}>
+                          <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinieEdit(cheie, { contId: e.target.value, modPlata: (e.target.value !== "106" && l.modPlata === "depozit") ? "numerar" : l.modPlata })}>
                             <option value="">— selectați —</option>
                             {conturiFiltrate.map((c) => <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>)}
                           </select>
@@ -11197,6 +11197,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
                           <select className={inputCls} value={l.modPlata} onChange={(e) => actualizeazaLinieEdit(cheie, { modPlata: e.target.value })}>
                             <option value="numerar">Casă</option>
                             <option value="transfer">Bancă</option>
+                            {l.contId === "106" && tip === "incasare" && <option value="depozit">Depozit bancar</option>}
                           </select>
                         </Field>
                       </div>
