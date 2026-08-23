@@ -4168,32 +4168,32 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-2">Nr. crt.</th>
-              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} />
-              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} />
-              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} />
-              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} />
-              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} />
-              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2 py-2 align-bottom text-right" />
-              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2 py-2 align-bottom text-right" />
-              <AntetFiltrabil cheie="sursa" eticheta="Sursa plății / Destinația încasării" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} />
-              <th className="px-2 py-2 text-right">Sold final</th>
-              <th className="px-2 py-2 text-right">Sold „Bancă”</th>
-              <th className="px-2 py-2 text-right">Sold „Casă”</th>
-              {soldDepozitAn !== 0 && <th className="px-2 py-2 text-right">Sold „Depozit”</th>}
+              <th className="px-1.5 py-1.5">Nr. crt.</th>
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-1.5 py-1.5 align-bottom" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-1.5 py-1.5 align-bottom" />
+              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-1.5 py-1.5 align-bottom" />
+              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-1.5 py-1.5 align-bottom" />
+              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-1.5 py-1.5 align-bottom max-w-[130px]" />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-1.5 py-1.5 align-bottom max-w-[160px]" />
+              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-1.5 py-1.5 align-bottom text-right" />
+              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-1.5 py-1.5 align-bottom text-right" />
+              <AntetFiltrabil cheie="sursa" eticheta="Sursa/Destinație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-1.5 py-1.5 align-bottom" />
+              <th className="px-1.5 py-1.5 text-right">Sold final</th>
+              <th className="px-1.5 py-1.5 text-right">Sold „Bancă”</th>
+              <th className="px-1.5 py-1.5 text-right">Sold „Casă”</th>
+              {soldDepozitAn !== 0 && <th className="px-1.5 py-1.5 text-right">Sold „Depozit”</th>}
             </tr>
           </thead>
           <tbody>
             <tr className="bg-stone-50 font-semibold border-b-2 border-stone-300">
-              <td colSpan={7} className="px-2 py-2 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
-              <td className="px-2 py-2 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
-              <td className="px-2 py-2 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
+              <td colSpan={7} className="px-1.5 py-1.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
+              <td className="px-1.5 py-1.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
+              <td className="px-1.5 py-1.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
               <td></td>
-              <td className="px-2 py-2 text-right tabular-nums">{fmt(soldFinalAn)}</td>
-              <td className="px-2 py-2 text-right tabular-nums">{fmt(soldBancaAn)}</td>
-              <td className="px-2 py-2 text-right tabular-nums">{fmt(soldCasaAn)}</td>
-              {soldDepozitAn !== 0 && <td className="px-2 py-2 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
+              <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldFinalAn)}</td>
+              <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldBancaAn)}</td>
+              <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldCasaAn)}</td>
+              {soldDepozitAn !== 0 && <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
             </tr>
             {afisate.length === 0 && (
               <tr>
@@ -4204,9 +4204,9 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             )}
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 hover:bg-stone-50">
-                <td className="px-2 py-1.5 tabular-nums text-stone-500">{r.nrCrt}</td>
-                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
-                <td className="px-2 py-1.5 tabular-nums text-stone-500">
+                <td className="px-1.5 py-1 tabular-nums text-stone-500">{r.nrCrt}</td>
+                <td className="px-1.5 py-1 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
+                <td className="px-1.5 py-1 tabular-nums text-stone-500">
                   {r.op.tip === "incasare" ? (
                     <div className="flex flex-col">
                       <span>{r.op.nr}</span>
@@ -4216,21 +4216,21 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-2 py-1.5 tabular-nums text-stone-500">{r.op.tip === "plata" ? r.op.nr : "—"}</td>
-                <td className="px-2 py-1.5 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
-                <td className="px-2 py-1.5">{r.op.tert || "—"}</td>
-                <td className="px-2 py-1.5 text-stone-500">{r.op.explicatie || r.cont?.denumire || "—"}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
+                <td className="px-1.5 py-1 tabular-nums text-stone-500">{r.op.tip === "plata" ? r.op.nr : "—"}</td>
+                <td className="px-1.5 py-1 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
+                <td className="px-1.5 py-1 max-w-[130px] truncate" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
+                <td className="px-1.5 py-1 text-stone-500 max-w-[160px] truncate" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-1.5 py-1 text-right tabular-nums text-emerald-700">
                   {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-rose-700">
+                <td className="px-1.5 py-1 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2 py-1.5">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
-                {soldDepozitAn !== 0 && <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
+                <td className="px-1.5 py-1">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</td>
+                <td className="px-1.5 py-1 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
+                <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
+                <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
+                {soldDepozitAn !== 0 && <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
               </tr>
             ))}
           </tbody>
@@ -10880,8 +10880,8 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
   async function salveazaEditare() {
     if (!editData.data) { setEroareEdit("Data e obligatorie."); return; }
-    if (editData.linii.some((l) => !l.contId || !l.suma || Number(l.suma) <= 0)) {
-      setEroareEdit("Fiecare linie trebuie să aibă un cont și o sumă validă, mai mare ca 0.");
+    if (editData.linii.some((l) => !l.contId || l.suma === "" || Number(l.suma) < 0)) {
+      setEroareEdit("Fiecare linie trebuie să aibă un cont și o sumă validă (0 e permis, pentru anularea unei linii deja emise — negativ nu).");
       return;
     }
     const anNou = yearOf(editData.data);
