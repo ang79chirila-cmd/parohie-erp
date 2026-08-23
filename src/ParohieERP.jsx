@@ -1389,8 +1389,10 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
             </div>
           </div>
           <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: <span class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</span> &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
-            <tr><td style="color:#78716c;">Denumire partener</td><td colspan="3">${xmlEscape(doc.tert || "—")}</td></tr>
-            <tr><td style="color:#78716c;">Mod</td><td colspan="3">${doc.modPlata === "numerar" ? "Numerar (casă)" : "Transfer bancar"}</td></tr>
+          <table style="width:100%; border-collapse:collapse; margin-bottom:8px;">
+            <tr><td style="color:#78716c; padding:3px 0;">Denumire partener</td><td colspan="3">${xmlEscape(doc.tert || "—")}</td></tr>
+            <tr><td style="color:#78716c; padding:3px 0;">${tipEtichetat === "Ordin de plată" ? "Modalitatea de plată" : "Modalitatea de încasare"}</td><td colspan="3">${doc.modPlata === "numerar" ? "Numerar" : "Virament bancar"}</td></tr>
+            <tr><td style="color:#78716c; padding:3px 0;">${tipEtichetat === "Ordin de plată" ? "Sursa plății" : "Destinația sumei încasate"}</td><td colspan="3">${doc.modPlata === "numerar" ? "Casă" : "Cont bancar"}</td></tr>
           </table>
           <table class="doc">
             <thead><tr><th>Art. bug. nr.</th><th>Denumire</th><th>Explicație</th><th style="text-align:right;">Sumă (lei)</th></tr></thead>
