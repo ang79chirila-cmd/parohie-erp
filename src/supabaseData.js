@@ -412,7 +412,7 @@ export async function getExcedentReportat(parohieId, an) {
     .eq("nr", 1)
     .maybeSingle();
   if (error) throw error;
-  if (!doc) return { document: null, linieCasa: null, linieBanca: null };
+  if (!doc) return { document: null, linieCasa: null, linieBanca: null, linieDepozit: null };
 
   const { data: linii, error: errLinii } = await supabase
     .from("linii_document")
@@ -425,36 +425,49 @@ export async function getExcedentReportat(parohieId, an) {
     document: doc,
     linieCasa: (linii || []).find((l) => l.mod_plata === "numerar") || null,
     linieBanca: (linii || []).find((l) => l.mod_plata === "transfer") || null,
+    linieDepozit: (linii || []).find((l) => l.mod_plata === "depozit") || null,
   };
 }
 
-// Creează SAU actualizează cele două linii de excedent reportat (Casă + Bancă) ale Chitanței
-// nr. 1/an, cu soldurile calculate la 31.12.(an-1). Dacă documentul nu există încă, îl creează
-// (cu numerotare atomică, prin salveazaDocument); dacă există deja, actualizează liniile deja
-// marcate (sau le adaugă, dacă vreuna lipsește) — fără să atingă restul liniilor documentului,
-// dacă mai are și altele introduse manual.
-export async function seteazaExcedentReportat(parohieId, an, { soldCasa, soldBanca }, contId = "106") {
+// Creează SAU actualizează liniile de excedent reportat (Casă + Bancă + Depozit bancar, dacă
+// există) ale Chitanței nr. 1/an, cu soldurile calculate la 31.12.(an-1). Dacă documentul nu
+// există încă, îl creează (cu numerotare atomică, prin salveazaDocument); dacă există deja,
+// actualizează liniile deja marcate (sau le adaugă, dacă vreuna lipsește) — fără să atingă restul
+// liniilor documentului, dacă mai are și altele introduse manual. Linia de Depozit bancar se
+// creează doar dacă parohia are efectiv un sold de depozit diferit de zero (altfel ar adăuga o
+// linie inutilă, la zero, pentru parohiile fără depozite).
+export async function seteazaExcedentReportat(parohieId, an, { soldCasa, soldBanca, soldDepozit = 0 }, contId = "106") {
   const existent = await getExcedentReportat(parohieId, an);
 
   if (!existent.document) {
+    const linii = [
+      { contId, suma: soldCasa, explicatie: "Excedent din anul precedent — Casă", modPlata: "numerar", esteExcedentReportat: true },
+      { contId, suma: soldBanca, explicatie: "Excedent din anul precedent — Bancă", modPlata: "transfer", esteExcedentReportat: true },
+    ];
+    if (soldDepozit !== 0) {
+      linii.push({ contId, suma: soldDepozit, explicatie: "Excedent din anul precedent — Depozit bancar", modPlata: "depozit", esteExcedentReportat: true });
+    }
     const { operatiuniNoi, nr, documentId } = await salveazaDocument(parohieId, {
       tip: "incasare",
       data: `${an}-01-01`,
       tert: "Excedent reportat din anul precedent",
-      linii: [
-        { contId, suma: soldCasa, explicatie: "Excedent din anul precedent — Casă", modPlata: "numerar", esteExcedentReportat: true },
-        { contId, suma: soldBanca, explicatie: "Excedent din anul precedent — Bancă", modPlata: "transfer", esteExcedentReportat: true },
-      ],
+      linii,
     });
     return { operatiuniActualizate: operatiuniNoi, nr, an, documentId, creatNou: true };
   }
 
   const { document } = existent;
   const operatiuniActualizate = [];
-  for (const [linieExistenta, suma, eticheta, sursa] of [
+  const perechi = [
     [existent.linieCasa, soldCasa, "Excedent din anul precedent — Casă", "numerar"],
     [existent.linieBanca, soldBanca, "Excedent din anul precedent — Bancă", "transfer"],
-  ]) {
+  ];
+  // Linia de Depozit se procesează doar dacă deja există (poate fi actualizată, inclusiv la zero,
+  // dacă depozitul s-a lichidat) sau dacă noul sold e diferit de zero (se creează abia acum).
+  if (existent.linieDepozit || soldDepozit !== 0) {
+    perechi.push([existent.linieDepozit, soldDepozit, "Excedent din anul precedent — Depozit bancar", "depozit"]);
+  }
+  for (const [linieExistenta, suma, eticheta, sursa] of perechi) {
     let rand;
     if (linieExistenta) {
       const { data, error } = await supabase.from("linii_document").update({ suma }).eq("id", linieExistenta.id).select().single();

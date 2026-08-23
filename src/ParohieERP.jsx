@@ -46,13 +46,15 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 function soldCasaBancaLaData(operatiuni, dataLimitaInclusiv) {
   let soldCasa = 0;
   let soldBanca = 0;
+  let soldDepozit = 0;
   for (const op of operatiuni) {
     if (op.data > dataLimitaInclusiv) continue;
     const semn = op.tip === "incasare" ? 1 : -1;
     if (op.modPlata === "numerar") soldCasa += semn * op.suma;
+    else if (op.modPlata === "depozit") soldDepozit += semn * op.suma;
     else soldBanca += semn * op.suma;
   }
-  return { soldCasa, soldBanca };
+  return { soldCasa, soldBanca, soldDepozit };
 }
 
 // Reconstruiește forma locală buget[contId][an] = suma, pornind de la prevederile bugetare
@@ -75,6 +77,7 @@ function seedAccounts() {
   return [
     { id: "106", simbol: "106", denumire: "Rezerve (dispoziție an precedent, casă și conturi la bănci)", clasa: "venit", special: true },
     { id: "581", simbol: "581", denumire: "Viramente interne", clasa: "viramente", special: true },
+    { id: "5081", simbol: "5081", denumire: "Alte titluri de plasament", clasa: "viramente", special: true },
 
     // --- Venituri (clasa 73x, 76x, 77x) ---
     { id: "731.01.01", simbol: "731.01.01", denumire: "Venituri din contribuția anuală a credincioșilor", clasa: "venit" },
@@ -2083,6 +2086,7 @@ function useDerived(state) {
 
     let soldCasa = 0;
     let soldBanca = 0;
+    let soldDepozit = 0;
     let totalVenituri = 0;
     let totalCheltuieli = 0;
     const rulajPeCont = {}; // id -> {incasari, plati}
@@ -2091,6 +2095,7 @@ function useDerived(state) {
       const cont = contById[op.contId];
       const semn = op.tip === "incasare" ? 1 : -1;
       if (op.modPlata === "numerar") soldCasa += semn * op.suma;
+      else if (op.modPlata === "depozit") soldDepozit += semn * op.suma;
       else soldBanca += semn * op.suma;
 
       if (!rulajPeCont[op.contId]) rulajPeCont[op.contId] = { incasari: 0, plati: 0 };
@@ -2129,7 +2134,7 @@ function useDerived(state) {
     const totalDatoriiCurente = datoriiNeachitate.reduce((sum, d) => sum + d.suma, 0);
 
     return {
-      soldCasa, soldBanca, totalVenituri, totalCheltuieli, rulajPeCont, alerteStoc, alerteSold, contById,
+      soldCasa, soldBanca, soldDepozit, totalVenituri, totalCheltuieli, rulajPeCont, alerteStoc, alerteSold, contById,
       datoriiNeachitate, datoriiPeste60, totalDatoriiCurente,
     };
   }, [state]);
@@ -3459,7 +3464,7 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
     return Array.from(ani).sort((a, b) => b - a);
   }, [state.operatiuni, anCurent]);
 
-  const { totalVenituri, totalCheltuieli, soldCasa, soldBanca } = useMemo(() => {
+  const { totalVenituri, totalCheltuieli, soldCasa, soldBanca, soldDepozit } = useMemo(() => {
     let venituri = 0;
     let cheltuieli = 0;
     for (const op of state.operatiuni) {
@@ -3471,10 +3476,10 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
       if (op.tip === "incasare") venituri += op.suma;
       else if (!eAjustare106Plata) cheltuieli += op.suma;
     }
-    // Sold casă/bancă = soldul cumulat la finalul anului selectat (la zi, dacă e anul curent).
+    // Sold casă/bancă/depozit = soldul cumulat la finalul anului selectat (la zi, dacă e anul curent).
     const dataLimita = anTablou >= anCurent ? todayISO() : `${anTablou}-12-31`;
-    const { soldCasa: sc, soldBanca: sb } = soldCasaBancaLaData(state.operatiuni, dataLimita);
-    return { totalVenituri: venituri, totalCheltuieli: cheltuieli, soldCasa: sc, soldBanca: sb };
+    const { soldCasa: sc, soldBanca: sb, soldDepozit: sd } = soldCasaBancaLaData(state.operatiuni, dataLimita);
+    return { totalVenituri: venituri, totalCheltuieli: cheltuieli, soldCasa: sc, soldBanca: sb, soldDepozit: sd };
   }, [state.operatiuni, derived.contById, anTablou, anCurent]);
 
   const excedent = totalVenituri - totalCheltuieli;
@@ -3546,6 +3551,9 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label={`Sold casă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldCasa)} RON`} tone={soldCasa < PRAG_SOLD ? "bad" : "good"} />
         <StatCard label={`Sold bancă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldBanca)} RON`} tone={soldBanca < PRAG_SOLD ? "bad" : "good"} />
+        {soldDepozit !== 0 && (
+          <StatCard label={`Sold depozit bancar (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldDepozit)} RON`} tone="good" />
+        )}
         <StatCard label={`Total venituri ${anTablou}`} value={`${fmt(totalVenituri)} RON`} tone="neutral" />
         <StatCard label={`Total cheltuieli ${anTablou}`} value={`${fmt(totalCheltuieli)} RON`} tone="neutral" />
       </div>
@@ -3882,6 +3890,9 @@ function InchidereExercitiuModal({ an, excedent, onConfirm, onClose }) {
           <Card className="p-3 bg-stone-50 flex flex-col gap-1 text-sm">
             <div className="flex justify-between"><span className="text-stone-500">Excedent Casă (numerar) la 31.12.{an}</span><span className="font-medium tabular-nums">{fmt(excedent.soldCasa)} RON</span></div>
             <div className="flex justify-between"><span className="text-stone-500">Excedent Bancă (transfer) la 31.12.{an}</span><span className="font-medium tabular-nums">{fmt(excedent.soldBanca)} RON</span></div>
+            {excedent.soldDepozit !== 0 && (
+              <div className="flex justify-between"><span className="text-stone-500">Excedent Depozit bancar la 31.12.{an}</span><span className="font-medium tabular-nums">{fmt(excedent.soldDepozit)} RON</span></div>
+            )}
           </Card>
           {eroare && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroare}</span>}
           <div className="flex justify-end gap-2">
@@ -4020,19 +4031,24 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     // Criteriu 3: soldurile actualizate pe fiecare linie respectă exact această ordine.
     let soldCasa = 0;
     let soldBanca = 0;
+    let soldDepozit = 0;
     return indexate.map(({ op }, i) => {
       const semn = op.tip === "incasare" ? 1 : -1;
       const eCasa = op.modPlata === "numerar";
+      const eDepozit = op.modPlata === "depozit";
       if (eCasa) soldCasa += semn * op.suma;
+      else if (eDepozit) soldDepozit += semn * op.suma;
       else soldBanca += semn * op.suma;
       const cont = derived.contById[op.contId];
       return {
         op,
         cont,
         eCasa,
+        eDepozit,
         soldCasa,
         soldBanca,
-        soldFinal: soldCasa + soldBanca,
+        soldDepozit,
+        soldFinal: soldCasa + soldBanca + soldDepozit,
         nrCrt: i + 1,
         cautCont: cont ? cont.simbol : op.contId,
         cautPartener: op.tert || "",
@@ -4050,7 +4066,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     explicatie: { get: (r) => r.cautExplicatie },
     incasare: { get: (r) => (r.op.tip === "incasare" ? r.op.suma : 0) },
     plata: { get: (r) => (r.op.tip === "plata" ? r.op.suma : 0) },
-    sursa: { get: (r) => (r.eCasa ? "Casă" : "Bancă") },
+    sursa: { get: (r) => (r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă") },
   }), []);
   const { filtre: filtreColoane, setFiltre: setFiltreColoane, procesate: randuriProcesate, sugestiiPentru } =
     useFiltrareColoane(randuri, configColoaneJurnal);
@@ -4064,6 +4080,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const soldFinalAn = ultimulRand?.soldFinal || 0;
   const soldBancaAn = ultimulRand?.soldBanca || 0;
   const soldCasaAn = ultimulRand?.soldCasa || 0;
+  const soldDepozitAn = ultimulRand?.soldDepozit || 0;
 
   const coloaneJurnal = [
     { key: "nr", label: "Nr. crt." },
@@ -4079,6 +4096,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     { key: "soldFinal", label: "Sold final" },
     { key: "soldBanca", label: "Sold Bancă" },
     { key: "soldCasa", label: "Sold Casă" },
+    ...(soldDepozitAn !== 0 ? [{ key: "soldDepozit", label: "Sold Depozit" }] : []),
   ];
   const randuriExportJurnal = randuri.map((r) => ({
     nr: r.nrCrt,
@@ -4090,10 +4108,11 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     explicatie: r.op.explicatie || r.cont?.denumire || "",
     incasare: r.op.tip === "incasare" ? fmt(r.op.suma) : "",
     plata: r.op.tip === "plata" ? fmt(r.op.suma) : "",
-    sursa: r.eCasa ? "Casă" : "Bancă",
+    sursa: r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă",
     soldFinal: fmt(r.soldFinal),
     soldBanca: fmt(r.soldBanca),
     soldCasa: fmt(r.soldCasa),
+    soldDepozit: fmt(r.soldDepozit),
   }));
 
   return (
@@ -4162,6 +4181,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <th className="px-2 py-2 text-right">Sold final</th>
               <th className="px-2 py-2 text-right">Sold „Bancă”</th>
               <th className="px-2 py-2 text-right">Sold „Casă”</th>
+              {soldDepozitAn !== 0 && <th className="px-2 py-2 text-right">Sold „Depozit”</th>}
             </tr>
           </thead>
           <tbody>
@@ -4173,10 +4193,11 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <td className="px-2 py-2 text-right tabular-nums">{fmt(soldFinalAn)}</td>
               <td className="px-2 py-2 text-right tabular-nums">{fmt(soldBancaAn)}</td>
               <td className="px-2 py-2 text-right tabular-nums">{fmt(soldCasaAn)}</td>
+              {soldDepozitAn !== 0 && <td className="px-2 py-2 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
             </tr>
             {afisate.length === 0 && (
               <tr>
-                <td colSpan={13} className="px-3 py-6 text-center text-stone-400">
+                <td colSpan={soldDepozitAn !== 0 ? 14 : 13} className="px-3 py-6 text-center text-stone-400">
                   Nicio operațiune găsită.
                 </td>
               </tr>
@@ -4205,10 +4226,11 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                 <td className="px-2 py-1.5 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2 py-1.5">{r.eCasa ? "Casă" : "Bancă"}</td>
+                <td className="px-2 py-1.5">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
+                {soldDepozitAn !== 0 && <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
               </tr>
             ))}
           </tbody>
@@ -4780,7 +4802,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
             <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
               <div className="col-span-4">
                 <Field label={`Articol bugetar nr. (linia ${i + 1})`}>
-                  <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinie(l.id, { contId: e.target.value })}>
+                  <select className={inputCls} value={l.contId} onChange={(e) => actualizeazaLinie(l.id, { contId: e.target.value, modPlata: (e.target.value !== "106" && l.modPlata === "depozit") ? "numerar" : l.modPlata })}>
                     <option value="">— selectați —</option>
                     {conturiFiltrate.map((c) => (
                       <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>
@@ -4798,6 +4820,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
                   <select className={inputCls} value={l.modPlata} onChange={(e) => actualizeazaLinie(l.id, { modPlata: e.target.value })}>
                     <option value="numerar">Casă</option>
                     <option value="transfer">Bancă</option>
+                    {l.contId === "106" && <option value="depozit">Depozit bancar</option>}
                   </select>
                 </Field>
               </div>
@@ -5070,32 +5093,47 @@ function TransferForm({ onClose, onSave }) {
   const [suma, setSuma] = useState("");
   const [error, setError] = useState("");
 
+  const eDepozit = directie === "deschidere-depozit" || directie === "inchidere-depozit";
+  const contTransfer = eDepozit ? "5081" : "581";
+  const explicatieTransfer = eDepozit ? "Constituire/lichidare depozit bancar la termen" : "Viramente interne — depunere/ridicare";
+
   function submit() {
     const sumaNum = Number(suma);
     if (!suma || isNaN(sumaNum) || sumaNum <= 0) {
       setError("Introduceți o sumă validă, mai mare ca 0.");
       return;
     }
-    const iesModPlata = directie === "casa-banca" ? "numerar" : "transfer";
-    const intModPlata = directie === "casa-banca" ? "transfer" : "numerar";
+    const iesModPlata = directie === "casa-banca" ? "numerar" : directie === "banca-casa" ? "transfer"
+      : directie === "deschidere-depozit" ? "transfer" : "depozit";
+    const intModPlata = directie === "casa-banca" ? "transfer" : directie === "banca-casa" ? "numerar"
+      : directie === "deschidere-depozit" ? "depozit" : "transfer";
     onSave([
-      { tip: "plata", contId: "581", data, suma: sumaNum, modPlata: iesModPlata, tert: "", explicatie: "Viramente interne — depunere/ridicare" },
-      { tip: "incasare", contId: "581", data, suma: sumaNum, modPlata: intModPlata, tert: "", explicatie: "Viramente interne — depunere/ridicare" },
+      { tip: "plata", contId: contTransfer, data, suma: sumaNum, modPlata: iesModPlata, tert: "", explicatie: explicatieTransfer },
+      { tip: "incasare", contId: contTransfer, data, suma: sumaNum, modPlata: intModPlata, tert: "", explicatie: explicatieTransfer },
     ]);
   }
 
   return (
-    <Modal title="Transfer intern casă ↔ bancă (cont 581)" onClose={onClose}>
+    <Modal title={`Transfer intern${eDepozit ? " — depozit bancar (cont 5081)" : " casă ↔ bancă (cont 581)"}`} onClose={onClose}>
       <div className="flex flex-col gap-3">
         <p className="text-xs text-stone-500">
-          Generează automat două înregistrări pe contul 581, cu sold net zero. Nu afectează Total venituri/cheltuieli.
+          Generează automat două înregistrări pe contul {contTransfer}, cu sold net zero. Nu afectează Total venituri/cheltuieli.
         </p>
         <Field label="Direcție">
           <select className={inputCls} value={directie} onChange={(e) => setDirectie(e.target.value)}>
             <option value="casa-banca">Depunere: din Casă → în Bancă</option>
             <option value="banca-casa">Ridicare: din Bancă → în Casă</option>
+            <option value="deschidere-depozit">Deschidere depozit bancar: din Bancă → în Depozit</option>
+            <option value="inchidere-depozit">Închidere depozit bancar: din Depozit → în Bancă</option>
           </select>
         </Field>
+        {directie === "inchidere-depozit" && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Aici se mută exclusiv principalul înapoi în Bancă. Dobânda acumulată (netă, deja impozitată la sursă) se
+            înregistrează separat, printr-o Chitanță obișnuită pe articolul bugetar 766 (Venituri financiare —
+            Dobânzi bancare), cu sursa Bancă.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Data">
             <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
@@ -7313,6 +7351,7 @@ function RapoarteTab({ state, setState, derived }) {
     let totalCheltuieli = 0;
     let soldCasaLaData = 0;
     let soldBancaLaData = 0;
+    let soldDepozitLaData = 0;
     const rulajPeCont = {};
 
     for (const op of state.operatiuni) {
@@ -7323,6 +7362,7 @@ function RapoarteTab({ state, setState, derived }) {
 
       if (op.data <= interval.final) {
         if (op.modPlata === "numerar") soldCasaLaData += semn * op.suma;
+        else if (op.modPlata === "depozit") soldDepozitLaData += semn * op.suma;
         else soldBancaLaData += semn * op.suma;
       }
 
@@ -7337,7 +7377,7 @@ function RapoarteTab({ state, setState, derived }) {
         }
       }
     }
-    return { totalVenituri, totalCheltuieli, soldCasaLaData, soldBancaLaData, rulajPeCont };
+    return { totalVenituri, totalCheltuieli, soldCasaLaData, soldBancaLaData, soldDepozitLaData, rulajPeCont };
   }, [state.operatiuni, derived.contById, interval.start, interval.final]);
 
   const venituriConturi = state.conturi.filter((c) => c.clasa === "venit");
@@ -7523,6 +7563,9 @@ function RapoarteTab({ state, setState, derived }) {
         <StatCard label="Total cheltuieli (perioadă)" value={`${fmt(stats.totalCheltuieli)} RON`} sub="exclude 581 și ajustările 106" />
         <StatCard label="Sold casă la dată" value={`${fmt(stats.soldCasaLaData)} RON`} />
         <StatCard label="Sold bancă la dată" value={`${fmt(stats.soldBancaLaData)} RON`} />
+        {stats.soldDepozitLaData !== 0 && (
+          <StatCard label="Sold depozit bancar la dată" value={`${fmt(stats.soldDepozitLaData)} RON`} />
+        )}
       </div>
 
       <Card className="p-4">
@@ -10708,6 +10751,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   const motivBlocareStergere = !docCurent ? null
     : docCurent.linii.some((l) => l.esteExcedentReportat) ? "reprezintă excedentul reportat din anul precedent"
     : docCurent.linii.some((l) => l.contId === "581") ? "reprezintă un virament intern (articol bugetar 581)"
+    : docCurent.linii.some((l) => l.contId === "5081") ? "reprezintă o constituire/lichidare de depozit bancar (articol bugetar 5081)"
     : null;
 
   // Vânzarea Pangar, în forma cerută de VanzareEditForm (aceeași formă ca în tab-ul Pangar) —
