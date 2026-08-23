@@ -1066,6 +1066,18 @@ function calculeazaDataRaport(titlu, dataRaportCurenta) {
     : fmtDataJurnal(dataRaportCurenta || todayISO());
 }
 
+// Multe coloane din rapoarte conțin sume deja formatate pentru afișare (via fmt(), ex. "1.379,00"
+// — punct ca separator de mii, virgulă zecimală).
+function esteSumaFormatata(v) {
+  return typeof v === "string" && /^-?\d{1,3}(\.\d{3})*,\d{2}$/.test(v);
+}
+// ... convertim înapoi în număr real doar dacă textul chiar respectă exact acest tipar (altfel îl
+// lăsăm neatins — text, cod, dată etc.) — corect pentru PDF, dar greșit pentru XLSX, unde Excel
+// le-ar trata drept text, needitabil ca număr.
+function parseSumaFormatata(v) {
+  return esteSumaFormatata(v) ? Number(v.replace(/\./g, "").replace(",", ".")) : v;
+}
+
 function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta) {
   const p = parohie || {};
   const antet = [
@@ -1075,7 +1087,7 @@ function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta) {
     [`Data: ${calculeazaDataRaport(titlu, dataRaportCurenta)}`],
     [],
   ];
-  const aoa = [...antet, columns.map((c) => c.label), ...rows.map((r) => columns.map((c) => r[c.key] ?? ""))];
+  const aoa = [...antet, columns.map((c) => c.label), ...rows.map((r) => columns.map((c) => parseSumaFormatata(r[c.key] ?? "")))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Raport");
@@ -1158,15 +1170,19 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
     </div>`;
 
+  // O coloană e "numerică" dacă măcar un rând are, pe ea, o valoare formatată ca sumă (ex.
+  // "1.379,00") — coloanele astfel detectate se aliniază la dreapta, atât antetul cât și celulele.
+  const coloaneNumerice = columns.map((c) => rows.some((r) => esteSumaFormatata(r[c.key])));
+
   const headRepetat = `
     <thead class="antet-repetat">
       <tr><th colspan="${columns.length}" style="text-align:left;">
         Denumirea unității de cult: <span class="nume-parohie-arhaic-alb">${xmlEscape(p.denumire)}</span> &nbsp;&nbsp;|&nbsp;&nbsp; Cod fiscal: ${xmlEscape(p.cif)}
       </th></tr>
-      <tr>${columns.map((c) => `<th>${xmlEscape(c.label)}</th>`).join("")}</tr>
+      <tr>${columns.map((c, i) => `<th${coloaneNumerice[i] ? ' style="text-align:right;"' : ""}>${xmlEscape(c.label)}</th>`).join("")}</tr>
     </thead>`;
 
-  const body = rows.map((r, i) => `<tr style="background:${i % 2 ? "#f5f5f4" : "white"}">${columns.map((c) => `<td>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`).join("");
+  const body = rows.map((r, i) => `<tr style="background:${i % 2 ? "#f5f5f4" : "white"}">${columns.map((c, j) => `<td${coloaneNumerice[j] ? ' style="text-align:right;"' : ""}>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`).join("");
 
   const footerRepetat = `
     <tfoot>
