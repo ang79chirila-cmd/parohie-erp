@@ -1079,12 +1079,16 @@ function parseSumaFormatata(v) {
 }
 
 // Pentru alinierea în PDF (nu pentru conversia XLSX de mai sus): "valoare numerică" e mai larg
-// decât doar sumele formatate cu virgulă — include și numere întregi simple (ex. "1", "13", pentru
-// coloane ca Nr. crt., Nr. chitanță, Nr. OP), care altfel ar rămâne, greșit, aliniate la stânga.
+// decât doar sumele formatate cu virgulă — include și numere întregi simple (Nr. crt., Nr.
+// chitanță...) și cantități cu unitate de măsură sau procent atașat (ex. "228 kg", "5 buc", "85%").
+// O coloană se consideră numerică doar dacă TOATE valorile ei ne-goale sunt numerice — o singură
+// valoare de text care ar semăna întâmplător cu un număr nu trebuie să strice alinierea unei
+// coloane de text (ex. Explicație, Denumire partener).
 function esteValoareNumericaAfisata(v) {
   if (typeof v === "number") return true;
   if (typeof v !== "string" || v.trim() === "") return false;
-  return esteSumaFormatata(v) || /^-?\d+$/.test(v.trim());
+  const s = v.trim();
+  return esteSumaFormatata(s) || /^-?\d+([.,]\d+)?(\s*%|\s+\p{L}+)?$/u.test(s);
 }
 
 function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta) {
@@ -1179,10 +1183,13 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
     </div>`;
 
-  // O coloană e "numerică" dacă măcar un rând are, pe ea, o valoare numerică afișată (sumă
-  // formatată sau întreg simplu) — coloanele astfel detectate se aliniază la dreapta, atât
-  // antetul cât și celulele.
-  const coloaneNumerice = columns.map((c) => rows.some((r) => esteValoareNumericaAfisata(r[c.key])));
+  // O coloană e "numerică" dacă TOATE valorile ei ne-goale sunt numerice (sumă formatată, întreg
+  // simplu, sau cantitate cu unitate/procent) — coloanele astfel detectate se aliniază la dreapta,
+  // atât antetul cât și celulele.
+  const coloaneNumerice = columns.map((c) => {
+    const valoriNegoale = rows.map((r) => r[c.key]).filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
+    return valoriNegoale.length > 0 && valoriNegoale.every(esteValoareNumericaAfisata);
+  });
 
   const headRepetat = `
     <thead class="antet-repetat">
@@ -1192,7 +1199,13 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       <tr>${columns.map((c, i) => `<th${coloaneNumerice[i] ? ' style="text-align:right;"' : ""}>${xmlEscape(c.label)}</th>`).join("")}</tr>
     </thead>`;
 
-  const body = rows.map((r, i) => `<tr style="background:${i % 2 ? "#f5f5f4" : "white"}">${columns.map((c, j) => `<td${coloaneNumerice[j] ? ' style="text-align:right;"' : ""}>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`).join("");
+  // Un rând poate fi marcat drept "titlu de secțiune" (ex. sinteza unui articol bugetar, urmată
+  // de detalierea tranzacțiilor lui) — se afișează îngroșat, cu fundal distinct, fără dungare.
+  const body = rows.map((r, i) => {
+    const eSectiune = r._sectiune === true;
+    const stilRand = eSectiune ? "background:#e7e5e4; font-weight:bold;" : `background:${i % 2 ? "#f5f5f4" : "white"};`;
+    return `<tr style="${stilRand}">${columns.map((c, j) => `<td${coloaneNumerice[j] ? ' style="text-align:right;"' : ""}>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`;
+  }).join("");
 
   const footerRepetat = `
     <tfoot>
@@ -7243,31 +7256,71 @@ function RapoarteTab({ state, setState, derived }) {
   }, [state.operatiuni, anSelectat]);
 
   function genereazaPartiziVenituri() {
-    const rows = venituriConturi.map((c) => ({
-      cont: c.simbol, denumire: c.denumire, incasari: fmt(stats.rulajPeCont[c.id]?.incasari || 0),
-    }));
+    const coloane = [
+      { key: "cont", label: "Art. bug. nr." },
+      { key: "denumire", label: "Denumire" },
+      { key: "data", label: "Data" },
+      { key: "nrDoc", label: "Nr. chitanță" },
+      { key: "partener", label: "Denumire partener" },
+      { key: "explicatie", label: "Explicație" },
+      { key: "suma", label: "Sumă (lei)" },
+    ];
+    const rows = [];
+    for (const c of venituriConturi) {
+      const totalCont = stats.rulajPeCont[c.id]?.incasari || 0;
+      if (totalCont === 0) continue; // doar articolele cu valoare sintetică diferită de zero
+      rows.push({
+        cont: c.simbol, denumire: c.denumire, data: "", nrDoc: "", partener: "", explicatie: "",
+        suma: fmt(totalCont), _sectiune: true,
+      });
+      const tranzactii = state.operatiuni
+        .filter((op) => op.contId === c.id && op.tip === "incasare" && op.data >= interval.start && op.data <= interval.final)
+        .sort((a, b) => (a.data !== b.data ? (a.data < b.data ? -1 : 1) : a.nr - b.nr));
+      for (const op of tranzactii) {
+        rows.push({
+          cont: "", denumire: "", data: fmtDataJurnal(op.data), nrDoc: String(op.nr),
+          partener: op.tert || "", explicatie: op.explicatie || "", suma: fmt(op.suma),
+        });
+      }
+    }
     const titlu = modInterval === "an"
       ? `PARTIZI VENITURI - INCASARI PE ANUL ${anSelectat}`
       : `PARTIZI VENITURI - INCASARI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
-    exportPDF(
-      titlu,
-      [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "incasari", label: "Încasări (lei)" }],
-      rows, state.parohie
-    );
+    exportPDF(titlu, coloane, rows, state.parohie);
   }
 
   function genereazaPartiziCheltuieli() {
-    const rows = cheltuieliConturi.map((c) => ({
-      cont: c.simbol, denumire: c.denumire, plati: fmt(stats.rulajPeCont[c.id]?.plati || 0),
-    }));
+    const coloane = [
+      { key: "cont", label: "Art. bug. nr." },
+      { key: "denumire", label: "Denumire" },
+      { key: "data", label: "Data" },
+      { key: "nrDoc", label: "Nr. OP" },
+      { key: "partener", label: "Denumire partener" },
+      { key: "explicatie", label: "Explicație" },
+      { key: "suma", label: "Sumă (lei)" },
+    ];
+    const rows = [];
+    for (const c of cheltuieliConturi) {
+      const totalCont = stats.rulajPeCont[c.id]?.plati || 0;
+      if (totalCont === 0) continue; // doar articolele cu valoare sintetică diferită de zero
+      rows.push({
+        cont: c.simbol, denumire: c.denumire, data: "", nrDoc: "", partener: "", explicatie: "",
+        suma: fmt(totalCont), _sectiune: true,
+      });
+      const tranzactii = state.operatiuni
+        .filter((op) => op.contId === c.id && op.tip === "plata" && op.data >= interval.start && op.data <= interval.final)
+        .sort((a, b) => (a.data !== b.data ? (a.data < b.data ? -1 : 1) : a.nr - b.nr));
+      for (const op of tranzactii) {
+        rows.push({
+          cont: "", denumire: "", data: fmtDataJurnal(op.data), nrDoc: String(op.nr),
+          partener: op.tert || "", explicatie: op.explicatie || "", suma: fmt(op.suma),
+        });
+      }
+    }
     const titlu = modInterval === "an"
       ? `PARTIZI CHELTUIELI - PLATI PE ANUL ${anSelectat}`
       : `PARTIZI CHELTUIELI - PLATI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
-    exportPDF(
-      titlu,
-      [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "plati", label: "Plăți (lei)" }],
-      rows, state.parohie
-    );
+    exportPDF(titlu, coloane, rows, state.parohie);
   }
 
   function genereazaBugetPrevederi() {
