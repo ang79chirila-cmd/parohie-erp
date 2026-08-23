@@ -1078,6 +1078,15 @@ function parseSumaFormatata(v) {
   return esteSumaFormatata(v) ? Number(v.replace(/\./g, "").replace(",", ".")) : v;
 }
 
+// Pentru alinierea în PDF (nu pentru conversia XLSX de mai sus): "valoare numerică" e mai larg
+// decât doar sumele formatate cu virgulă — include și numere întregi simple (ex. "1", "13", pentru
+// coloane ca Nr. crt., Nr. chitanță, Nr. OP), care altfel ar rămâne, greșit, aliniate la stânga.
+function esteValoareNumericaAfisata(v) {
+  if (typeof v === "number") return true;
+  if (typeof v !== "string" || v.trim() === "") return false;
+  return esteSumaFormatata(v) || /^-?\d+$/.test(v.trim());
+}
+
 function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta) {
   const p = parohie || {};
   const antet = [
@@ -1170,9 +1179,10 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
     </div>`;
 
-  // O coloană e "numerică" dacă măcar un rând are, pe ea, o valoare formatată ca sumă (ex.
-  // "1.379,00") — coloanele astfel detectate se aliniază la dreapta, atât antetul cât și celulele.
-  const coloaneNumerice = columns.map((c) => rows.some((r) => esteSumaFormatata(r[c.key])));
+  // O coloană e "numerică" dacă măcar un rând are, pe ea, o valoare numerică afișată (sumă
+  // formatată sau întreg simplu) — coloanele astfel detectate se aliniază la dreapta, atât
+  // antetul cât și celulele.
+  const coloaneNumerice = columns.map((c) => rows.some((r) => esteValoareNumericaAfisata(r[c.key])));
 
   const headRepetat = `
     <thead class="antet-repetat">
