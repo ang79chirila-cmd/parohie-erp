@@ -4173,8 +4173,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-1.5 py-1.5 align-bottom" />
               <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-1.5 py-1.5 align-bottom" />
               <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-1.5 py-1.5 align-bottom" />
-              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-1.5 py-1.5 align-bottom max-w-[130px]" />
-              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-1.5 py-1.5 align-bottom max-w-[160px]" />
+              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-1.5 py-1.5 align-bottom max-w-[100px]" />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-1.5 py-1.5 align-bottom max-w-[130px]" />
               <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-1.5 py-1.5 align-bottom text-right" />
               <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-1.5 py-1.5 align-bottom text-right" />
               <AntetFiltrabil cheie="sursa" eticheta="Sursa/Destinație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-1.5 py-1.5 align-bottom" />
@@ -4205,21 +4205,22 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 hover:bg-stone-50">
                 <td className="px-1.5 py-1 tabular-nums text-stone-500">{r.nrCrt}</td>
-                <td className="px-1.5 py-1 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
-                <td className="px-1.5 py-1 tabular-nums text-stone-500">
-                  {r.op.tip === "incasare" ? (
-                    <div className="flex flex-col">
-                      <span>{r.op.nr}</span>
-                      {r.op.serie && r.op.numarIdentificare && (
-                        <span className="text-xs text-stone-400 font-mono">{r.op.serie} {r.op.numarIdentificare}</span>
-                      )}
-                    </div>
-                  ) : "—"}
+                <td className="px-1.5 py-1 tabular-nums leading-tight">
+                  <div className="flex flex-col">
+                    <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
+                    <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
+                  </div>
+                </td>
+                <td
+                  className="px-1.5 py-1 tabular-nums text-stone-500"
+                  title={r.op.tip === "incasare" && r.op.serie && r.op.numarIdentificare ? `${r.op.serie} ${r.op.numarIdentificare}` : undefined}
+                >
+                  {r.op.tip === "incasare" ? r.op.nr : "—"}
                 </td>
                 <td className="px-1.5 py-1 tabular-nums text-stone-500">{r.op.tip === "plata" ? r.op.nr : "—"}</td>
                 <td className="px-1.5 py-1 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
-                <td className="px-1.5 py-1 max-w-[130px] truncate" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
-                <td className="px-1.5 py-1 text-stone-500 max-w-[160px] truncate" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-1.5 py-1 max-w-[100px] truncate" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
+                <td className="px-1.5 py-1 text-stone-500 max-w-[130px] truncate" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
                 <td className="px-1.5 py-1 text-right tabular-nums text-emerald-700">
                   {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
                 </td>
