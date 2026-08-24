@@ -3938,6 +3938,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const [showOP, setShowOP] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
   const [browseTip, setBrowseTip] = useState(null); // null | "incasare" | "plata"
+  const [browseSaltNr, setBrowseSaltNr] = useState(null); // numărul documentului la care se deschide direct navigatorul (link din tabelul Jurnal)
 
   // Fiecare nume nou folosit vreodată la o Chitanță devine automat sugestie pentru viitor —
   // nu necesită o bază de date separată, se extrage direct din chitanțele deja emise.
@@ -4001,6 +4002,31 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         ...sPatched,
         operatiuni: [...sPatched.operatiuni, ...operatiuniNoi],
         jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ordin de plată nr. ${nr}/${an} emis — ${fmt(total)} lei${tert ? " (" + tert + ")" : ""}`),
+      };
+    });
+  }
+
+  // Transfer casă/bancă (inclusiv Deschidere/Închidere depozit bancar) — cele două linii (plată +
+  // încasare, sold net zero pe contul de viramente) se persistă REAL în Supabase, fiecare ca
+  // document propriu, exact ca la chitanță/OP — NU doar în starea locală (bug preexistent corectat
+  // aici: varianta veche scria doar local, iar tranzacțiile dispăreau la orice reîncărcare a paginii).
+  async function salveazaTransfer(ops) {
+    const [plataOp, incasareOp] = ops;
+    const rezultatPlata = await salveazaDocument(parohieId, {
+      tip: "plata", data: plataOp.data, tert: plataOp.tert, modPlata: plataOp.modPlata,
+      linii: [{ contId: plataOp.contId, suma: plataOp.suma, explicatie: plataOp.explicatie, modPlata: plataOp.modPlata }],
+    });
+    const rezultatIncasare = await salveazaDocument(parohieId, {
+      tip: "incasare", data: incasareOp.data, tert: incasareOp.tert, modPlata: incasareOp.modPlata,
+      linii: [{ contId: incasareOp.contId, suma: incasareOp.suma, explicatie: incasareOp.explicatie, modPlata: incasareOp.modPlata }],
+    });
+    setState((s) => {
+      let sPatched = aplicaRenumerotari(s, rezultatPlata.renumerotari);
+      sPatched = aplicaRenumerotari(sPatched, rezultatIncasare.renumerotari);
+      return {
+        ...sPatched,
+        operatiuni: [...sPatched.operatiuni, ...rezultatPlata.operatiuniNoi, ...rezultatIncasare.operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Transfer casă/bancă — ${fmt(plataOp.suma)} lei`),
       };
     });
   }
@@ -4074,8 +4100,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, filtrate, totalFiltrate } =
     useTabelFiltrat(randuriProcesate, ["cautCont", "cautPartener", "cautExplicatie"], 20);
 
-  const totalIncasariAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "incasare" ? r.op.suma : 0), 0);
-  const totalPlatiAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "plata" ? r.op.suma : 0), 0);
+  const totalIncasariAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? r.op.suma : 0), 0);
+  const totalPlatiAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? r.op.suma : 0), 0);
   const ultimulRand = randuri[randuri.length - 1];
   const soldFinalAn = ultimulRand?.soldFinal || 0;
   const soldBancaAn = ultimulRand?.soldBanca || 0;
@@ -4114,6 +4140,41 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     soldCasa: fmt(r.soldCasa),
     soldDepozit: fmt(r.soldDepozit),
   }));
+
+  // Registrul viramentelor interne — toate tranzacțiile pe conturile de viramente (581 — Casă ↔
+  // Bancă; 5081 — Deschidere/Închidere depozit bancar), strict limitat la anul curent selectat
+  // (același an ca al Jurnalului afișat) — reutilizează soldurile deja calculate în `randuri`
+  // (context complet, pe toate operațiunile anului, nu doar pe subsetul de viramente).
+  function genereazaRegistrulViramente() {
+    const randuriViramente = randuri.filter((r) => r.cont?.clasa === "viramente");
+    const coloane = [
+      { key: "data", label: "Data" },
+      { key: "nrChitanta", label: "Nr. chitanță" },
+      { key: "nrOP", label: "Nr. OP" },
+      { key: "artBug", label: "Art. bug. nr." },
+      { key: "explicatie", label: "Explicație" },
+      { key: "incasare", label: "Încasare (lei)" },
+      { key: "plata", label: "Plată (lei)" },
+      { key: "sursa", label: "Sursa/Destinație" },
+      { key: "soldBanca", label: "Sold Bancă" },
+      { key: "soldCasa", label: "Sold Casă" },
+      ...(soldDepozitAn !== 0 ? [{ key: "soldDepozit", label: "Sold Depozit" }] : []),
+    ];
+    const rows = randuriViramente.map((r) => ({
+      data: fmtDataJurnal(r.op.data),
+      nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}` : "",
+      nrOP: r.op.tip === "plata" ? `${r.op.nr}` : "",
+      artBug: r.cont ? r.cont.simbol : r.op.contId,
+      explicatie: r.op.explicatie || r.cont?.denumire || "",
+      incasare: r.op.tip === "incasare" ? fmt(r.op.suma) : "",
+      plata: r.op.tip === "plata" ? fmt(r.op.suma) : "",
+      sursa: r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă",
+      soldBanca: fmt(r.soldBanca),
+      soldCasa: fmt(r.soldCasa),
+      soldDepozit: fmt(r.soldDepozit),
+    }));
+    exportPDF(`REGISTRUL VIRAMENTELOR INTERNE PE ANUL ${anSelectat}`, coloane, rows, state.parohie);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -4155,6 +4216,9 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <ArrowLeftRight size={15} /> Transfer casă/bancă
             </Btn>
           )}
+          <Btn variant="ghost" onClick={genereazaRegistrulViramente}>
+            <FileText size={14} /> Registrul viramentelor ({anSelectat})
+          </Btn>
           <ExportMenu titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`} columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
         </div>
       </header>
@@ -4212,12 +4276,30 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                   </div>
                 </td>
                 <td
-                  className="px-1.5 py-1 tabular-nums text-stone-500"
+                  className="px-1.5 py-1 tabular-nums"
                   title={r.op.tip === "incasare" && r.op.serie && r.op.numarIdentificare ? `${r.op.serie} ${r.op.numarIdentificare}` : undefined}
                 >
-                  {r.op.tip === "incasare" ? r.op.nr : "—"}
+                  {r.op.tip === "incasare" ? (
+                    <button
+                      type="button"
+                      className="text-[#1F3864] underline decoration-dotted hover:decoration-solid"
+                      onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("incasare"); }}
+                    >
+                      {r.op.nr}
+                    </button>
+                  ) : "—"}
                 </td>
-                <td className="px-1.5 py-1 tabular-nums text-stone-500">{r.op.tip === "plata" ? r.op.nr : "—"}</td>
+                <td className="px-1.5 py-1 tabular-nums">
+                  {r.op.tip === "plata" ? (
+                    <button
+                      type="button"
+                      className="text-[#1F3864] underline decoration-dotted hover:decoration-solid"
+                      onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("plata"); }}
+                    >
+                      {r.op.nr}
+                    </button>
+                  ) : "—"}
+                </td>
                 <td className="px-1.5 py-1 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
                 <td className="px-1.5 py-1 max-w-[100px] truncate" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
                 <td className="px-1.5 py-1 text-stone-500 max-w-[130px] truncate" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
@@ -4279,11 +4361,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         <TransferForm
           conturi={state.conturi}
           onClose={() => setShowTransfer(false)}
-          onSave={(ops) => {
-            ops.forEach(addOperatiune);
-            if (ops.length > 0) {
-              setState((s) => ({ ...s, jurnalAudit: adaugaAudit(s, permisiuni.label, `Transfer casă/bancă — ${fmt(ops[0].suma)} lei`) }));
-            }
+          onSave={async (ops) => {
+            await salveazaTransfer(ops);
             setShowTransfer(false);
           }}
         />
@@ -4303,7 +4382,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           parohieId={parohieId}
           miscariStoc={state.miscariStoc}
           articole={state.articole}
-          onClose={() => setBrowseTip(null)}
+          saltInitialNr={browseSaltNr}
+          onClose={() => { setBrowseTip(null); setBrowseSaltNr(null); }}
         />
       )}
     </div>
@@ -10684,11 +10764,17 @@ function DocumentArhivaForm({ onClose, onSave }) {
 
 /* ------------------------------ Navigator documente (Chitanțe / Ordine de plată) -------------------------------- */
 
-function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, onClose }) {
+function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, saltInitialNr, onClose }) {
   // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
   // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
   const documente = useMemo(() => grupeazaDocumente(operatiuni, tip), [operatiuni, tip]);
-  const [index, setIndex] = useState(documente.length - 1);
+  const [index, setIndex] = useState(() => {
+    if (saltInitialNr != null) {
+      const gasit = documente.findIndex((d) => d.nr === saltInitialNr);
+      if (gasit !== -1) return gasit;
+    }
+    return documente.length - 1;
+  });
   const [confirmareStergere, setConfirmareStergere] = useState(false);
   const [eroareStergere, setEroareStergere] = useState("");
   const [stergand, setStergand] = useState(false);
