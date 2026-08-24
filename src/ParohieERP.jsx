@@ -4107,7 +4107,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     partener: r.op.tert || "",
     explicatie: r.op.explicatie || r.cont?.denumire || "",
     incasare: r.op.tip === "incasare" ? fmt(r.op.suma) : "",
-    plata: r.op.tip === "plata" ? fmt(r.op.suma) : "",
+    plata: r.op.tip === "plata" ? (r.op.contId === "581" ? `(${fmt(r.op.suma)})` : fmt(r.op.suma)) : "",
     sursa: r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă",
     soldFinal: fmt(r.soldFinal),
     soldBanca: fmt(r.soldBanca),
