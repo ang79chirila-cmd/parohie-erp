@@ -4127,7 +4127,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const randuriExportJurnal = randuri.map((r) => ({
     nr: r.nrCrt,
     data: fmtDataJurnal(r.op.data),
-    nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}` : "",
+    nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}${r.op.serie && r.op.numarIdentificare ? ` (${r.op.serie} ${r.op.numarIdentificare})` : ""}` : "",
     nrOP: r.op.tip === "plata" ? `${r.op.nr}` : "",
     artBug: r.cont ? r.cont.simbol : r.op.contId,
     partener: r.op.tert || "",
@@ -4275,29 +4275,36 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td
-                  className="px-1.5 py-1 tabular-nums"
-                  title={r.op.tip === "incasare" && r.op.serie && r.op.numarIdentificare ? `${r.op.serie} ${r.op.numarIdentificare}` : undefined}
-                >
+                <td className="px-1.5 py-1 tabular-nums">
                   {r.op.tip === "incasare" ? (
-                    <button
-                      type="button"
-                      className="text-[#1F3864] underline decoration-dotted hover:decoration-solid"
-                      onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("incasare"); }}
-                    >
-                      {r.op.nr}
-                    </button>
+                    <div className="flex flex-col">
+                      <button
+                        type="button"
+                        className="text-[#1F3864] underline decoration-dotted hover:decoration-solid text-left"
+                        onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("incasare"); }}
+                      >
+                        {r.op.nr}
+                      </button>
+                      {r.op.serie && r.op.numarIdentificare && (
+                        <span className="text-stone-400 font-mono leading-tight">{r.op.serie} {r.op.numarIdentificare}</span>
+                      )}
+                    </div>
                   ) : "—"}
                 </td>
                 <td className="px-1.5 py-1 tabular-nums">
                   {r.op.tip === "plata" ? (
-                    <button
-                      type="button"
-                      className="text-[#1F3864] underline decoration-dotted hover:decoration-solid"
-                      onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("plata"); }}
-                    >
-                      {r.op.nr}
-                    </button>
+                    <div className="flex flex-col">
+                      <button
+                        type="button"
+                        className="text-[#1F3864] underline decoration-dotted hover:decoration-solid text-left"
+                        onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("plata"); }}
+                      >
+                        {r.op.nr}
+                      </button>
+                      {r.op.serie && r.op.numarIdentificare && (
+                        <span className="text-stone-400 font-mono leading-tight">{r.op.serie} {r.op.numarIdentificare}</span>
+                      )}
+                    </div>
                   ) : "—"}
                 </td>
                 <td className="px-1.5 py-1 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
