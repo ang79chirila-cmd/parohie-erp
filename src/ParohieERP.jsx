@@ -4015,10 +4015,12 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     const rezultatPlata = await salveazaDocument(parohieId, {
       tip: "plata", data: plataOp.data, tert: plataOp.tert, modPlata: plataOp.modPlata,
       linii: [{ contId: plataOp.contId, suma: plataOp.suma, explicatie: plataOp.explicatie, modPlata: plataOp.modPlata }],
+      categorieNumerotare: "virament_plata",
     });
     const rezultatIncasare = await salveazaDocument(parohieId, {
       tip: "incasare", data: incasareOp.data, tert: incasareOp.tert, modPlata: incasareOp.modPlata,
       linii: [{ contId: incasareOp.contId, suma: incasareOp.suma, explicatie: incasareOp.explicatie, modPlata: incasareOp.modPlata }],
+      categorieNumerotare: "virament_incasare",
     });
     setState((s) => {
       let sPatched = aplicaRenumerotari(s, rezultatPlata.renumerotari);
@@ -4127,8 +4129,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const randuriExportJurnal = randuri.map((r) => ({
     nr: r.nrCrt,
     data: fmtDataJurnal(r.op.data),
-    nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}${r.op.serie && r.op.numarIdentificare ? ` (${r.op.serie} ${r.op.numarIdentificare})` : ""}` : "",
-    nrOP: r.op.tip === "plata" ? `${r.op.nr}` : "",
+    nrChitanta: r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? `${r.op.nr}${r.op.serie && r.op.numarIdentificare ? ` (${r.op.serie} ${r.op.numarIdentificare})` : ""}` : "",
+    nrOP: r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? `${r.op.nr}` : "",
     artBug: r.cont ? r.cont.simbol : r.op.contId,
     partener: r.op.tert || "",
     explicatie: r.op.explicatie || r.cont?.denumire || "",
@@ -4149,8 +4151,6 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     const randuriViramente = randuri.filter((r) => r.cont?.clasa === "viramente");
     const coloane = [
       { key: "data", label: "Data" },
-      { key: "nrChitanta", label: "Nr. chitanță" },
-      { key: "nrOP", label: "Nr. OP" },
       { key: "artBug", label: "Art. bug. nr." },
       { key: "explicatie", label: "Explicație" },
       { key: "incasare", label: "Încasare (lei)" },
@@ -4162,8 +4162,6 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     ];
     const rows = randuriViramente.map((r) => ({
       data: fmtDataJurnal(r.op.data),
-      nrChitanta: r.op.tip === "incasare" ? `${r.op.nr}` : "",
-      nrOP: r.op.tip === "plata" ? `${r.op.nr}` : "",
       artBug: r.cont ? r.cont.simbol : r.op.contId,
       explicatie: r.op.explicatie || r.cont?.denumire || "",
       incasare: r.op.tip === "incasare" ? fmt(r.op.suma) : "",
@@ -4276,7 +4274,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                   </div>
                 </td>
                 <td className="px-1.5 py-1 tabular-nums">
-                  {r.op.tip === "incasare" ? (
+                  {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
                         type="button"
@@ -4292,7 +4290,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                   ) : "—"}
                 </td>
                 <td className="px-1.5 py-1 tabular-nums">
-                  {r.op.tip === "plata" ? (
+                  {r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
                         type="button"
@@ -10774,7 +10772,13 @@ function DocumentArhivaForm({ onClose, onSave }) {
 function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, saltInitialNr, onClose }) {
   // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
   // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
-  const documente = useMemo(() => grupeazaDocumente(operatiuni, tip), [operatiuni, tip]);
+  // Viramentele interne (581/5081) au propriul bazin de numerotare, izolat, care se poate suprapune
+  // numeric cu cel al chitanțelor/OP-urilor reale — le excludem aici, ca să nu se amestece grupări
+  // nelegate între ele. Ele au un raport dedicat (Registrul viramentelor), nu apar în acest navigator.
+  const documente = useMemo(
+    () => grupeazaDocumente(operatiuni.filter((op) => contById[op.contId]?.clasa !== "viramente"), tip),
+    [operatiuni, tip, contById]
+  );
   const [index, setIndex] = useState(() => {
     if (saltInitialNr != null) {
       const gasit = documente.findIndex((d) => d.nr === saltInitialNr);
