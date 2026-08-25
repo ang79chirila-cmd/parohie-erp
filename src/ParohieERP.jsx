@@ -4033,6 +4033,18 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     });
   }
 
+  // Viramentele interne (581/5081) nu au restricția obișnuită de blocare a ștergerii (aceea se
+  // aplică documentelor din navigatorul de Chitanțe/OP) — se pot șterge liber, linie cu linie,
+  // direct din Registru Jurnal, întrucât nu ating vreo secvență reală de numerotare.
+  async function stergeLinieVirament(op) {
+    await stergeDocument(op.documentId);
+    setState((s) => ({
+      ...s,
+      operatiuni: s.operatiuni.filter((o) => o.id !== op.id),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere virament intern — ${fmt(op.suma)} lei (${fmtDataJurnal(op.data)})`),
+    }));
+  }
+
   // Jurnalul se afișează cronologic ascendent (cea mai veche operațiune prima), cu solduri progresive
   // — STRICT pe un singur an fiscal deodată; amestecarea anilor într-un singur jurnal e interzisă.
   // La egalitate de dată, se păstrează ordinea de introducere (ordinea din array).
@@ -4314,7 +4326,25 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                 <td className="px-1.5 py-1 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-1.5 py-1">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</td>
+                <td className="px-1.5 py-1">
+                  <span className="flex items-center gap-1">
+                    {r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}
+                    {r.cont?.clasa === "viramente" && !permisiuni.citireOnly && (
+                      <button
+                        type="button"
+                        title="Șterge această linie de virament"
+                        className="text-stone-300 hover:text-rose-600"
+                        onClick={() => {
+                          if (window.confirm(`Ștergi linia de virament din ${fmtDataJurnal(r.op.data)} — ${fmt(r.op.suma)} lei (${r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"})?`)) {
+                            stergeLinieVirament(r.op);
+                          }
+                        }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </span>
+                </td>
                 <td className="px-1.5 py-1 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
                 <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
                 <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
