@@ -191,7 +191,14 @@ const TIP_DOCUMENT_SUPABASE = {
   bonConsum: "bon_consum",
   procesVerbal: "proces_verbal_inventariere",
 };
-const TIP_OPERATIUNE_LOCAL = Object.fromEntries(Object.entries(TIP_DOCUMENT_SUPABASE).map(([k, v]) => [v, k]));
+const TIP_OPERATIUNE_LOCAL = {
+  ...Object.fromEntries(Object.entries(TIP_DOCUMENT_SUPABASE).map(([k, v]) => [v, k])),
+  // Viramentele interne (581/5081) au propriul bazin de numerotare, izolat complet de chitanțe/OP
+  // (vezi p_categorie_numerotare din creeaza_document_tranzactional) — la citire, se mapează
+  // înapoi la același "tip" semantic (incasare/plata), pentru calculul soldurilor.
+  virament_incasare: "incasare",
+  virament_plata: "plata",
+};
 
 // Alocă atomic (pe server, sigur sub concurență) următorul număr pentru un tip de document,
 // într-un an dat, apelând funcția SQL get_next_number deja creată în schema Supabase.
@@ -223,7 +230,7 @@ export async function rezervaUrmatorulNumar(parohieId, an, tip) {
 // `linii` = [{ contId, suma, explicatie, modPlata?, ajustare106? }, ...]
 export async function salveazaDocument(
   parohieId,
-  { tip, data, tert, modPlata, furnizor, nrFactura, dataScadenta, status, motiv, beneficiar, documentSursaId, linii, serie, numarIdentificare }
+  { tip, data, tert, modPlata, furnizor, nrFactura, dataScadenta, status, motiv, beneficiar, documentSursaId, linii, serie, numarIdentificare, categorieNumerotare }
 ) {
   const liniiValide = (linii || [])
     .filter((l) => Number(l.suma) > 0)
@@ -250,6 +257,7 @@ export async function salveazaDocument(
     p_linii: liniiValide,
     p_serie: serie || null,
     p_numar_identificare: numarIdentificare || null,
+    p_categorie_numerotare: categorieNumerotare || null,
   });
   if (error) {
     // Eroarea de duplicat Serie+Număr vine direct din constrângerea unică de la nivel de bază
