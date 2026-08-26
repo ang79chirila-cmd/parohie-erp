@@ -2176,9 +2176,13 @@ function nextNumber(state, year, tip) {
 // Previzualizare corectă a următorului număr, citită direct din operațiunile deja existente
 // (indiferent dacă au fost create prin contorul Supabase sau prin cel local) — folosită doar
 // ca afișaj informativ înainte de emitere; numărul REAL, definitiv, e mereu alocat la salvare.
-function previzualizeazaUrmatorulNumar(operatiuni, an, tip) {
+// Previzualizarea numărului următor exclude viramentele interne (581/5081) — acestea au propriul
+// bazin de numerotare, izolat, și nu trebuie să influențeze deloc numărul afișat pentru o chitanță
+// sau un OP real (vezi și categorieNumerotare, folosit la salvarea efectivă).
+function previzualizeazaUrmatorulNumar(operatiuni, an, tip, conturi) {
+  const contById = conturi ? Object.fromEntries(conturi.map((c) => [c.id, c])) : {};
   const maxNr = operatiuni
-    .filter((op) => op.tip === tip && op.an === an)
+    .filter((op) => op.tip === tip && op.an === an && contById[op.contId]?.clasa !== "viramente")
     .reduce((max, op) => Math.max(max, op.nr), 0);
   return maxNr + 1;
 }
@@ -4099,8 +4103,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
 
   const configColoaneJurnal = useMemo(() => ({
     data: { get: (r) => r.op.data },
-    nrChitanta: { get: (r) => (r.op.tip === "incasare" ? r.op.nr : "") },
-    nrOP: { get: (r) => (r.op.tip === "plata" ? r.op.nr : "") },
+    nrChitanta: { get: (r) => (r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? r.op.nr : "") },
+    nrOP: { get: (r) => (r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? r.op.nr : "") },
     cont: { get: (r) => r.cautCont },
     partener: { get: (r) => r.cautPartener },
     explicatie: { get: (r) => r.cautExplicatie },
@@ -4783,7 +4787,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
   // la lucrul pe un an anterior (reconstituire), previzualizarea arăta numărul greșit (al anului
   // curent), ceea ce declanșa incorect verificarea de mai jos ("prima chitanță dintr-un chitanțier nou").
   const an = yearOf(data);
-  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, an, "incasare"), [operatiuni, an]);
+  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, an, "incasare", conturi), [operatiuni, an, conturi]);
 
   // Chitanțiere de 50 de chitanțe/volum: la fiecare prag (1, 51, 101, 151...), utilizatorul TREBUIE
   // să introducă Seria+Numărul real, de pe chitanța fizică — pentru restul, se continuă automat.
@@ -4988,7 +4992,7 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   const an = yearOf(data);
   // Numărul următor se recalculează pe anul EFECTIV ales în câmpul Data, nu pe anul curent — vezi
   // explicația identică la ChitantaForm.
-  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, an, "plata"), [operatiuni, an]);
+  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, an, "plata", conturi), [operatiuni, an, conturi]);
   const totalGeneral = linii.reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
   // Totalul se verifică separat pe fiecare sursă — o linie pe Casă nu poate fi acoperită de
   // fonduri din Bancă, și invers, chiar dacă totalul general ar părea suficient.
@@ -6310,6 +6314,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         <VanzareMultiplaForm
           grupuri={grupuri}
           operatiuni={state.operatiuni}
+          conturi={state.conturi}
           anImplicit={anPangar}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
@@ -7144,7 +7149,7 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
   );
 }
 
-function VanzareMultiplaForm({ grupuri, operatiuni, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
+function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
   // Aceeași corecție ca la ChitantaForm/OrdinPlataForm — vezi explicația de-acolo.
   const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
@@ -7156,7 +7161,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, anImplicit, parteneri, onCre
 
   // Numărul următor se recalculează pe anul EFECTIV ales în câmpul Data, nu pe anul curent — vezi
   // explicația identică la ChitantaForm.
-  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, yearOf(data), "incasare"), [operatiuni, data]);
+  const previewNr = useMemo(() => previzualizeazaUrmatorulNumar(operatiuni, yearOf(data), "incasare", conturi), [operatiuni, data, conturi]);
 
   // Chitanțiere de 50 de chitanțe/volum: la fiecare prag (1, 51, 101, 151...), utilizatorul TREBUIE
   // să introducă Seria+Numărul real, de pe chitanța fizică — pentru restul, se continuă automat.
