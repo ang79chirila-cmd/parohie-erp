@@ -2887,6 +2887,28 @@ export default function ParohieERP() {
   const NAV = NAV_TOATE.filter((n) => permisiuni.tabs.includes(n.id) && (n.id !== "cimitir" || state.parohie?.areCimitir));
   const tabActiv = permisiuni.tabs.includes(tab) ? tab : NAV[0].id;
 
+  // Creare Ordin de plată provenit din citirea automată AI (Import date) — mirror exact al
+  // addOrdinPlata din OperatiuniTab, disponibil aici pentru că ImportDateTab e randat la acest
+  // nivel, nu în interiorul OperatiuniTab.
+  async function creeazaOrdinPlataDinAI({ data, modPlata, tert, linii }) {
+    const { operatiuniNoi, nr, an, renumerotari } = await salveazaDocument(contActiv.parohieId, {
+      tip: "plata",
+      data,
+      tert,
+      modPlata,
+      linii,
+    });
+    const total = linii.reduce((sum, l) => sum + l.suma, 0);
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, renumerotari);
+      return {
+        ...sPatched,
+        operatiuni: [...sPatched.operatiuni, ...operatiuniNoi],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ordin de plată nr. ${nr}/${an} emis (citire AI) — ${fmt(total)} lei${tert ? " (" + tert + ")" : ""}`),
+      };
+    });
+  }
+
   return (
     <div className="h-screen bg-[#FAF8F3] text-stone-800 flex font-sans overflow-hidden">
       {/* Sidebar */}
@@ -3042,7 +3064,7 @@ export default function ParohieERP() {
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} />}
           {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
-          {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} />}
+          {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} />}
         </div>
       </main>
 

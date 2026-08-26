@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { AlertTriangle, Upload, FileSpreadsheet, Check, X, ChevronRight, RefreshCw } from "lucide-react";
+import { AlertTriangle, Upload, FileSpreadsheet, Check, X, ChevronRight, RefreshCw, Sparkles, FileText, Image as ImageIcon } from "lucide-react";
 import {
   getDocumenteExistentePentruAn,
   insereazaDocumentCuNumarFix,
@@ -30,7 +30,6 @@ const fmt = (n) =>
 function excelDataToISO(v) {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   if (typeof v === "string") {
-    // Acceptă atât "2025-01-05" cât și "05.01.2025".
     if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
     const m = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
     if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
@@ -38,8 +37,6 @@ function excelDataToISO(v) {
   return null;
 }
 
-// Separă "Partener: Explicație" în cele două câmpuri; dacă nu există ": ",
-// tot textul devine explicație, partenerul rămâne gol.
 function separaPartenerExplicatie(text) {
   if (!text) return { tert: "", explicatie: "" };
   const idx = text.indexOf(": ");
@@ -47,28 +44,24 @@ function separaPartenerExplicatie(text) {
   return { tert: text.slice(0, idx).trim(), explicatie: text.slice(idx + 2).trim() };
 }
 
-// Găsește sheet-ul al cărui nume se potrivește cu un tipar dat (case-insensitive), pentru anul cerut.
 function gasesteSheet(workbook, prefix, an) {
   const tinta = `${prefix} ${an}`.toLowerCase();
   return workbook.SheetNames.find((n) => n.toLowerCase() === tinta) || null;
 }
 
-// Parsează sheet-ul "Jurnal [an]" în documente reconstituite (grupate pe Chit Nr / OP nr),
-// fiecare cu liniile lui bugetare.
 function parseazaJurnal(workbook, an) {
   const numeSheet = gasesteSheet(workbook, "Jurnal", an);
   if (!numeSheet) return { eroare: `Nu am găsit sheet-ul "Jurnal ${an}" în fișier.`, documente: [] };
 
   const ws = workbook.Sheets[numeSheet];
   const randuri = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
-  // Rândul 0 e antetul; sărim peste el.
-  const grupuri = new Map(); // cheie "incasare-4" / "plata-1" -> document acumulat
+  const grupuri = new Map();
 
   for (let i = 1; i < randuri.length; i++) {
     const r = randuri[i];
     if (!r || r.length === 0) continue;
     const [, dataRaw, chitNr, opNr, artBugNr, explicatieRaw, venituri, cheltuieli] = r;
-    if (!dataRaw || (chitNr == null && opNr == null) || artBugNr == null) continue; // rând gol/total
+    if (!dataRaw || (chitNr == null && opNr == null) || artBugNr == null) continue;
 
     const tip = chitNr != null ? "incasare" : "plata";
     const nr = chitNr != null ? Number(chitNr) : Number(opNr);
@@ -84,21 +77,18 @@ function parseazaJurnal(workbook, an) {
       grupuri.set(cheie, { tip, nr, an, data: dataISO, tert, linii: [] });
     }
     const doc = grupuri.get(cheie);
-    // Partenerul documentului = cel al primei linii cu partener nevid (liniile ulterioare pot
-    // avea alt text, dar de obicei se referă la același terț).
     if (!doc.tert && tert) doc.tert = tert;
     doc.linii.push({
       contId: String(artBugNr).trim(),
       suma,
       explicatie,
-      modPlata: tip === "incasare" ? "numerar" : "transfer", // valoare implicită, ajustată mai jos
+      modPlata: tip === "incasare" ? "numerar" : "transfer",
     });
   }
 
   return { eroare: null, documente: [...grupuri.values()] };
 }
 
-// Citește "Plati [an]" — hartă OP nr -> "numerar"|"transfer", din coloana "Banca/Casa".
 function parseazaSursaPlati(workbook, an) {
   const numeSheet = gasesteSheet(workbook, "Plati", an);
   if (!numeSheet) return {};
@@ -120,8 +110,6 @@ function parseazaSursaPlati(workbook, an) {
   return harta;
 }
 
-// Citește "Plati BCR [an]" (extras de cont) — întoarce lista de intrări Credit (încasări bancare),
-// folosită pentru semnalarea chitanțelor care ar putea fi, de fapt, prin bancă.
 function parseazaExtrasBCR(workbook, an) {
   const numeSheet = gasesteSheet(workbook, "Plati BCR", an);
   if (!numeSheet) return [];
@@ -144,8 +132,6 @@ function parseazaExtrasBCR(workbook, an) {
   return rezultat;
 }
 
-// Marchează liniile de tip "incasare" a căror sumă totală a documentului se potrivește (±0.02 lei)
-// cu o intrare din extrasul BCR, cu dată apropiată (±10 zile) — semnal, nu decizie automată.
 function marcheazaPosibilBanca(documente, credituriBCR) {
   return documente.map((doc) => {
     if (doc.tip !== "incasare") return doc;
@@ -160,13 +146,21 @@ function marcheazaPosibilBanca(documente, credituriBCR) {
   });
 }
 
-// Aplică sursa reală (Bancă/Casă) pe liniile documentelor de plată, din harta "Plati [an]".
 function aplicaSursaPlati(documente, hartaSursa) {
   return documente.map((doc) => {
     if (doc.tip !== "plata") return doc;
     const sursa = hartaSursa[doc.nr];
     if (!sursa) return doc;
     return { ...doc, linii: doc.linii.map((l) => ({ ...l, modPlata: sursa })) };
+  });
+}
+
+function fisierLaBase64(fisier) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = () => reject(new Error("Nu am putut citi fișierul."));
+    reader.readAsDataURL(fisier);
   });
 }
 
@@ -195,16 +189,124 @@ function Card({ children, className = "" }) {
   return <div className={`bg-white rounded-lg border border-stone-200 shadow-sm ${className}`}>{children}</div>;
 }
 
-export default function ImportDateTab({ parohieId, conturi, permisiuni, onImportFinalizat }) {
+export default function ImportDateTab({ parohieId, conturi, permisiuni, onImportFinalizat, onCreeazaOrdinPlata }) {
   const [an, setAn] = useState(new Date().getFullYear() - 1);
   const [fisier, setFisier] = useState(null);
-  const [pas, setPas] = useState("selectie"); // selectie | analizand | revizuire | importand | finalizat
+  const [pas, setPas] = useState("selectie");
   const [eroare, setEroare] = useState("");
-  const [documenteNoi, setDocumenteNoi] = useState([]); // fără conflict
-  const [documenteConflict, setDocumenteConflict] = useState([]); // { document, existent, decizie: null|"pastreaza"|"inlocuieste"|"sari" }
-  const [decizii, setDecizii] = useState({}); // cheie doc -> decizie
-  const [surseCorectate, setSurseCorectate] = useState({}); // cheie doc -> modPlata forțat manual pt. chitanțe semnalate
-  const [rezultatImport, setRezultatImport] = useState(null); // { inserate, inlocuite, sarite, erori }
+  const [documenteNoi, setDocumenteNoi] = useState([]);
+  const [documenteConflict, setDocumenteConflict] = useState([]);
+  const [decizii, setDecizii] = useState({});
+  const [surseCorectate, setSurseCorectate] = useState({});
+  const [rezultatImport, setRezultatImport] = useState(null);
+
+  // --- Citire automată din PDF/poză (extras de cont, factură, bon, chitanță), prin AI ---
+  const [fisierAI, setFisierAI] = useState(null);
+  const [citindAI, setCitindAI] = useState(false);
+  const [eroareAI, setEroareAI] = useState("");
+  const [tipDetectatAI, setTipDetectatAI] = useState(null);
+  const [liniiAI, setLiniiAI] = useState([]); // [{ id, data, suma, partener, explicatie, contId, sursa, selectat }]
+  const [creandOP, setCreandOP] = useState(false);
+  const [rezultatCreareAI, setRezultatCreareAI] = useState(null); // { create, erori }
+
+  const conturiCheltuiala = useMemo(() => (conturi || []).filter((c) => c.clasa === "cheltuiala"), [conturi]);
+
+  async function citesteDocumentAI() {
+    if (!fisierAI) return;
+    setCitindAI(true);
+    setEroareAI("");
+    setLiniiAI([]);
+    setTipDetectatAI(null);
+    setRezultatCreareAI(null);
+    try {
+      const base64 = await fisierLaBase64(fisierAI);
+      const raspuns = await fetch("/api/citeste-document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileBase64: base64, mediaType: fisierAI.type }),
+      });
+      const rezultat = await raspuns.json();
+      if (!raspuns.ok) {
+        setEroareAI(rezultat.error || "Eroare la citirea documentului.");
+        return;
+      }
+      if (!rezultat.tranzactii || rezultat.tranzactii.length === 0) {
+        setEroareAI("Nu am reușit să extrag nicio tranzacție din acest document — verifică dacă e lizibil, sau introdu datele manual.");
+        return;
+      }
+      setTipDetectatAI(rezultat.tipDocument);
+      // Doar liniile de "debit" (plăți/cheltuieli) sunt candidate pentru emiterea unui Ordin de
+      // plată aici — încasările (extras de cont) au nevoie de o Chitanță, flux separat.
+      const debiteDetectate = rezultat.tranzactii.filter((t) => t.sens === "debit");
+      setLiniiAI(
+        debiteDetectate.map((t, i) => ({
+          id: `ai-${i}`,
+          data: /^\d{4}-\d{2}-\d{2}$/.test(t.data || "") ? t.data : todayISOLocal(),
+          suma: t.suma || 0,
+          partener: t.partener || "",
+          explicatie: t.descriere || "",
+          nrDocument: t.nrDocument || "",
+          contId: "",
+          sursa: "transfer",
+          selectat: true,
+        }))
+      );
+      if (debiteDetectate.length < rezultat.tranzactii.length) {
+        setEroareAI(`Notă: documentul mai conține ${rezultat.tranzactii.length - debiteDetectate.length} încasare(ăi) — acestea nu sunt afișate aici (au nevoie de o Chitanță, nu de un Ordin de plată).`);
+      }
+    } catch (e) {
+      setEroareAI(e.message || "Eroare neașteptată la citirea documentului.");
+    } finally {
+      setCitindAI(false);
+    }
+  }
+
+  function actualizeazaLinieAI(id, patch) {
+    setLiniiAI((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }
+
+  async function creeazaOrdinelePlataAI() {
+    const deCreat = liniiAI.filter((l) => l.selectat);
+    if (deCreat.length === 0) return;
+    if (deCreat.some((l) => !l.contId || !l.suma || Number(l.suma) <= 0)) {
+      setEroareAI("Fiecare linie selectată trebuie să aibă un articol bugetar ales și o sumă validă.");
+      return;
+    }
+    setCreandOP(true);
+    setEroareAI("");
+    let create = 0;
+    const erori = [];
+    const idsReusite = [];
+    for (const l of deCreat) {
+      try {
+        await onCreeazaOrdinPlata({
+          data: l.data,
+          modPlata: l.sursa,
+          tert: l.partener,
+          linii: [{ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie }],
+        });
+        create++;
+        idsReusite.push(l.id);
+      } catch (e) {
+        erori.push({ doc: `${l.partener || "Document"} — ${fmt(l.suma)} lei`, mesaj: e.message });
+      }
+    }
+    setRezultatCreareAI({ create, erori });
+    setLiniiAI((ls) => ls.filter((l) => !idsReusite.includes(l.id)));
+    setCreandOP(false);
+  }
+
+  function reseteazaAI() {
+    setFisierAI(null);
+    setEroareAI("");
+    setTipDetectatAI(null);
+    setLiniiAI([]);
+    setRezultatCreareAI(null);
+  }
+
+  function todayISOLocal() {
+    return new Date().toISOString().slice(0, 10);
+  }
 
   const contById = useMemo(() => Object.fromEntries((conturi || []).map((c) => [c.id, c])), [conturi]);
 
@@ -232,8 +334,6 @@ export default function ImportDateTab({ parohieId, conturi, permisiuni, onImport
       let docs = aplicaSursaPlati(documente, hartaSursaPlati);
       docs = marcheazaPosibilBanca(docs, credituriBCR);
 
-      // Verificare conflicte: aducem documentele existente din Supabase pentru acest an,
-      // separat pentru încasări și plăți.
       const [existenteIncasari, existentePlati] = await Promise.all([
         getDocumenteExistentePentruAn(parohieId, an, "incasare"),
         getDocumenteExistentePentruAn(parohieId, an, "plata"),
@@ -278,7 +378,6 @@ export default function ImportDateTab({ parohieId, conturi, permisiuni, onImport
     let sarite = 0;
     const erori = [];
 
-    // Documente noi, fără conflict.
     for (const doc of documenteNoi) {
       try {
         const modPlataForatat = surseCorectate[`${doc.tip}-${doc.nr}`];
@@ -290,7 +389,6 @@ export default function ImportDateTab({ parohieId, conturi, permisiuni, onImport
       }
     }
 
-    // Documente în conflict, conform deciziei.
     for (const c of documenteConflict) {
       const decizie = decizii[c.cheie];
       if (decizie === "sari" || (!decizie && (c.existent.esteExcedentReportat || c.existent.legatDeAltModul))) {
@@ -313,7 +411,6 @@ export default function ImportDateTab({ parohieId, conturi, permisiuni, onImport
       }
     }
 
-    // Resincronizare contoare, o singură dată per tip.
     try {
       await sincronizeazaContor(parohieId, an, "incasare");
       await sincronizeazaContor(parohieId, an, "plata");
@@ -345,9 +442,102 @@ export default function ImportDateTab({ parohieId, conturi, permisiuni, onImport
       <header>
         <h1 className="font-serif text-2xl text-[#1F3864]">Import date</h1>
         <p className="text-sm text-stone-500">
-          Importă Registrul Jurnal al unui an anterior, dintr-un fișier Excel ținut anterior manual.
+          Importă Registrul Jurnal al unui an anterior, dintr-un fișier Excel ținut anterior manual —
+          sau citește automat un document curent (extras de cont, factură, bon, chitanță).
         </p>
       </header>
+
+      <Card className="p-5 flex flex-col gap-4 max-w-2xl">
+        <div className="flex items-center gap-2">
+          <Sparkles size={18} className="text-[#B8860B]" />
+          <h2 className="font-serif text-lg text-[#1F3864]">Citire automată document (AI)</h2>
+        </div>
+        <p className="text-xs text-stone-500">
+          Încarcă un extras de cont bancar, o factură, un bon fiscal sau o chitanță — în format PDF sau
+          poză (JPG/PNG) — iar aplicația extrage automat datele, gata de revizuit. Documentul e trimis
+          criptat, direct la Anthropic (compania care face Claude), nu e stocat de nimeni altcineva.
+        </p>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-stone-600 font-medium">Fișier (PDF sau poză)</span>
+          <input
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            className="border border-stone-300 rounded-md px-2.5 py-1.5 text-sm"
+            onChange={(e) => { setFisierAI(e.target.files?.[0] || null); reseteazaAI(); }}
+          />
+        </label>
+        {eroareAI && (
+          <span className="text-xs flex items-center gap-1 text-amber-700">
+            <AlertTriangle size={12} /> {eroareAI}
+          </span>
+        )}
+        <BtnMic variant="gold" onClick={citesteDocumentAI} disabled={!fisierAI || citindAI || permisiuni?.citireOnly} className="self-start">
+          {citindAI ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          {citindAI ? "Se citește..." : "Citește documentul"}
+        </BtnMic>
+
+        {liniiAI.length > 0 && (
+          <div className="flex flex-col gap-3 border-t border-stone-200 pt-3">
+            <div className="flex items-center gap-2 text-xs text-stone-500">
+              {fisierAI?.type === "application/pdf" ? <FileText size={13} /> : <ImageIcon size={13} />}
+              Tip document detectat: <strong>{tipDetectatAI === "extras_cont" ? "extras de cont" : tipDetectatAI === "factura" ? "factură" : tipDetectatAI === "bon" ? "bon fiscal" : tipDetectatAI === "chitanta" ? "chitanță" : "necunoscut"}</strong>
+              — {liniiAI.length} plată(ăi) candidate pentru Ordin de plată
+            </div>
+            {liniiAI.map((l) => (
+              <Card key={l.id} className="p-3 border-stone-200">
+                <div className="flex items-start gap-2">
+                  <input type="checkbox" className="mt-2" checked={l.selectat} onChange={(e) => actualizeazaLinieAI(l.id, { selectat: e.target.checked })} />
+                  <div className="grid grid-cols-2 gap-2 flex-1 text-xs">
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-stone-500">Data</span>
+                      <input type="date" className="border border-stone-300 rounded px-2 py-1" value={l.data} onChange={(e) => actualizeazaLinieAI(l.id, { data: e.target.value })} />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-stone-500">Sumă (lei)</span>
+                      <input type="number" step="0.01" className="border border-stone-300 rounded px-2 py-1" value={l.suma} onChange={(e) => actualizeazaLinieAI(l.id, { suma: e.target.value })} />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-stone-500">Furnizor/Beneficiar</span>
+                      <input className="border border-stone-300 rounded px-2 py-1" value={l.partener} onChange={(e) => actualizeazaLinieAI(l.id, { partener: e.target.value })} />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-stone-500">Sursă</span>
+                      <select className="border border-stone-300 rounded px-2 py-1" value={l.sursa} onChange={(e) => actualizeazaLinieAI(l.id, { sursa: e.target.value })}>
+                        <option value="numerar">Casă</option>
+                        <option value="transfer">Bancă</option>
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-0.5 col-span-2">
+                      <span className="text-stone-500">Explicație</span>
+                      <input className="border border-stone-300 rounded px-2 py-1" value={l.explicatie} onChange={(e) => actualizeazaLinieAI(l.id, { explicatie: e.target.value })} />
+                    </label>
+                    <label className="flex flex-col gap-0.5 col-span-2">
+                      <span className="text-stone-500">Articol bugetar <span className="text-rose-600">*</span></span>
+                      <select className="border border-stone-300 rounded px-2 py-1" value={l.contId} onChange={(e) => actualizeazaLinieAI(l.id, { contId: e.target.value })}>
+                        <option value="">— selectați —</option>
+                        {conturiCheltuiala.map((c) => <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </Card>
+            ))}
+            <BtnMic variant="verde" onClick={creeazaOrdinelePlataAI} disabled={creandOP || !liniiAI.some((l) => l.selectat)} className="self-start">
+              {creandOP ? <RefreshCw size={14} className="animate-spin" /> : <ChevronRight size={14} />}
+              {creandOP ? "Se creează..." : `Creează Ordin${liniiAI.filter((l) => l.selectat).length > 1 ? "e" : ""} de plată (${liniiAI.filter((l) => l.selectat).length})`}
+            </BtnMic>
+          </div>
+        )}
+
+        {rezultatCreareAI && (
+          <div className="border-t border-stone-200 pt-3 flex flex-col gap-1 text-xs">
+            <span className="text-emerald-700 font-medium flex items-center gap-1"><Check size={13} /> {rezultatCreareAI.create} Ordin(e) de plată create.</span>
+            {rezultatCreareAI.erori.map((e, i) => (
+              <span key={i} className="text-rose-700">{e.doc}: {e.mesaj}</span>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {pas === "selectie" && (
         <Card className="p-5 flex flex-col gap-4 max-w-xl">
