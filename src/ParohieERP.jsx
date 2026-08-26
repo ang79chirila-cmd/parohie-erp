@@ -2124,6 +2124,23 @@ function useDerived(state) {
     if (soldCasa < PRAG_SOLD) alerteSold.push(`Atenție! Soldul din casă este scăzut (<${PRAG_SOLD} RON)!`);
     if (soldBanca < PRAG_SOLD) alerteSold.push(`Atenție! Soldul din bancă este scăzut (<${PRAG_SOLD} RON)!`);
 
+    // Scadența depozitelor bancare — notată opțional la deschidere, ca "[scadent: AAAA-LL-ZZ]" în
+    // explicație — alertă dacă termenul e depășit sau se apropie (în următoarele 14 zile).
+    const alerteDepozite = [];
+    const aziIso = todayISO();
+    for (const op of operatiuni) {
+      if (op.contId !== "5081" || op.tip !== "incasare") continue;
+      const match = /\[scadent: (\d{4}-\d{2}-\d{2})\]/.exec(op.explicatie || "");
+      if (!match) continue;
+      const scadenta = match[1];
+      const zileRamase = Math.round((new Date(scadenta) - new Date(aziIso)) / (1000 * 60 * 60 * 24));
+      if (zileRamase < 0) {
+        alerteDepozite.push(`Depozitul de ${fmt(op.suma)} lei (deschis la ${fmtDataJurnal(op.data)}) a ajuns la termen la ${fmtDataJurnal(scadenta)} — verifică dacă a fost deja lichidat.`);
+      } else if (zileRamase <= 14) {
+        alerteDepozite.push(`Depozitul de ${fmt(op.suma)} lei (deschis la ${fmtDataJurnal(op.data)}) ajunge la termen la ${fmtDataJurnal(scadenta)} (peste ${zileRamase} zile).`);
+      }
+    }
+
     const azi = new Date(todayISO());
     const zilePeste60 = (dataFactura) => {
       const diff = (azi - new Date(dataFactura)) / (1000 * 60 * 60 * 24);
@@ -2134,7 +2151,7 @@ function useDerived(state) {
     const totalDatoriiCurente = datoriiNeachitate.reduce((sum, d) => sum + d.suma, 0);
 
     return {
-      soldCasa, soldBanca, soldDepozit, totalVenituri, totalCheltuieli, rulajPeCont, alerteStoc, alerteSold, contById,
+      soldCasa, soldBanca, soldDepozit, totalVenituri, totalCheltuieli, rulajPeCont, alerteStoc, alerteSold, alerteDepozite, contById,
       datoriiNeachitate, datoriiPeste60, totalDatoriiCurente,
     };
   }, [state]);
@@ -2327,6 +2344,7 @@ export default function ParohieERP() {
 
   const [state, setState] = useState(null);
   const [tab, setTab] = useState("dashboard");
+  const [receptieRapidaArticolId, setReceptieRapidaArticolId] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
   // Autentificare reală, pe server (Supabase Auth) — CIF + utilizator + parolă → rol fix,
@@ -2988,6 +3006,7 @@ export default function ParohieERP() {
               setState={setState}
               derived={derived}
               setTab={setTab}
+              onReceptieRapida={setReceptieRapidaArticolId}
               permisiuni={permisiuni}
               parohieId={contActiv.parohieId}
               prevederiInfo={{
@@ -3016,7 +3035,7 @@ export default function ParohieERP() {
           )}
           {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} />}
           {tabActiv === "conturi" && <ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} />}
-          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} />}
+          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} />}
           {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
@@ -3455,8 +3474,8 @@ function AdminMfaUnlockModal({ parohieId, utilizatorPropriuId, onClose }) {
 
 /* ------------------------------ Dashboard -------------------------------- */
 
-function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, prevederiInfo, inchidereInfo }) {
-  const { alerteStoc, alerteSold, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
+function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisiuni, parohieId, prevederiInfo, inchidereInfo }) {
+  const { alerteStoc, alerteSold, alerteDepozite, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
   const [achitareFor, setAchitareFor] = useState(null);
 
   // Selector de an pentru cardurile Sold/Total — implicit anul curent.
@@ -3660,7 +3679,7 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
         </Card>
       )}
 
-      {(alerteSold.length > 0 || alerteStoc.length > 0) && (
+      {(alerteSold.length > 0 || alerteStoc.length > 0 || alerteDepozite.length > 0) && (
         <Card className="p-4 border-amber-300 bg-amber-50/60">
           <div className="flex items-center gap-2 mb-3 text-amber-800 font-medium text-sm">
             <AlertTriangle size={16} /> Situații care necesită atenție
@@ -3677,8 +3696,24 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
             {alerteStoc.map((a, i) => (
               <li key={`p${i}`} className="text-sm text-amber-900 flex items-center justify-between">
                 <span>{a.mesaj}</span>
-                <button className="text-xs underline text-[#1F3864]" onClick={() => setTab("pangar")}>
-                  Vezi pangar
+                <span className="flex items-center gap-2">
+                  <button
+                    className="text-xs underline text-[#1F3864]"
+                    onClick={() => { onReceptieRapida(a.articol.id); setTab("pangar"); }}
+                  >
+                    Propune recepție
+                  </button>
+                  <button className="text-xs underline text-[#1F3864]" onClick={() => setTab("pangar")}>
+                    Vezi pangar
+                  </button>
+                </span>
+              </li>
+            ))}
+            {alerteDepozite.map((msg, i) => (
+              <li key={`d${i}`} className="text-sm text-amber-900 flex items-center justify-between">
+                <span>{msg}</span>
+                <button className="text-xs underline text-[#1F3864]" onClick={() => setTab("operatiuni")}>
+                  Vezi registrul
                 </button>
               </li>
             ))}
@@ -3686,7 +3721,7 @@ function Dashboard({ state, setState, derived, setTab, permisiuni, parohieId, pr
         </Card>
       )}
 
-      {alerteSold.length === 0 && alerteStoc.length === 0 && datoriiNeachitate.length === 0 && (
+      {alerteSold.length === 0 && alerteStoc.length === 0 && alerteDepozite.length === 0 && datoriiNeachitate.length === 0 && (
         <Card className="p-4 text-sm text-stone-500">Nicio alertă activă în acest moment.</Card>
       )}
 
@@ -3941,6 +3976,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const [showChitanta, setShowChitanta] = useState(false);
   const [showOP, setShowOP] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showReconciliere, setShowReconciliere] = useState(false);
   const [browseTip, setBrowseTip] = useState(null); // null | "incasare" | "plata"
   const [browseSaltNr, setBrowseSaltNr] = useState(null); // numărul documentului la care se deschide direct navigatorul (link din tabelul Jurnal)
 
@@ -4233,6 +4269,9 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           <Btn variant="ghost" onClick={genereazaRegistrulViramente}>
             <FileText size={14} /> Registrul viramentelor ({anSelectat})
           </Btn>
+          <Btn variant="ghost" onClick={() => setShowReconciliere(true)}>
+            <ClipboardCheck size={14} /> Reconciliere bancară
+          </Btn>
           <ExportMenu titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`} columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
         </div>
       </header>
@@ -4399,12 +4438,17 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       {showTransfer && (
         <TransferForm
           conturi={state.conturi}
+          operatiuni={state.operatiuni}
           onClose={() => setShowTransfer(false)}
           onSave={async (ops) => {
             await salveazaTransfer(ops);
             setShowTransfer(false);
           }}
         />
+      )}
+
+      {showReconciliere && (
+        <ReconciliereBancaraForm operatiuni={state.operatiuni} onClose={() => setShowReconciliere(false)} />
       )}
 
       {browseTip && (
@@ -5207,22 +5251,48 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   );
 }
 
-function TransferForm({ onClose, onSave }) {
+function TransferForm({ conturi, operatiuni, onClose, onSave }) {
   const [directie, setDirectie] = useState("casa-banca");
   const [data, setData] = useState(todayISO());
   const [suma, setSuma] = useState("");
+  const [scadenta, setScadenta] = useState("");
   const [error, setError] = useState("");
+  const [avertismentDuplicat, setAvertismentDuplicat] = useState(null);
 
   const eDepozit = directie === "deschidere-depozit" || directie === "inchidere-depozit";
   const contTransfer = eDepozit ? "5081" : "581";
-  const explicatieTransfer = eDepozit ? "Constituire/lichidare depozit bancar la termen" : "Viramente interne — depunere/ridicare";
+  const explicatieBaza = eDepozit ? "Constituire/lichidare depozit bancar la termen" : "Viramente interne — depunere/ridicare";
+  const explicatieTransfer = directie === "deschidere-depozit" && scadenta
+    ? `${explicatieBaza} [scadent: ${scadenta}]`
+    : explicatieBaza;
 
-  function submit() {
+  // Verificare simplă de duplicat: aceeași sumă, pe același cont de viramente, la o dată apropiată
+  // (±3 zile) — semnalează, nu blochează; utilizatorul decide dacă chiar a vrut două tranzacții.
+  function gasesteDuplicat(sumaNum) {
+    const dataMs = new Date(data).getTime();
+    const TREI_ZILE_MS = 3 * 24 * 60 * 60 * 1000;
+    return (operatiuni || []).find((op) =>
+      op.contId === contTransfer &&
+      Math.abs(op.suma - sumaNum) < 0.01 &&
+      Math.abs(new Date(op.data).getTime() - dataMs) <= TREI_ZILE_MS
+    );
+  }
+
+  function submit(ignoraDuplicat) {
     const sumaNum = Number(suma);
     if (!suma || isNaN(sumaNum) || sumaNum <= 0) {
       setError("Introduceți o sumă validă, mai mare ca 0.");
       return;
     }
+    setError("");
+    if (!ignoraDuplicat) {
+      const duplicat = gasesteDuplicat(sumaNum);
+      if (duplicat) {
+        setAvertismentDuplicat(`Există deja o tranzacție asemănătoare — ${fmt(duplicat.suma)} lei, la ${fmtDataJurnal(duplicat.data)}. Sigur vrei să adaugi și aceasta (nu e o dublare din greșeală)?`);
+        return;
+      }
+    }
+    setAvertismentDuplicat(null);
     const iesModPlata = directie === "casa-banca" ? "numerar" : directie === "banca-casa" ? "transfer"
       : directie === "deschidere-depozit" ? "transfer" : "depozit";
     const intModPlata = directie === "casa-banca" ? "transfer" : directie === "banca-casa" ? "numerar"
@@ -5256,16 +5326,98 @@ function TransferForm({ onClose, onSave }) {
         )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Data">
-            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            <input type="date" className={inputCls} value={data} onChange={(e) => { setData(e.target.value); setAvertismentDuplicat(null); }} />
             {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
           </Field>
           <Field label="Sumă (RON)" error={error}>
-            <input type="number" step="0.01" className={inputCls} value={suma} onChange={(e) => setSuma(e.target.value)} />
+            <input type="number" step="0.01" className={inputCls} value={suma} onChange={(e) => { setSuma(e.target.value); setAvertismentDuplicat(null); }} />
           </Field>
         </div>
+        {directie === "deschidere-depozit" && (
+          <Field label="Dată scadență (opțional — activează alerta din Tabloul de bord)">
+            <input type="date" className={inputCls} value={scadenta} onChange={(e) => setScadenta(e.target.value)} />
+            {scadenta && <span className="text-xs text-stone-400">{fmtDataJurnal(scadenta)}</span>}
+          </Field>
+        )}
+        {avertismentDuplicat && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">{avertismentDuplicat}</p>
+        )}
         <div className="flex justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
-          <Btn variant="gold" onClick={submit}>Salvează transferul</Btn>
+          {avertismentDuplicat ? (
+            <Btn variant="danger" onClick={() => submit(true)}>Da, adaugă oricum</Btn>
+          ) : (
+            <Btn variant="gold" onClick={() => submit(false)}>Salvează transferul</Btn>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Reconciliere bancară -------------------------------- */
+
+function ReconciliereBancaraForm({ operatiuni, onClose }) {
+  const [cont, setCont] = useState("banca"); // "banca" | "casa" | "depozit"
+  const [data, setData] = useState(todayISO());
+  const [soldExtras, setSoldExtras] = useState("");
+  const [rezultat, setRezultat] = useState(null); // { soldAplicatie, diferenta } | null
+
+  const eticheteCont = { banca: "Bancă (cont curent)", casa: "Casă (numerar)", depozit: "Depozit bancar" };
+
+  function verifica() {
+    const sumaExtras = Number(soldExtras);
+    if (soldExtras === "" || isNaN(sumaExtras)) return;
+    const { soldCasa, soldBanca, soldDepozit } = soldCasaBancaLaData(operatiuni, data);
+    const soldAplicatie = cont === "banca" ? soldBanca : cont === "casa" ? soldCasa : soldDepozit;
+    setRezultat({ soldAplicatie, diferenta: Math.round((sumaExtras - soldAplicatie) * 100) / 100 });
+  }
+
+  const potrivit = rezultat && Math.abs(rezultat.diferenta) < 0.01;
+
+  return (
+    <Modal title="Reconciliere bancară" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Introdu soldul de la finalul zilei, așa cum apare în extrasul de cont (sau în registrul de casă),
+          iar aplicația îl compară automat cu soldul calculat intern, la aceeași dată.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Sursă">
+            <select className={inputCls} value={cont} onChange={(e) => { setCont(e.target.value); setRezultat(null); }}>
+              <option value="banca">Bancă (cont curent)</option>
+              <option value="casa">Casă (numerar)</option>
+              <option value="depozit">Depozit bancar</option>
+            </select>
+          </Field>
+          <Field label="Data (la sfârșitul zilei)">
+            <input type="date" className={inputCls} value={data} onChange={(e) => { setData(e.target.value); setRezultat(null); }} />
+            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          </Field>
+        </div>
+        <Field label={`Sold conform extras — ${eticheteCont[cont]} (RON)`}>
+          <input type="number" step="0.01" className={inputCls} value={soldExtras} onChange={(e) => { setSoldExtras(e.target.value); setRezultat(null); }} />
+        </Field>
+
+        {rezultat && (
+          potrivit ? (
+            <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md p-3 flex items-center gap-2">
+              <ClipboardCheck size={16} /> Soldurile coincid — {fmt(rezultat.soldAplicatie)} RON, la {fmtDataJurnal(data)}.
+            </p>
+          ) : (
+            <p className="text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-md p-3">
+              <span className="flex items-center gap-2 font-medium mb-1"><AlertTriangle size={16} /> Diferență găsită!</span>
+              Sold aplicație: <strong>{fmt(rezultat.soldAplicatie)}</strong> RON &nbsp;|&nbsp;
+              Sold extras: <strong>{fmt(Number(soldExtras))}</strong> RON &nbsp;|&nbsp;
+              Diferență: <strong>{rezultat.diferenta > 0 ? "+" : ""}{fmt(rezultat.diferenta)}</strong> RON
+              {rezultat.diferenta > 0 ? " (extrasul arată mai mult decât aplicația)" : " (aplicația arată mai mult decât extrasul)"}.
+            </p>
+          )
+        )}
+
+        <div className="flex justify-end gap-2 mt-2">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
+          <Btn variant="gold" onClick={verifica}>Verifică</Btn>
         </div>
       </div>
     </Modal>
@@ -5463,10 +5615,11 @@ function ContForm({ existente, editing, onClose, onSave }) {
 
 /* ------------------------------ Pangar -------------------------------- */
 
-function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener }) {
+function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener, receptieRapidaArticolId, onConsumatReceptieRapida }) {
   const [showArticol, setShowArticol] = useState(false);
   const [variantaFor, setVariantaFor] = useState(null);
   const [showReceptieNRCD, setShowReceptieNRCD] = useState(false);
+  const [liniiReceptiePropuse, setLiniiReceptiePropuse] = useState(null);
   const [showNomenclator, setShowNomenclator] = useState(false);
   const [modNomenclator, setModNomenclator] = useState("lista"); // "lista" | "galerie"
   const [showVanzare, setShowVanzare] = useState(false);
@@ -5474,6 +5627,15 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const [showNRCD, setShowNRCD] = useState(false);
   const [showRapoarte, setShowRapoarte] = useState(false);
   const [showStocInitial, setShowStocInitial] = useState(false);
+
+  // La primirea unui semnal din Tabloul de bord ("Propune recepție" pe o alertă de stoc scăzut),
+  // deschidem direct formularul de recepție NRCD, cu articolul deja selectat pe prima linie.
+  useEffect(() => {
+    if (!receptieRapidaArticolId) return;
+    setLiniiReceptiePropuse([{ id: uid(), articolId: receptieRapidaArticolId, cantitate: "" }]);
+    setShowReceptieNRCD(true);
+    onConsumatReceptieRapida();
+  }, [receptieRapidaArticolId]);
   // Aceeași sursă de sugestii ca la Chitanța generală — orice nume folosit vreodată la o
   // încasare (inclusiv vânzările Pangar) devine sugestie pentru viitor.
   const donatoriIstorici = useMemo(
@@ -6306,8 +6468,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           furnizoriAutorizati={[state.parohie?.eparhie, state.parohie?.protoierie].filter(Boolean)}
-          onClose={() => setShowReceptieNRCD(false)}
-          onSave={async (linii, opts) => { await receptieNRCD(linii, opts); setShowReceptieNRCD(false); }}
+          liniiInitiale={liniiReceptiePropuse}
+          onClose={() => { setShowReceptieNRCD(false); setLiniiReceptiePropuse(null); }}
+          onSave={async (linii, opts) => { await receptieNRCD(linii, opts); setShowReceptieNRCD(false); setLiniiReceptiePropuse(null); }}
         />
       )}
       {showVanzare && (
@@ -6932,14 +7095,14 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
 // Recepție NRCD cu linii multiple — mai multe produse diferite, pe aceeași factură, exact ca la
 // o factură reală. Produsele se aleg strict din nomenclator (fără introducere manuală de text),
 // din listă derulantă — orice produs nou creat apare automat aici, fără nimic suplimentar.
-function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, onClose, onSave }) {
+function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, liniiInitiale, onClose, onSave }) {
   const [pas, setPas] = useState("detalii"); // detalii | decizie | acum | amanata
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
   // Aceeași corecție ca la ChitantaForm/OrdinPlataForm/VanzareMultiplaForm — vezi explicația de-acolo.
   const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
-  const [linii, setLinii] = useState([{ id: uid(), articolId: "", cantitate: "" }]);
+  const [linii, setLinii] = useState(liniiInitiale || [{ id: uid(), articolId: "", cantitate: "" }]);
   const [modPlata, setModPlata] = useState("transfer");
   const [dataScadenta, setDataScadenta] = useState("");
   const [error, setError] = useState("");
