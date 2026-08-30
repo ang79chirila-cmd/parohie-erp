@@ -5738,20 +5738,25 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       return;
     }
     const rezultat = await editeazaReceptiePangar(miscareId, {
-      data: opts.data, cantitate: opts.cantitate, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataScadenta: opts.dataScadenta,
+      data: opts.data, cantitate: opts.cantitate, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataScadenta: opts.dataScadenta, nrOP: opts.nrOP,
     });
-    setState((s) => ({
-      ...s,
-      articole: s.articole.map((a) => (a.id === miscare.articolId ? { ...a, ...rezultat.articolActualizat } : a)),
-      miscariStoc: s.miscariStoc.map((m) => (m.id === miscareId ? { ...m, ...rezultat.miscareActualizata, furnizor: opts.furnizor, nrFactura: opts.nrFactura } : m)),
-      datoriiFurnizori: (s.datoriiFurnizori || []).map((d) =>
-        d.nrNRCD === miscare.nrNRCD ? { ...d, suma: rezultat.miscareActualizata.valoareAchizitie, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataFactura: opts.data, dataScadenta: opts.dataScadenta } : d
-      ),
-      operatiuni: s.operatiuni.map((op) => (op.tip === "plata" && op.nrNRCD === miscare.nrNRCD ? {
-        ...op, suma: rezultat.miscareActualizata.valoareAchizitie, tert: opts.furnizor, data: opts.data,
-      } : op)),
-      jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare recepție NRCD nr. ${miscare.nrNRCD}/${anNou}`),
-    }));
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        articole: sPatched.articole.map((a) => (a.id === miscare.articolId ? { ...a, ...rezultat.articolActualizat } : a)),
+        miscariStoc: sPatched.miscariStoc.map((m) => (m.id === miscareId ? { ...m, ...rezultat.miscareActualizata, furnizor: opts.furnizor, nrFactura: opts.nrFactura } : m)),
+        datoriiFurnizori: (sPatched.datoriiFurnizori || []).map((d) =>
+          d.nrNRCD === miscare.nrNRCD ? { ...d, suma: rezultat.miscareActualizata.valoareAchizitie, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataFactura: opts.data, dataScadenta: opts.dataScadenta } : d
+        ),
+        operatiuni: sPatched.operatiuni.map((op) =>
+          rezultat.documentIdOP && op.documentId === rezultat.documentIdOP
+            ? { ...op, suma: rezultat.miscareActualizata.valoareAchizitie, tert: opts.furnizor, data: opts.data }
+            : op
+        ),
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare recepție NRCD nr. ${miscare.nrNRCD}/${anNou}`),
+      };
+    });
   }
 
   // Stoc inițial — intrare de stoc FĂRĂ document asociat (fără NRCD, fără datorie), pentru
@@ -5839,7 +5844,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     let rezultat;
     try {
       rezultat = await editeazaVanzareMultiplaPangar(documentId, {
-        linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata,
+        linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, nr: opts.nr,
         serie: opts.serie, numarIdentificare: opts.numarIdentificare, categoriiPangar: CATEGORII_PANGAR,
       });
     } catch (e) {
@@ -5847,19 +5852,22 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       return;
     }
     const idsVechi = new Set(iesiriVechi.map((m) => m.id));
-    setState((s) => ({
-      ...s,
-      articole: s.articole.map((a) => {
-        const patch = rezultat.articolePatch.find((p) => p.id === a.id);
-        return patch ? { ...a, stoc: patch.stocNou } : a;
-      }),
-      miscariStoc: [...s.miscariStoc.filter((m) => !idsVechi.has(m.id)), ...rezultat.miscariNoi],
-      operatiuni: [
-        ...s.operatiuni.filter((op) => !(op.tip === "incasare" && op.nr === nrChitanta && op.an === anChitanta)),
-        ...rezultat.operatiuniNoi,
-      ],
-      jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare vânzare pangar — chitanță nr. ${nrChitanta}/${anChitanta}`),
-    }));
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        articole: sPatched.articole.map((a) => {
+          const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+          return patch ? { ...a, stoc: patch.stocNou } : a;
+        }),
+        miscariStoc: [...sPatched.miscariStoc.filter((m) => !idsVechi.has(m.id)), ...rezultat.miscariNoi],
+        operatiuni: [
+          ...sPatched.operatiuni.filter((op) => op.documentId !== documentId),
+          ...rezultat.operatiuniNoi,
+        ],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare vânzare pangar — chitanță nr. ${rezultat.nrChitanta}/${anChitanta}`),
+      };
+    });
   }
 
   // Ștergere vânzare pangar: restituie stocul consumat FIFO, elimină mișcările de ieșire și
@@ -6459,6 +6467,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       {editReceptieFor && (
         <ReceptieEditForm
           miscare={editReceptieFor}
+          opLegat={state.operatiuni.find((op) => op.tip === "plata" && op.documentSursaId === editReceptieFor.documentId) || null}
           onClose={() => setEditReceptieFor(null)}
           onSave={async (opts) => { await editeazaReceptie(editReceptieFor.id, opts); setEditReceptieFor(null); }}
         />
@@ -6707,11 +6716,12 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
   );
 }
 
-function ReceptieEditForm({ miscare, onClose, onSave }) {
+function ReceptieEditForm({ miscare, opLegat, onClose, onSave }) {
   const [cantitate, setCantitate] = useState(String(miscare.cantitate));
   const [furnizor, setFurnizor] = useState(miscare.furnizor || "");
   const [nrFactura, setNrFactura] = useState(miscare.nrFactura || "");
   const [data, setData] = useState(miscare.data);
+  const [nrOP, setNrOP] = useState(opLegat ? String(opLegat.nr) : "");
   const [dataScadenta, setDataScadenta] = useState("");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
@@ -6720,10 +6730,14 @@ function ReceptieEditForm({ miscare, onClose, onSave }) {
     const cant = Number(cantitate);
     if (!cant || cant <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
     if (!furnizor.trim() || !nrFactura.trim() || !data) { setError("Furnizorul, numărul facturii și data sunt obligatorii."); return; }
+    if (opLegat && (!nrOP || !Number.isInteger(Number(nrOP)) || Number(nrOP) < 1)) {
+      setError("Numărul ordinului de plată trebuie să fie un întreg pozitiv.");
+      return;
+    }
     setError("");
     setSalvand(true);
     try {
-      await onSave({ cantitate: cant, furnizor: furnizor.trim(), nrFactura: nrFactura.trim(), data, dataScadenta });
+      await onSave({ cantitate: cant, furnizor: furnizor.trim(), nrFactura: nrFactura.trim(), data, dataScadenta, nrOP: opLegat ? Number(nrOP) : undefined });
     } catch (e) {
       setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
     } finally {
@@ -6751,6 +6765,12 @@ function ReceptieEditForm({ miscare, onClose, onSave }) {
             <input className={inputCls} value={nrFactura} onChange={(e) => setNrFactura(e.target.value)} />
           </Field>
         </div>
+        {opLegat && (
+          <Field label="Nr. Ordin de plată (achitat automat la recepție)">
+            <input type="number" step="1" min="1" className={inputCls} value={nrOP} onChange={(e) => setNrOP(e.target.value)} />
+            <span className="text-xs text-stone-400">La salvare, întreaga secvență ordine de plată din {yearOf(data) || opLegat.an} se resincronizează cronologic după dată.</span>
+          </Field>
+        )}
         <Field label="Dată scadentă (relevantă doar dacă factura era încă neachitată)">
           <input type="date" className={inputCls} value={dataScadenta} onChange={(e) => setDataScadenta(e.target.value)} />
           {dataScadenta && <span className="text-xs text-stone-400">{fmtDataJurnal(dataScadenta)}</span>}
@@ -6999,6 +7019,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
     vanzare.linii.map((l) => ({ id: uid(), bazaCod: l.bazaCod, cantitate: String(l.cantitate) }))
   );
   const [data, setData] = useState(vanzare.data);
+  const [nr, setNr] = useState(String(vanzare.nrChitanta));
   const [tert, setTert] = useState(vanzare.tert || "");
   const [modPlata, setModPlata] = useState(vanzare.modPlata || "numerar");
   const [serie, setSerie] = useState(vanzare.serie || "");
@@ -7023,6 +7044,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
     if (linii.some((l) => !l.bazaCod)) { setError("Fiecare linie trebuie să aibă un produs selectat."); return; }
     if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return; }
     if (!data) { setError("Data e obligatorie."); return; }
+    if (!nr || !Number.isInteger(Number(nr)) || Number(nr) < 1) { setError("Numărul chitanței trebuie să fie un întreg pozitiv."); return; }
     // Liniile care se referă la același produs se cumulează, ca stocul să fie verificat corect.
     const cerutePerBaza = {};
     for (const l of linii) cerutePerBaza[l.bazaCod] = (cerutePerBaza[l.bazaCod] || 0) + Number(l.cantitate);
@@ -7031,7 +7053,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
     try {
       await onSave({
         linii: Object.entries(cerutePerBaza).map(([bazaCod, cantitateTotala]) => ({ bazaCod, cantitateTotala })),
-        data, tert: tert.trim(), modPlata,
+        data, tert: tert.trim(), modPlata, nr: Number(nr),
         serie: serie.trim(), numarIdentificare: numarIdentificare ? Number(numarIdentificare) : null,
       });
     } catch (e) {
@@ -7049,6 +7071,12 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
             <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
             {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
           </Field>
+          <Field label="Nr.">
+            <input type="number" step="1" min="1" className={inputCls} value={nr} onChange={(e) => setNr(e.target.value)} />
+            <span className="text-xs text-stone-400">La salvare, întreaga secvență chitanțe din {yearOf(data) || vanzare.anChitanta} se resincronizează cronologic după dată.</span>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Mod plată">
             <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
               <option value="numerar">Numerar (casă)</option>
@@ -11095,23 +11123,26 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
   async function editeazaVanzarePangarDinJurnal(documentId, opts) {
     const rezultat = await editeazaVanzareMultiplaPangar(documentId, {
-      linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata,
+      linii: opts.linii, data: opts.data, tert: opts.tert, modPlata: opts.modPlata, nr: opts.nr,
       serie: opts.serie, numarIdentificare: opts.numarIdentificare, categoriiPangar: CATEGORII_PANGAR,
     });
     const idsVechi = new Set(miscariPangarLegate.map((m) => m.id));
-    setState((s) => ({
-      ...s,
-      articole: s.articole.map((a) => {
-        const patch = rezultat.articolePatch.find((p) => p.id === a.id);
-        return patch ? { ...a, stoc: patch.stocNou } : a;
-      }),
-      miscariStoc: [...s.miscariStoc.filter((m) => !idsVechi.has(m.id)), ...rezultat.miscariNoi],
-      operatiuni: [
-        ...s.operatiuni.filter((op) => !(op.tip === "incasare" && op.nr === docCurent.nr && op.an === docCurent.an)),
-        ...rezultat.operatiuniNoi,
-      ],
-      jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare vânzare pangar — chitanță nr. ${docCurent.nr}/${docCurent.an}`),
-    }));
+    setState((s) => {
+      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      return {
+        ...sPatched,
+        articole: sPatched.articole.map((a) => {
+          const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+          return patch ? { ...a, stoc: patch.stocNou } : a;
+        }),
+        miscariStoc: [...sPatched.miscariStoc.filter((m) => !idsVechi.has(m.id)), ...rezultat.miscariNoi],
+        operatiuni: [
+          ...sPatched.operatiuni.filter((op) => op.documentId !== documentId),
+          ...rezultat.operatiuniNoi,
+        ],
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare vânzare pangar — chitanță nr. ${rezultat.nrChitanta}/${docCurent.an}`),
+      };
+    });
   }
 
   async function stergeDocumentCurent() {

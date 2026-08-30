@@ -882,7 +882,7 @@ export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata
 // Editează o recepție NRCD existentă (o singură mișcare de intrare) — actualizează stocul prin
 // diferență, actualizează mișcarea, actualizează documentul NRCD (dată/furnizor/factură/scadență),
 // și — dacă factura era deja plătită — actualizează și suma pe Ordinul de plată legat.
-export async function editeazaReceptiePangar(miscareId, { data, cantitate, furnizor, nrFactura, dataScadenta }) {
+export async function editeazaReceptiePangar(miscareId, { data, cantitate, furnizor, nrFactura, dataScadenta, nrOP }) {
   const { data: miscare, error: errM } = await supabase.from("miscari_stoc_pangar").select("*").eq("id", miscareId).single();
   if (errM) throw errM;
   if (miscare.tip !== "intrare") throw new Error("Doar mișcările de recepție pot fi editate astfel.");
@@ -927,16 +927,35 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
   if (errPlati) throw errPlati;
   if (platiLegate && platiLegate.length > 0) {
     const platDocId = platiLegate[0].id;
-    await supabase.from("documente").update({ data, tert: furnizor }).eq("id", platDocId);
+    const patchOP = { data, tert: furnizor };
+    if (nrOP !== undefined && nrOP !== null && nrOP !== "") patchOP.nr = Number(nrOP);
+    await supabase.from("documente").update(patchOP).eq("id", platDocId);
     await supabase
       .from("linii_document")
       .update({ suma: valoareAchizitieNoua, explicatie: `Plată factură ${nrFactura} (NRCD nr. ${nrcdDoc.nr}/${nrcdDoc.an})` })
       .eq("document_id", platDocId);
   }
 
+  // Resincronizare cronologică OBLIGATORIE a secvenței de Ordine de plată, pentru simetrie cu
+  // editarea directă a unui OP — doar dacă recepția are efectiv un OP legat (era achitată acum).
+  let renumerotari = [];
+  let documentIdOP = null;
+  if (platiLegate && platiLegate.length > 0) {
+    documentIdOP = platiLegate[0].id;
+    const { data: rezultatResort, error: errResort } = await supabase.rpc("resincronizeaza_numerotare_cronologica", {
+      p_parohie_id: miscare.parohie_id,
+      p_tip_document: "ordin_plata",
+      p_an: nrcdDoc.an,
+    });
+    if (errResort) throw errResort;
+    renumerotari = (rezultatResort || []).map((r) => ({ documentId: r.document_id, nrNou: r.nr_nou }));
+  }
+
   return {
     articolActualizat: { stoc: stocNou, stocReferinta: stocNou },
     miscareActualizata: { data, cantitate, valoareTotala, valoareAchizitie: valoareAchizitieNoua },
+    documentIdOP,
+    renumerotari,
   };
 }
 
@@ -1165,7 +1184,7 @@ export async function editeazaVanzarePangar(documentId, { cantitate, data, tert,
 // nu erau pe chitanța inițială, sau poate elimina produse existente. Se restituie mai întâi TOT
 // stocul consumat anterior de acest document (indiferent de produs), apoi se reconsumă FIFO din
 // nou, conform noului set de linii.
-export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, tert, modPlata, serie, numarIdentificare, categoriiPangar }) {
+export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, tert, modPlata, serie, numarIdentificare, nr, categoriiPangar }) {
   const { data: miscariVechi, error: errMV } = await supabase
     .from("miscari_stoc_pangar")
     .select("*")
@@ -1251,9 +1270,11 @@ export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, t
   const { data: liniiInserate, error: errInsL } = await supabase.from("linii_document").insert(liniiNoi).select();
   if (errInsL) throw errInsL;
 
+  const patchDocVanzare = { data, tert, mod_plata: modPlata, serie: serie || null, numar_identificare: numarIdentificare || null };
+  if (nr !== undefined && nr !== null && nr !== "") patchDocVanzare.nr = Number(nr);
   const { data: docActualizat, error: errUpdDoc } = await supabase
     .from("documente")
-    .update({ data, tert, mod_plata: modPlata, serie: serie || null, numar_identificare: numarIdentificare || null })
+    .update(patchDocVanzare)
     .eq("id", documentId)
     .select()
     .single();
@@ -1264,6 +1285,18 @@ export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, t
     tert, explicatie: l.explicatie || "", nr: docActualizat.nr, an: docActualizat.an, documentId,
   }));
 
+  // Resincronizare cronologică OBLIGATORIE — aceeași regulă ca la editarea unei Chitanțe/Ordin de
+  // plată obișnuite (actualizeazaDocument), pentru simetrie: data (și, la egalitate de dată, nr-ul
+  // introdus manual) decid ordinea finală a întregii secvențe de chitanțe din acest an.
+  const { data: rezultatResort, error: errResort } = await supabase.rpc("resincronizeaza_numerotare_cronologica", {
+    p_parohie_id: parohieId,
+    p_tip_document: "chitanta",
+    p_an: docActualizat.an,
+  });
+  if (errResort) throw errResort;
+  const renumerotari = (rezultatResort || []).map((r) => ({ documentId: r.document_id, nrNou: r.nr_nou }));
+  const nrFinal = renumerotari.find((r) => r.documentId === documentId)?.nrNou ?? docActualizat.nr;
+
   // Stocul final real, pentru toate codurile atinse (fie prin restituire, fie prin noul consum).
   const idsAtinse = [...new Set([...miscariVechi.map((m) => m.articol_id), ...consumuriTotale.map((c) => c.articol.id)])];
   const { data: articoleFinale, error: errFinale } = await supabase.from("articole_pangar").select("id, stoc").in("id", idsAtinse);
@@ -1273,8 +1306,9 @@ export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, t
     articolePatch: articoleFinale.map((a) => ({ id: a.id, stocNou: Number(a.stoc) })),
     miscariNoi,
     operatiuniNoi,
-    nrChitanta: docActualizat.nr,
+    nrChitanta: nrFinal,
     anChitanta: docActualizat.an,
+    renumerotari,
   };
 }
 
