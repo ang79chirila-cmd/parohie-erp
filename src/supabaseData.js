@@ -367,11 +367,28 @@ export async function getOperatiuni(parohieId) {
 // Fiecare linie își poartă propriul `modPlata` (Casă/Bancă) — un document poate combina linii
 // cu surse diferite (ex. o chitanță cu o linie în Casă și o linie în Bancă).
 //
-// Întoarce liniile nou-inserate cu id-ul lor real din Supabase, ca apelantul să poată
-// actualiza corect state.operatiuni local (id-urile locale temporare nu ar coincide cu cele
-// din baza de date).
-export async function actualizeazaDocument(documentId, { data, tert }, linii, idsDeSters = []) {
-  const { error: errDoc } = await supabase.from("documente").update({ data, tert: tert || null }).eq("id", documentId);
+// `nr` (opțional) — dacă utilizatorul a editat manual numărul documentului, e scris tentativ
+// aici; nu contează neapărat ca valoare finală, pentru că mai jos ÎNTOTDEAUNA (pentru chitanță
+// și ordin de plată) se declanșează resincronizarea cronologică a întregii secvențe (tip+an) —
+// data decide ordinea finală, iar `nr`-ul introdus manual servește doar ca tiebreaker între
+// documente cu aceeași dată. Constrângerea unică documente_parohie_id_tip_nr_an_key e
+// DEFERRABLE INITIALLY DEFERRED, deci scrierea tentativă de mai jos nu poate intra în conflict
+// tranzitoriu cu alt document — verificarea reală se face abia la commit.
+//
+// Întoarce liniile nou-inserate cu id-ul lor real din Supabase (ca apelantul să poată actualiza
+// corect state.operatiuni local) și `renumerotari` — lista completă a documentelor a căror
+// numerotare s-a schimbat în urma resincronizării (inclusiv, eventual, documentul curent).
+export async function actualizeazaDocument(documentId, { data, tert, nr }, linii, idsDeSters = []) {
+  const { data: docActual, error: errGet } = await supabase
+    .from("documente")
+    .select("parohie_id, tip, an")
+    .eq("id", documentId)
+    .single();
+  if (errGet) throw errGet;
+
+  const patchDoc = { data, tert: tert || null };
+  if (nr !== undefined && nr !== null && nr !== "") patchDoc.nr = Number(nr);
+  const { error: errDoc } = await supabase.from("documente").update(patchDoc).eq("id", documentId);
   if (errDoc) throw errDoc;
 
   if (idsDeSters.length > 0) {
@@ -403,7 +420,21 @@ export async function actualizeazaDocument(documentId, { data, tert }, linii, id
     }
   }
 
-  return { liniiNoiInserate };
+  // Resincronizare cronologică OBLIGATORIE, la fiecare editare de Chitanță/Ordin de plată —
+  // vezi funcția SQL resincronizeaza_numerotare_cronologica. Nu se aplică altor tipuri de
+  // document (NRCD, bon de consum etc.), care nu trec prin acest formular de editare.
+  let renumerotari = [];
+  if (docActual.tip === "chitanta" || docActual.tip === "ordin_plata") {
+    const { data: rezultatResort, error: errResort } = await supabase.rpc("resincronizeaza_numerotare_cronologica", {
+      p_parohie_id: docActual.parohie_id,
+      p_tip_document: docActual.tip,
+      p_an: docActual.an,
+    });
+    if (errResort) throw errResort;
+    renumerotari = (rezultatResort || []).map((r) => ({ documentId: r.document_id, nrNou: r.nr_nou }));
+  }
+
+  return { liniiNoiInserate, renumerotari };
 }
 
 /* ---------------------- Excedent reportat (Chitanța nr. 1/an) ---------------------- */
