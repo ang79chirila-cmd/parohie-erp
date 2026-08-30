@@ -995,12 +995,12 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
   );
 }
 
-function Modal({ title, onClose, children, wide }) {
+function Modal({ title, onClose, children, wide, className = "" }) {
   const maxWidthCls = wide === "xl" ? "max-w-5xl" : wide ? "max-w-2xl" : "max-w-md";
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose || undefined}>
       <div
-        className={`bg-[#FAF8F3] rounded-lg shadow-xl w-full ${maxWidthCls} max-h-[90vh] overflow-y-auto`}
+        className={`bg-[#FAF8F3] rounded-lg shadow-xl w-full ${maxWidthCls} max-h-[90vh] overflow-y-auto ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 bg-[#FAF8F3]">
@@ -4260,43 +4260,50 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             emiterea unei Chitanțe sau a unui Ordin de plată. Fiecare exercițiu financiar se afișează separat.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Field label="An">
-            <select className={inputCls} value={anSelectat} onChange={(e) => setAnSelectat(Number(e.target.value))}>
-              {aniDisponibili.map((an) => <option key={an} value={an}>{an}</option>)}
-            </select>
-          </Field>
-          <Btn variant="ghost" onClick={() => setTab("conturi")}>
-            <Landmark size={15} /> Articole bugetare
-          </Btn>
-          {!permisiuni.citireOnly && (
-            <Btn variant="verde" onClick={() => setShowChitanta(true)}>
-              <ArrowDownCircle size={15} /> Chitanță
+        <div className="flex flex-col gap-2 items-end">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Field label="An">
+              <select className={inputCls} value={anSelectat} onChange={(e) => setAnSelectat(Number(e.target.value))}>
+                {aniDisponibili.map((an) => <option key={an} value={an}>{an}</option>)}
+              </select>
+            </Field>
+            <div className="w-px h-8 bg-stone-300 mx-1" />
+            {!permisiuni.citireOnly && (
+              <Btn variant="verde" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowChitanta(true)}>
+                <ArrowDownCircle size={15} /> Chitanță
+              </Btn>
+            )}
+            {!permisiuni.citireOnly && permisiuni.poateEmiteOP && (
+              <Btn variant="primary" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowOP(true)}>
+                <ArrowUpCircle size={15} /> Ordin de plată
+              </Btn>
+            )}
+            {!permisiuni.citireOnly && (
+              <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowTransfer(true)}>
+                <ArrowLeftRight size={15} /> Transfer casă/bancă
+              </Btn>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setBrowseTip("incasare")}>
+              <FileText size={14} /> Chitanțe emise
             </Btn>
-          )}
-          <Btn variant="ghost" onClick={() => setBrowseTip("incasare")}>
-            <FileText size={14} /> Chitanțe emise
-          </Btn>
-          {!permisiuni.citireOnly && permisiuni.poateEmiteOP && (
-            <Btn variant="primary" onClick={() => setShowOP(true)}>
-              <ArrowUpCircle size={15} /> Ordin de plată
+            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setBrowseTip("plata")}>
+              <FileText size={14} /> Ordine de plată emise
             </Btn>
-          )}
-          <Btn variant="ghost" onClick={() => setBrowseTip("plata")}>
-            <FileText size={14} /> Ordine de plată emise
-          </Btn>
-          {!permisiuni.citireOnly && (
-            <Btn variant="ghost" onClick={() => setShowTransfer(true)}>
-              <ArrowLeftRight size={15} /> Transfer casă/bancă
+            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={genereazaRegistrulViramente}>
+              <FileText size={14} /> Registrul viramentelor ({anSelectat})
             </Btn>
-          )}
-          <Btn variant="ghost" onClick={genereazaRegistrulViramente}>
-            <FileText size={14} /> Registrul viramentelor ({anSelectat})
-          </Btn>
-          <Btn variant="ghost" onClick={() => setShowReconciliere(true)}>
-            <ClipboardCheck size={14} /> Reconciliere bancară
-          </Btn>
-          <ExportMenu titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`} columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
+            <div className="w-px h-6 bg-stone-300 mx-1" />
+            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setTab("conturi")}>
+              <Landmark size={15} /> Articole bugetare
+            </Btn>
+            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowReconciliere(true)}>
+              <ClipboardCheck size={14} /> Reconciliere bancară
+            </Btn>
+            <div className="w-px h-6 bg-stone-300 mx-1" />
+            <ExportMenu titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`} columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
+          </div>
         </div>
       </header>
 
@@ -4953,7 +4960,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
   }
 
   return (
-    <Modal title="Emitere document nou" onClose={onClose} wide>
+    <Modal title="Emitere document nou" onClose={onClose} wide className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
       <div className="flex flex-col gap-3">
         <DocumentHeader tip="Chitanță" nr={previewNr} an={an} />
         <p className="text-xs text-stone-500">
@@ -5186,7 +5193,7 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   }
 
   return (
-    <Modal title="Emitere document nou" onClose={onClose} wide>
+    <Modal title="Emitere document nou" onClose={onClose} wide className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
       <div className="flex flex-col gap-3">
         <DocumentHeader tip="Ordin de plată" nr={previewNr} an={an} />
         <p className="text-xs text-stone-500">
@@ -5363,7 +5370,7 @@ function TransferForm({ conturi, operatiuni, onClose, onSave }) {
   }
 
   return (
-    <Modal title={`Transfer intern${eDepozit ? " — depozit bancar (cont 5081)" : " casă ↔ bancă (cont 581)"}`} onClose={onClose}>
+    <Modal title={`Transfer intern${eDepozit ? " — depozit bancar (cont 5081)" : " casă ↔ bancă (cont 581)"}`} onClose={onClose} className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
       <div className="flex flex-col gap-3">
         <p className="text-xs text-stone-500">
           Generează automat două înregistrări pe contul {contTransfer}, cu sold net zero. Nu afectează Total venituri/cheltuieli.
@@ -5435,7 +5442,7 @@ function ReconciliereBancaraForm({ operatiuni, onClose }) {
   const potrivit = rezultat && Math.abs(rezultat.diferenta) < 0.01;
 
   return (
-    <Modal title="Reconciliere bancară" onClose={onClose}>
+    <Modal title="Reconciliere bancară" onClose={onClose} className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
       <div className="flex flex-col gap-3">
         <p className="text-xs text-stone-500">
           Introdu soldul de la finalul zilei, așa cum apare în extrasul de cont (sau în registrul de casă),
@@ -11417,14 +11424,14 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
   if (documente.length === 0) {
     return (
-      <Modal title={`${tipEtichetatPlural} — niciun document emis`} onClose={onClose}>
+      <Modal title={`${tipEtichetatPlural} — niciun document emis`} onClose={onClose} className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
         <p className="text-sm text-stone-500">Nu există încă niciun document de acest tip.</p>
       </Modal>
     );
   }
 
   return (
-    <Modal title={`Navigator documente — ${tipEtichetatPlural}`} onClose={onClose} wide>
+    <Modal title={`Navigator documente — ${tipEtichetatPlural}`} onClose={onClose} wide className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
       <div className="flex flex-col gap-3">
         <Card className="p-3 bg-stone-50 flex items-center justify-between">
           <span className="text-sm font-medium text-stone-600">
@@ -11479,7 +11486,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
         )}
 
         {confirmareStergere && (
-          <Modal title={`Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`} onClose={() => setConfirmareStergere(false)}>
+          <Modal title={`Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`} onClose={() => setConfirmareStergere(false)} className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
             <div className="flex flex-col gap-4">
               <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
                 <AlertTriangle size={16} className="shrink-0 mt-0.5" />
