@@ -4571,10 +4571,32 @@ function PartenerForm({ denumireInitiala, onClose, onSave }) {
 // Selector de partener, reutilizat peste tot (Chitanță, Ordin de plată, Furnizor NRCD) — sugestii
 // din baza de date pe măsură ce se tastează; dacă textul introdus nu corespunde exact niciunui
 // partener existent, la ieșirea din câmp se cere confirmare explicită înainte de a-l crea nou.
-function SelectorPartener({ value, onChange, parteneri, onCreatPartener, label, id, strict = true, autoCreeaza = false, sugestiiSuplimentare = [] }) {
+// Ordonează lista de parteneri după cel mai recent folosit (data ultimei operațiuni în care
+// apar ca `tert`), cei niciodată folosiți rămânând la coadă, alfabetic — folosit pentru ca
+// sugestiile din lista derulantă (Denumire partener/Furnizor) să arate întâi partenerii cu care
+// s-a lucrat de curând, nu ordinea brută din baza de date.
+function ordoneazaParteneriDupaRecenta(parteneri, operatiuni) {
+  const ultimaData = {};
+  for (const op of operatiuni || []) {
+    if (!op.tert) continue;
+    const cheie = op.tert.trim().toLowerCase();
+    if (!ultimaData[cheie] || op.data > ultimaData[cheie]) ultimaData[cheie] = op.data;
+  }
+  return [...parteneri].sort((a, b) => {
+    const da = ultimaData[a.denumire.trim().toLowerCase()];
+    const db = ultimaData[b.denumire.trim().toLowerCase()];
+    if (da && db) return da < db ? 1 : da > db ? -1 : 0;
+    if (da && !db) return -1;
+    if (!da && db) return 1;
+    return a.denumire.localeCompare(b.denumire);
+  });
+}
+
+function SelectorPartener({ value, onChange, parteneri, onCreatPartener, label, id, strict = true, autoCreeaza = false, sugestiiSuplimentare = [], operatiuni = [] }) {
   const [numeInAsteptare, setNumeInAsteptare] = useState(null);
   const [showPartenerNou, setShowPartenerNou] = useState(false);
   const listaId = `parteneri-${id || "implicit"}`;
+  const parteneriOrdonati = useMemo(() => ordoneazaParteneriDupaRecenta(parteneri, operatiuni), [parteneri, operatiuni]);
 
   async function handleBlur() {
     const v = (value || "").trim();
@@ -4604,7 +4626,7 @@ function SelectorPartener({ value, onChange, parteneri, onCreatPartener, label, 
         />
         <datalist id={listaId}>
           {sugestiiSuplimentare.map((s) => <option key={`extra-${s}`} value={s} />)}
-          {parteneri.map((p) => <option key={p.id} value={p.denumire} />)}
+          {parteneriOrdonati.map((p) => <option key={p.id} value={p.denumire} />)}
         </datalist>
       </Field>
 
@@ -4980,6 +5002,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
           id="chitanta" label="Denumire partener (donator/terț, opțional — poate rămâne anonim)"
           value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
           sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
+          operatiuni={operatiuni}
         />
 
         <div className="flex flex-col gap-2">
@@ -5188,6 +5211,7 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
           <SelectorPartener
             id="op" label="Denumire partener (beneficiarul plății)"
             value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener}
+            operatiuni={operatiuni}
           />
         )}
 
@@ -6500,6 +6524,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           onCreatPartener={onCreatPartener}
           furnizoriAutorizati={[state.parohie?.eparhie, state.parohie?.protoierie].filter(Boolean)}
           liniiInitiale={liniiReceptiePropuse}
+          operatiuni={state.operatiuni}
           onClose={() => { setShowReceptieNRCD(false); setLiniiReceptiePropuse(null); }}
           onSave={async (linii, opts) => { await receptieNRCD(linii, opts); setShowReceptieNRCD(false); setLiniiReceptiePropuse(null); }}
         />
@@ -7145,7 +7170,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
 // Recepție NRCD cu linii multiple — mai multe produse diferite, pe aceeași factură, exact ca la
 // o factură reală. Produsele se aleg strict din nomenclator (fără introducere manuală de text),
 // din listă derulantă — orice produs nou creat apare automat aici, fără nimic suplimentar.
-function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, liniiInitiale, onClose, onSave }) {
+function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, liniiInitiale, operatiuni, onClose, onSave }) {
   const [pas, setPas] = useState("detalii"); // detalii | decizie | acum | amanata
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
@@ -7226,7 +7251,7 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
             orice produs nou creat apare automat în listă.
           </p>
           <div className="grid grid-cols-3 gap-3">
-            <SelectorPartener id="nrcd" label="Furnizor" value={furnizor} onChange={setFurnizor} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false} autoCreeaza sugestiiSuplimentare={furnizoriAutorizati} />
+            <SelectorPartener id="nrcd" label="Furnizor" value={furnizor} onChange={setFurnizor} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false} autoCreeaza sugestiiSuplimentare={furnizoriAutorizati} operatiuni={operatiuni} />
             <Field label="Nr. factură">
               <input className={inputCls} value={nrFactura} onChange={(e) => setNrFactura(e.target.value)} />
             </Field>
@@ -7538,6 +7563,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, partene
           id="vanzare-pangar" label="Cumpărător (opțional)"
           value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
           sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
+          operatiuni={operatiuni}
         />
 
         <div className="flex flex-col gap-2">
