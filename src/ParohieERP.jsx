@@ -11153,7 +11153,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
   function intraInEditare() {
     setEditData({
-      data: docCurent.data, tert: docCurent.tert,
+      data: docCurent.data, tert: docCurent.tert, nr: String(docCurent.nr),
       linii: docCurent.linii.map((l) => ({
         id: l.id, contId: l.contId, suma: String(l.suma), explicatie: l.explicatie || "",
         modPlata: l.modPlata, ajustare106: !!l.ajustare106,
@@ -11201,6 +11201,10 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
   async function salveazaEditare() {
     if (!editData.data) { setEroareEdit("Data e obligatorie."); return; }
+    if (!editData.nr || !Number.isInteger(Number(editData.nr)) || Number(editData.nr) < 1) {
+      setEroareEdit("Numărul documentului trebuie să fie un întreg pozitiv.");
+      return;
+    }
     if (editData.linii.some((l) => !l.contId || l.suma === "" || Number(l.suma) < 0)) {
       setEroareEdit("Fiecare linie trebuie să aibă un cont și o sumă validă (0 e permis, pentru anularea unei linii deja emise — negativ nu).");
       return;
@@ -11252,10 +11256,12 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     setSalvandEdit(true);
     try {
       let liniiNoiInserate = [];
+      let renumerotariEditare = [];
       if (documentId) {
         // Documentul există în Supabase (migrat) — scriem acolo întâi, ca sursă de adevăr.
-        const rezultat = await actualizeazaDocument(documentId, { data: editData.data, tert: editData.tert }, editData.linii, idsDeSters);
+        const rezultat = await actualizeazaDocument(documentId, { data: editData.data, tert: editData.tert, nr: Number(editData.nr) }, editData.linii, idsDeSters);
         liniiNoiInserate = rezultat.liniiNoiInserate;
+        renumerotariEditare = rezultat.renumerotari || [];
       }
       let excedentActualizat = [];
       if (confirmareExcedent) {
@@ -11288,12 +11294,18 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
           const idsExcedent = new Set(excedentActualizat.map((o) => o.id));
           operatiuni = [...operatiuni.filter((op) => !idsExcedent.has(op.id)), ...excedentActualizat];
         }
+        // Editarea de dată/număr poate declanșa resincronizarea cronologică a întregii secvențe
+        // (tip+an) pe server — renumerotariEditare conține id-urile documentelor afectate, cu
+        // numărul lor nou. Le aplicăm aici la fel ca la orice altă operație de renumerotare
+        // (ștergere, recepție Pangar etc.), prin helper-ul existent aplicaRenumerotari.
+        let sPatched = aplicaRenumerotari({ ...s, operatiuni }, renumerotariEditare);
+        const nrFinal = renumerotariEditare.find((r) => r.documentId === documentId)?.nrNou ?? docCurent.nr;
         const mesajExcedent = confirmareExcedent
           ? ` — excedent reportat în Chitanța nr. 1/${anNou + 1} recalculat automat (Casă: ${fmt(confirmareExcedent.excedentNou.soldCasa)} RON, Bancă: ${fmt(confirmareExcedent.excedentNou.soldBanca)} RON)`
           : "";
         return {
-          ...s, operatiuni,
-          jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}${mesajExcedent}`),
+          ...sPatched,
+          jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare ${tipEtichetat.toLowerCase()} nr. ${nrFinal}/${docCurent.an}${mesajExcedent}`),
         };
       });
       setEditMode(false);
@@ -11486,10 +11498,16 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
         {editMode && editData && !confirmareExcedent && (
           <Card className="p-3 flex flex-col gap-3 border-[#B8860B]/40">
-            <Field label="Data">
-              <input type="date" className={inputCls} value={editData.data} onChange={(e) => setEditData((d) => ({ ...d, data: e.target.value }))} />
-              {editData.data && <span className="text-xs text-stone-400">{fmtDataJurnal(editData.data)}</span>}
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Data">
+                <input type="date" className={inputCls} value={editData.data} onChange={(e) => setEditData((d) => ({ ...d, data: e.target.value }))} />
+                {editData.data && <span className="text-xs text-stone-400">{fmtDataJurnal(editData.data)}</span>}
+              </Field>
+              <Field label="Nr.">
+                <input type="number" step="1" min="1" className={inputCls} value={editData.nr} onChange={(e) => setEditData((d) => ({ ...d, nr: e.target.value }))} />
+                <span className="text-xs text-stone-400">La salvare, întreaga secvență {tipEtichetatPlural.toLowerCase()} din {docCurent.an} se resincronizează cronologic după dată — numărul final poate diferi de cel introdus aici dacă alte documente au date apropiate.</span>
+              </Field>
+            </div>
             <Field label="Denumire partener">
               <input className={inputCls} value={editData.tert || ""} onChange={(e) => setEditData((d) => ({ ...d, tert: e.target.value }))} />
             </Field>
