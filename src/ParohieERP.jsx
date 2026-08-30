@@ -11132,12 +11132,15 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
           jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an} (vânzare pangar — stoc restituit)`),
         }));
       } else {
-        await stergeDocument(documentIdCurent);
-        setState((s) => ({
-          ...s,
-          operatiuni: s.operatiuni.filter((op) => op.documentId !== documentIdCurent),
-          jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`),
-        }));
+        const rezultat = await stergeDocument(documentIdCurent);
+        setState((s) => {
+          const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+          return {
+            ...sPatched,
+            operatiuni: sPatched.operatiuni.filter((op) => op.documentId !== documentIdCurent),
+            jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`),
+          };
+        });
       }
       setConfirmareStergere(false);
       setIndex((i) => Math.max(0, i - 1));
