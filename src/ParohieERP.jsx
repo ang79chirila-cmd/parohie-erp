@@ -5092,20 +5092,23 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   const totalCasa = linii.filter((l) => l.modPlata === "numerar").reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
   const totalBanca = linii.filter((l) => l.modPlata === "transfer").reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
 
-  // Articolele bugetare 655.01 (cotă Eparhie) și 655.02 (cotă Protoierie) au un singur
-  // partener posibil, determinat automat de contul ales — nu se mai completează manual.
+  // 655.02 (cotă Protoierie) are un singur partener posibil, determinat automat — nu se
+  // completează manual. 655.01 (cotă Eparhie) poate fi achitat fie direct către Eparhie, fie
+  // prin Protoierie (colectare intermediată) — userul alege dintre cele două, nu e impus automat.
   const are655_01 = linii.some((l) => l.contId === "655.01");
   const are655_02 = linii.some((l) => l.contId === "655.02");
   const conflict655 = are655_01 && are655_02;
-  const partenerFortat = are655_01 ? eparhie : are655_02 ? protoierie : null;
+  const partenerFortat = are655_02 ? protoierie : null;
 
   useEffect(() => {
     if (partenerFortat) {
       setTert(partenerFortat);
+    } else if (are655_01) {
+      setTert((t) => (t === eparhie || t === protoierie ? t : eparhie));
     } else {
       setTert((t) => (t === eparhie || t === protoierie ? "" : t));
     }
-  }, [partenerFortat, eparhie, protoierie]);
+  }, [partenerFortat, are655_01, eparhie, protoierie]);
 
   function actualizeazaLinie(id, patch) {
     setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -5128,8 +5131,8 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
       setError("Articolele 655.01 (cotă Eparhie) și 655.02 (cotă Protoierie) nu pot fi combinate în același ordin de plată — au parteneri diferiți. Emiteți două ordine separate.");
       return false;
     }
-    if (are655_01 && !eparhie) {
-      setError("Eparhia nu e completată în Date parohie — completeaz-o acolo înainte de a emite plata pe contul 655.01.");
+    if (are655_01 && !eparhie && !protoierie) {
+      setError("Nici Eparhia, nici Protoieria nu sunt completate în Date parohie — completează cel puțin una înainte de a emite plata pe contul 655.01.");
       return false;
     }
     if (are655_02 && !protoierie) {
@@ -5207,9 +5210,15 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
         {partenerFortat ? (
           <Field label="Denumire partener (beneficiarul plății) — determinat automat de articolul bugetar">
             <input className={inputCls} value={partenerFortat} disabled />
-            <span className="text-xs text-stone-400">
-              {are655_01 ? "Contul 655.01 (cotă Eparhie) are un singur partener posibil: Eparhia." : "Contul 655.02 (cotă Protoierie) are un singur partener posibil: Protoieria."}
-            </span>
+            <span className="text-xs text-stone-400">Contul 655.02 (cotă Protoierie) are un singur partener posibil: Protoieria.</span>
+          </Field>
+        ) : are655_01 ? (
+          <Field label="Denumire partener (beneficiarul plății)">
+            <select className={inputCls} value={tert} onChange={(e) => setTert(e.target.value)}>
+              {eparhie && <option value={eparhie}>{eparhie}</option>}
+              {protoierie && <option value={protoierie}>{protoierie}</option>}
+            </select>
+            <span className="text-xs text-stone-400">Contul 655.01 (cotă Eparhie) poate fi achitat fie direct către Eparhie, fie prin Protoierie.</span>
           </Field>
         ) : (
           <SelectorPartener
