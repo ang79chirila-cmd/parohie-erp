@@ -4011,11 +4011,13 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     [state.operatiuni]
   );
   // Ultima Serie+Număr de pe chitanțier folosită — pentru continuarea automată a numerotării
-  // fizice, în interiorul aceluiași volum de 50.
+  // fizice, în interiorul aceluiași volum de 50. Baza e chitanța cea mai RECENTĂ din secvența
+  // internă (an, apoi nr) — nu pur și simplu cel mai mare număr de chitanțier folosit vreodată,
+  // pentru că volumele fizice pot fi puse în uz intercalat, nu strict în ordinea numerotării lor.
   const ultimaSerieNumarChitanta = useMemo(() => {
     const cuIdentificare = state.operatiuni.filter((op) => op.tip === "incasare" && op.serie && op.numarIdentificare);
     if (cuIdentificare.length === 0) return null;
-    return cuIdentificare.reduce((max, op) => (op.numarIdentificare > max.numarIdentificare ? op : max));
+    return cuIdentificare.reduce((max, op) => (op.an > max.an || (op.an === max.an && op.nr > max.nr) ? op : max));
   }, [state.operatiuni]);
 
   function addOperatiune(op) {
@@ -5711,10 +5713,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // Ultima Serie+Număr de pe chitanțier folosită — pentru continuarea automată a numerotării
   // fizice (aceeași sursă/logică ca la Chitanța generală din OperatiuniTab; un singur chitanțier
   // fizic, indiferent dacă chitanța provine dintr-o vânzare Pangar sau dintr-o încasare generală).
+  // Baza e chitanța cea mai recentă din secvența internă (an, apoi nr), nu cel mai mare număr de
+  // chitanțier folosit vreodată — vezi explicația din OperatiuniTab.
   const ultimaSerieNumarChitanta = useMemo(() => {
     const cuIdentificare = state.operatiuni.filter((op) => op.tip === "incasare" && op.serie && op.numarIdentificare);
     if (cuIdentificare.length === 0) return null;
-    return cuIdentificare.reduce((max, op) => (op.numarIdentificare > max.numarIdentificare ? op : max));
+    return cuIdentificare.reduce((max, op) => (op.an > max.an || (op.an === max.an && op.nr > max.nr) ? op : max));
   }, [state.operatiuni]);
   const [editReceptieFor, setEditReceptieFor] = useState(null);
   const [editVanzareFor, setEditVanzareFor] = useState(null);
