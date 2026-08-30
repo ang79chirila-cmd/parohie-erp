@@ -941,7 +941,9 @@ function useFiltrareColoane(rows, config) {
   function sugestiiPentru(cheie) {
     if (!config[cheie]) return [];
     const valori = new Set(rows.map((r) => String(config[cheie].get(r) ?? "")).filter(Boolean));
-    return [...valori].sort();
+    // Sortare naturală (numerică pentru șiruri de cifre, alfabetică altfel) — ca 1, 2, ... 10, 11
+    // să apară în ordine logică, nu lexicografică ("1", "10", "11", "2", ...).
+    return [...valori].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
   }
 
   return { filtre, setFiltre, procesate, sugestiiPentru };
