@@ -1351,10 +1351,58 @@ export async function marcheazaNRCDAchitat(documentId) {
 // verifice ÎNAINTE că documentul e eligibil pentru ștergere (nu e excedent reportat, nu e legat
 // de stocuri Pangar, nu e virament intern 581); funcția aceasta doar execută ștergerea propriu-zisă.
 export async function stergeDocument(documentId) {
+  const { data: doc, error: errGet } = await supabase
+    .from("documente")
+    .select("id, parohie_id, tip, an, nr")
+    .eq("id", documentId)
+    .single();
+  if (errGet) throw errGet;
+
   const { error: errLinii } = await supabase.from("linii_document").delete().eq("document_id", documentId);
   if (errLinii) throw errLinii;
   const { error: errDoc } = await supabase.from("documente").delete().eq("id", documentId);
   if (errDoc) throw errDoc;
+
+  // Renumerotare: toate documentele de același tip/an, cu numărul mai mare decât cel șters,
+  // coboară cu 1 — ca să nu rămână goluri în secvență după ștergere.
+  const { data: afectate, error: errSel } = await supabase
+    .from("documente")
+    .select("id, nr")
+    .eq("parohie_id", doc.parohie_id)
+    .eq("tip", doc.tip)
+    .eq("an", doc.an)
+    .gt("nr", doc.nr)
+    .order("nr", { ascending: true });
+  if (errSel) throw errSel;
+
+  const renumerotari = [];
+  for (const d of afectate || []) {
+    const nrNou = d.nr - 1;
+    const { error: errUpd } = await supabase.from("documente").update({ nr: nrNou }).eq("id", d.id);
+    if (errUpd) throw errUpd;
+    renumerotari.push({ documentId: d.id, nrNou });
+  }
+
+  // Resincronizare contor pe MAX(nr) rămas — ca următorul document emis manual să continue corect.
+  const { data: maxRow } = await supabase
+    .from("documente")
+    .select("nr")
+    .eq("parohie_id", doc.parohie_id)
+    .eq("tip", doc.tip)
+    .eq("an", doc.an)
+    .order("nr", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const maxNr = maxRow?.nr || 0;
+  const tipLocal = doc.tip === "chitanta" ? "incasare" : doc.tip === "ordin_plata" ? "plata" : doc.tip;
+  await supabase
+    .from("contoare")
+    .update({ ultimul_numar: maxNr })
+    .eq("parohie_id", doc.parohie_id)
+    .eq("an", doc.an)
+    .eq("tip", tipLocal);
+
+  return { renumerotari };
 }
 
 /* --------------------------------- Parteneri --------------------------------- */
