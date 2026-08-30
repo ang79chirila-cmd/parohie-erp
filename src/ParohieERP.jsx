@@ -4489,6 +4489,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           parohieId={parohieId}
           miscariStoc={state.miscariStoc}
           articole={state.articole}
+          parteneri={parteneri}
+          onCreatPartener={onCreatPartener}
           saltInitialNr={browseSaltNr}
           onClose={() => { setBrowseTip(null); setBrowseSaltNr(null); }}
         />
@@ -11045,7 +11047,7 @@ function DocumentArhivaForm({ onClose, onSave }) {
 
 /* ------------------------------ Navigator documente (Chitanțe / Ordine de plată) -------------------------------- */
 
-function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, saltInitialNr, onClose }) {
+function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, parteneri, onCreatPartener, saltInitialNr, onClose }) {
   // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
   // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
   // Viramentele interne (581/5081) au propriul bazin de numerotare, izolat, care se poate suprapune
@@ -11567,9 +11569,12 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
                 <span className="text-xs text-stone-400">La salvare, întreaga secvență {tipEtichetatPlural.toLowerCase()} din {docCurent.an} se resincronizează cronologic după dată — numărul final poate diferi de cel introdus aici dacă alte documente au date apropiate.</span>
               </Field>
             </div>
-            <Field label="Denumire partener">
-              <input className={inputCls} value={editData.tert || ""} onChange={(e) => setEditData((d) => ({ ...d, tert: e.target.value }))} />
-            </Field>
+            <SelectorPartener
+              id="editare-document" label="Denumire partener"
+              value={editData.tert || ""} onChange={(v) => setEditData((d) => ({ ...d, tert: v }))}
+              parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
+              operatiuni={operatiuni}
+            />
             <div className="flex flex-col gap-2">
               <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Linii</div>
               {editData.linii.map((l, i) => {
