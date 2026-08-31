@@ -1266,6 +1266,13 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   const titlu = `JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`;
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
 
+  // Normalizare Unicode (NFC) — datele introduse de utilizator (denumire parohie, eparhie,
+  // partener, explicație etc.) pot ajunge stocate cu diacritice DESCOMPUSE (literă de bază +
+  // semn combinator separat, ex. la copy-paste între sisteme diferite) — jsPDF nu recompune
+  // vizual aceste secvențe, ceea ce lăsa goluri vizibile în locul literelor cu diacritice.
+  // Normalizarea la forma compusă (NFC) înainte de desenare rezolvă asta din start.
+  const uni = (s) => String(s ?? "").normalize("NFC");
+
   const doc = new jsPDF({
     orientation: orientare === "landscape" ? "landscape" : "portrait",
     unit: "mm",
@@ -1284,14 +1291,14 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   // ca să păstrăm minimul de context (parohie, titlu, dată) și pe acest raport.
   doc.setFont("NotoSans", "bold");
   doc.setFontSize(16);
-  doc.text(String(p.denumire || "Parohia"), 14, 20);
+  doc.text(uni(p.denumire || "Parohia"), 14, 20);
   doc.setFont("NotoSans", "normal");
   doc.setFontSize(10);
-  doc.text(`Eparhia: ${p.eparhie || "—"}    Protoieria: ${p.protoierie || "—"}    CIF: ${p.cif || "—"}`, 14, 28);
+  doc.text(uni(`Eparhia: ${p.eparhie || "—"}    Protoieria: ${p.protoierie || "—"}    CIF: ${p.cif || "—"}`), 14, 28);
   doc.setFontSize(13);
-  doc.text(titlu, 14, 40);
+  doc.text(uni(titlu), 14, 40);
   doc.setFontSize(9);
-  doc.text(`Document generat automat la data de ${azi}.`, 14, 47);
+  doc.text(uni(`Document generat automat la data de ${azi}.`), 14, 47);
   doc.addPage();
 
   const idxIncasare = coloane.findIndex((c) => c.key === "incasare");
@@ -1345,6 +1352,14 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     showFoot: "everyPage",
     body: bodyCells,
     didParseCell: (data) => {
+      // Normalizare NFC universală, pe orice text ajunge într-o celulă (antet, corp, subsol) —
+      // acoperă atât etichetele fixe cât și datele introduse de utilizator (partener, explicație,
+      // denumirea contului etc.), indiferent de forma Unicode în care au fost stocate.
+      if (Array.isArray(data.cell.text)) {
+        data.cell.text = data.cell.text.map((t) => uni(t));
+      } else if (typeof data.cell.text === "string") {
+        data.cell.text = uni(data.cell.text);
+      }
       if (data.section === "body" && data.column.index === 0) {
         rulajIncasari += incasareNumeric[data.row.index] || 0;
         rulajPlati += plataNumeric[data.row.index] || 0;
@@ -1386,8 +1401,8 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   });
 
   doc.setFontSize(8);
-  doc.text(`Preot Paroh: ${p.preotParoh || "—"}`, 14, doc.internal.pageSize.getHeight() - 10);
-  doc.text(`Data: ${azi}`, doc.internal.pageSize.getWidth() - 40, doc.internal.pageSize.getHeight() - 10);
+  doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), 14, doc.internal.pageSize.getHeight() - 10);
+  doc.text(uni(`Data: ${azi}`), doc.internal.pageSize.getWidth() - 40, doc.internal.pageSize.getHeight() - 10);
 
   // Deschidem PDF-ul într-un tab nou (vizualizatorul PDF nativ al browserului), nu descărcare
   // directă — la fel ca restul rapoartelor, care deschid o fereastră/tab, lăsând userul să aleagă
