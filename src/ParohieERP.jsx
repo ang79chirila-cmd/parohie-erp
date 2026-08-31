@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { supabase } from "./supabaseClient";
 import { gasesteParohieDupaCif, logare, delogare, creeazaCont, tokenSesiuneCurenta } from "./authSupabase";
 import {
@@ -1247,6 +1249,142 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
   setTimeout(() => win.print(), 300);
 }
 
+// Variantă DEDICATĂ, pe jsPDF + AutoTable, doar pentru Jurnalul de Venituri și Cheltuieli —
+// singurul raport unde userul a cerut explicit total CUMULAT (de la documentul nr. 1) pe ultima
+// linie a fiecărei pagini, reportat identic pe prima linie a paginii următoare (ca "soldul
+// reportat" dintr-un registru contabil fizic). Restul rapoartelor din aplicație folosesc în
+// continuare exportPDF (tipărire HTML via browser), care nu poate face asta: la acea variantă,
+// paginarea o decide motorul de printare al browserului, iar JS-ul care generează tabelul nu
+// știe niciodată unde anume cade o pagină — deci nu poate calcula "ultimul rând de pe pagina N".
+// Aici, jsPDF+AutoTable calculează exact paginarea, ceea ce permite hook-uri (didParseCell la
+// rânduri, willDrawCell la subsol/antet) care actualizează un total viu, rulant, în timp ce
+// tabelul se desenează — subsolul arată mereu totalul de la nr. 1 până la ultimul rând desenat pe
+// acea pagină; la începutul paginii următoare, un rând special de antet arată același total,
+// "înghețat" chiar înainte ca pagina nouă să înceapă (nu se mai schimbă până la propriul ei subsol).
+function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, parohie, anSelectat, dataRaportCurenta, orientare, formatHartie) {
+  const p = parohie || {};
+  const titlu = `JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`;
+  const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
+
+  const doc = new jsPDF({
+    orientation: orientare === "landscape" ? "landscape" : "portrait",
+    unit: "mm",
+    format: (formatHartie || "A4").toLowerCase(),
+  });
+
+  // Pagină de copertă, redusă (fără fontul arhaic, disponibil doar în varianta HTML/print) — doar
+  // ca să păstrăm minimul de context (parohie, titlu, dată) și pe acest raport.
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text(String(p.denumire || "Parohia"), 14, 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Eparhia: ${p.eparhie || "—"}    Protoieria: ${p.protoierie || "—"}    CIF: ${p.cif || "—"}`, 14, 28);
+  doc.setFontSize(13);
+  doc.text(titlu, 14, 40);
+  doc.setFontSize(9);
+  doc.text(`Document generat automat la data de ${azi}.`, 14, 47);
+  doc.addPage();
+
+  const idxIncasare = coloane.findIndex((c) => c.key === "incasare");
+  const idxPlata = coloane.findIndex((c) => c.key === "plata");
+  const nrColoane = coloane.length;
+
+  const bodyCells = randuri.map((r) => {
+    const eViramente = r.cont?.clasa === "viramente";
+    return [
+      r.nrCrt,
+      fmtDataJurnal(r.op.data),
+      r.op.tip === "incasare" && !eViramente ? `${r.op.nr}${r.op.serie && r.op.numarIdentificare ? ` (${r.op.serie} ${r.op.numarIdentificare})` : ""}` : "",
+      r.op.tip === "plata" && !eViramente ? `${r.op.nr}` : "",
+      r.cont ? r.cont.simbol : r.op.contId,
+      r.op.tert || "",
+      r.op.explicatie || r.cont?.denumire || "",
+      r.op.tip === "incasare" ? fmt(r.op.suma) : "",
+      r.op.tip === "plata" ? (r.op.contId === "581" ? `(${fmt(r.op.suma)})` : fmt(r.op.suma)) : "",
+      r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă",
+      fmt(r.soldFinal),
+      fmt(r.soldBanca),
+      fmt(r.soldCasa),
+      ...(soldDepozitAn !== 0 ? [fmt(r.soldDepozit)] : []),
+    ];
+  });
+  // Sumele cumulate exclud viramentele interne (581/5081) — exact ca "TOTAL" de pe ecran (vezi
+  // totalIncasariAfisate/totalPlatiAfisate din OperatiuniTab).
+  const incasareNumeric = randuri.map((r) => (r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? r.op.suma : 0));
+  const plataNumeric = randuri.map((r) => (r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? r.op.suma : 0));
+
+  let rulajIncasari = 0;
+  let rulajPlati = 0;
+  let rulajIncasariAnterior = 0;
+  let rulajPlatiAnterior = 0;
+
+  autoTable(doc, {
+    startY: 14,
+    margin: { top: 14 },
+    styles: { fontSize: 7, cellPadding: 1.2 },
+    headStyles: { fillColor: [31, 56, 100], textColor: 255 },
+    footStyles: { fillColor: [231, 229, 228], textColor: [41, 37, 36], fontStyle: "bold" },
+    head: [
+      coloane.map((c) => c.label),
+      // Rând special, needitat de datele reale — arată reportul de pe pagina precedentă. Pe
+      // pagina 1 rămâne gol (nu există nimic de reportat). Conținutul e completat/suprascris
+      // efectiv în willDrawCell, mai jos.
+      coloane.map(() => ""),
+    ],
+    foot: [coloane.map(() => "")],
+    showHead: "everyPage",
+    showFoot: "everyPage",
+    body: bodyCells,
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === 0) {
+        rulajIncasari += incasareNumeric[data.row.index] || 0;
+        rulajPlati += plataNumeric[data.row.index] || 0;
+      }
+    },
+    willDrawCell: (data) => {
+      if (data.section === "head" && data.row.index === 1) {
+        // Al doilea rând de antet = reportul din pagina precedentă (gol pe pagina 1).
+        if (data.pageNumber === 1) {
+          data.cell.text = [""];
+        } else if (data.column.index === 0) {
+          data.cell.text = ["REPORT DIN PAGINA PRECEDENTĂ"];
+        } else if (data.column.index === idxIncasare) {
+          data.cell.text = [fmt(rulajIncasariAnterior)];
+        } else if (data.column.index === idxPlata) {
+          data.cell.text = [fmt(rulajPlatiAnterior)];
+        } else {
+          data.cell.text = [""];
+        }
+      }
+      if (data.section === "foot" && data.row.index === 0) {
+        if (data.column.index === 0) {
+          data.cell.text = ["TOTAL ÎNCASĂRI / TOTAL PLĂȚI — CUMULAT DE LA NR. 1"];
+        } else if (data.column.index === idxIncasare) {
+          data.cell.text = [fmt(rulajIncasari)];
+        } else if (data.column.index === idxPlata) {
+          data.cell.text = [fmt(rulajPlati)];
+        } else {
+          data.cell.text = [""];
+        }
+      }
+    },
+    didDrawPage: () => {
+      // Se "îngheață" reportul chiar la finalul paginii curente, ca antetul paginii URMĂTOARE
+      // să-l poată reproduce identic pe primul rând.
+      rulajIncasariAnterior = rulajIncasari;
+      rulajPlatiAnterior = rulajPlati;
+    },
+  });
+
+  doc.setFontSize(8);
+  doc.text(`Preot Paroh: ${p.preotParoh || "—"}`, 14, doc.internal.pageSize.getHeight() - 10);
+  doc.text(`Data: ${azi}`, doc.internal.pageSize.getWidth() - 40, doc.internal.pageSize.getHeight() - 10);
+
+  doc.save(`${titlu}.pdf`);
+}
+
+
 // Variantă a exportPDF pentru rapoarte cu tabele SEPARATE per grup (ex. Partizi — un tabel
 // distinct per articol bugetar, cu codul+denumirea articolului scrise deasupra tabelului, nu ca
 // rând în el). `grupuri` = [{ eticheta, columns, rows }, ...] — fiecare grup e independent, poate
@@ -1699,7 +1837,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
   setTimeout(() => win.print(), 300);
 }
 
-function ExportMenu({ titlu, columns, rows, parohie }) {
+function ExportMenu({ titlu, columns, rows, parohie, customPdf }) {
   const [open, setOpen] = useState(false);
   const [dataRaport, setDataRaport] = useState(todayISO());
   const [orientare, setOrientare] = useState("portrait");
@@ -1715,6 +1853,17 @@ function ExportMenu({ titlu, columns, rows, parohie }) {
   function run(fn) {
     fn(titlu, columns, rows, parohie, dataRaport, orientare, formatHartie);
     setOpen(false);
+  }
+
+  // "PDF" foloseşte generatorul dedicat (jsPDF, cu paginare exactă) doar dacă e furnizat explicit
+  // prin `customPdf` — altfel rămâne varianta generică (tipărire HTML), ca la toate celelalte rapoarte.
+  function runPdf() {
+    if (customPdf) {
+      customPdf({ dataRaport, orientare, formatHartie });
+      setOpen(false);
+    } else {
+      run(exportPDF);
+    }
   }
 
   return (
@@ -1751,7 +1900,7 @@ function ExportMenu({ titlu, columns, rows, parohie }) {
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-20 py-1 min-w-[140px]">
-            <button onClick={() => run(exportPDF)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
+            <button onClick={runPdf} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
               <FileText size={14} className="text-rose-600" /> PDF
             </button>
             <button onClick={() => run(exportXLSX)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
@@ -4314,7 +4463,15 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <ClipboardCheck size={14} /> Reconciliere bancară
             </Btn>
             <div className="w-px h-6 bg-stone-300 mx-1" />
-            <ExportMenu titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`} columns={coloaneJurnal} rows={randuriExportJurnal} parohie={state.parohie} />
+            <ExportMenu
+              titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`}
+              columns={coloaneJurnal}
+              rows={randuriExportJurnal}
+              parohie={state.parohie}
+              customPdf={({ dataRaport, orientare, formatHartie }) =>
+                genereazaJurnalPDFCuTotalCumulat(randuri, coloaneJurnal, soldDepozitAn, state.parohie, anSelectat, dataRaport, orientare, formatHartie)
+              }
+            />
           </div>
         </div>
       </header>
