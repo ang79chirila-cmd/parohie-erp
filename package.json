@@ -35,23 +35,10 @@
   "build": {
     "appId": "ro.parohie.erp",
     "productName": "ParohieERP",
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "mac": {
-      "target": "dmg",
-      "category": "public.app-category.business"
-    },
-    "win": {
-      "target": "nsis"
-    },
-    "linux": {
-      "target": "AppImage",
-      "category": "Office"
-    }
+    "files": ["dist/**/*", "electron/**/*"],
+    "directories": { "output": "release" },
+    "mac": { "target": "dmg", "category": "public.app-category.business" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage", "category": "Office" }
   }
 }
