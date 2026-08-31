@@ -71,6 +71,16 @@ function construiesteBugetDinPrevederi(prevederiBugetare) {
 }
 const yearOf = (dateStr) => Number(dateStr.slice(0, 4));
 
+// Ultimul document emis de un anumit tip ("incasare", "plata", "nrcd" etc.), determinat după
+// (an, nr) — nu după data lui, ca introducerea manuală, retroactivă, a unor documente vechi să
+// nu strice ce înseamnă "precedentul". Folosit ca bază pentru data implicită a unui document nou
+// (continuă cronologic de la precedentul, nu de la data de azi) și pentru continuarea Serie+Număr.
+function ultimulDocumentDeTip(operatiuni, tip) {
+  const relevante = operatiuni.filter((op) => op.tip === tip);
+  if (relevante.length === 0) return null;
+  return relevante.reduce((max, op) => (op.an > max.an || (op.an === max.an && op.nr > max.nr) ? op : max));
+}
+
 // Nomenclator oficial de articole bugetare (BVC), furnizat de parohie — 83 de articole,
 // plus cele două conturi speciale (106, 581). Sursă: "Art_bug_BVC.xlsx" (document propriu).
 function seedAccounts() {
@@ -4875,8 +4885,13 @@ function PrevederiBugetareForm({ conturi, an, obligatoriu, modCorectie, liniiIni
 function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
   // Dacă userul lucra pe un an anterior (reconstituire) în Registru Jurnal, formularul pornește
   // cu 1 ianuarie din acel an, nu cu data de azi — altfel prima dată implicită "trăgea" documentul
-  // spre anul curent, indiferent pe ce an lucra efectiv userul.
-  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  // spre anul curent, indiferent pe ce an lucra efectiv userul. Dar dacă există deja o chitanță
+  // anterioară (indiferent de an), data implicită continuă de la EA — introducere manuală,
+  // cronologică, de documente istorice, nu data de azi.
+  const ultimaChitantaEmisa = useMemo(() => ultimulDocumentDeTip(operatiuni, "incasare"), [operatiuni]);
+  const dataImplicita = ultimaChitantaEmisa
+    ? ultimaChitantaEmisa.data
+    : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
   const [modPlataImplicit, setModPlataImplicit] = useState("numerar"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
@@ -5081,7 +5096,10 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
 
 function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, eparhie, protoierie, onClose, onSave }) {
   // Aceeași corecție ca la ChitantaForm — vezi explicația de-acolo.
-  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  const ultimulOPEmis = useMemo(() => ultimulDocumentDeTip(operatiuni, "plata"), [operatiuni]);
+  const dataImplicita = ultimulOPEmis
+    ? ultimulOPEmis.data
+    : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
   const [modPlataImplicit, setModPlataImplicit] = useState("transfer"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
@@ -7199,7 +7217,10 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
   // Aceeași corecție ca la ChitantaForm/OrdinPlataForm/VanzareMultiplaForm — vezi explicația de-acolo.
-  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  const ultimulNRCDEmis = useMemo(() => ultimulDocumentDeTip(operatiuni, "nrcd"), [operatiuni]);
+  const dataImplicita = ultimulNRCDEmis
+    ? ultimulNRCDEmis.data
+    : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
   const [linii, setLinii] = useState(liniiInitiale || [{ id: uid(), articolId: "", cantitate: "" }]);
   const [modPlata, setModPlata] = useState("transfer");
@@ -7412,8 +7433,12 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
 }
 
 function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
-  // Aceeași corecție ca la ChitantaForm/OrdinPlataForm — vezi explicația de-acolo.
-  const dataImplicita = anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
+  // Aceeași corecție ca la ChitantaForm/OrdinPlataForm — vezi explicația de-acolo. Vânzarea pangar
+  // e tot o chitanță, deci continuă din aceeași secvență (tip "incasare") ca ChitantaForm.
+  const ultimaChitantaEmisa = useMemo(() => ultimulDocumentDeTip(operatiuni, "incasare"), [operatiuni]);
+  const dataImplicita = ultimaChitantaEmisa
+    ? ultimaChitantaEmisa.data
+    : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
   const [tert, setTert] = useState("");
   const [modPlata, setModPlata] = useState("numerar");
