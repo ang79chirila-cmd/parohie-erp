@@ -1366,11 +1366,23 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // Normalizare NFC universală, pe orice text ajunge într-o celulă (antet, corp, subsol) —
       // acoperă atât etichetele fixe cât și datele introduse de utilizator (partener, explicație,
       // denumirea contului etc.), indiferent de forma Unicode în care au fost stocate.
+      // IMPORTANT: acest hook rulează în faza de CALCUL a tabelului (măsurare/paginare), înainte
+      // ca vreo pagină să fie efectiv desenată — trece o singură dată prin toate rândurile,
+      // dintr-o singură "trecere". De aceea normalizarea de text e sigură aici (nu depinde de
+      // ordinea paginilor), dar acumularea rulajului NU e sigură aici — vezi didDrawCell mai jos.
       if (Array.isArray(data.cell.text)) {
         data.cell.text = data.cell.text.map((t) => uni(t));
       } else if (typeof data.cell.text === "string") {
         data.cell.text = uni(data.cell.text);
       }
+    },
+    didDrawCell: (data) => {
+      // Acumularea rulajului trebuie să se facă AICI, nu în didParseCell — didDrawCell rulează în
+      // faza reală de desenare, pagină cu pagină, în ordine cronologică adevărată. didParseCell
+      // rulează într-o fază de calcul separată care parcurge toate rândurile dintr-o dată, înainte
+      // ca prima pagină să fie desenată — folosirea lui pentru rulaj producea totalul final
+      // (al tuturor celor 154 de rânduri) pe FIECARE pagină, în loc de totalul cumulat real până
+      // în acel punct al paginii respective.
       if (data.section === "body" && data.column.index === 0) {
         rulajIncasari += incasareNumeric[data.row.index] || 0;
         rulajPlati += plataNumeric[data.row.index] || 0;
