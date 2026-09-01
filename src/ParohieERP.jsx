@@ -1314,6 +1314,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
 
   const idxIncasare = coloane.findIndex((c) => c.key === "incasare");
   const idxPlata = coloane.findIndex((c) => c.key === "plata");
+  const idxExplicatie = coloane.findIndex((c) => c.key === "explicatie");
   const nrColoane = coloane.length;
 
   const bodyCells = randuri.map((r) => {
@@ -1339,26 +1340,50 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   // totalIncasariAfisate/totalPlatiAfisate din OperatiuniTab).
   const incasareNumeric = randuri.map((r) => (r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? r.op.suma : 0));
   const plataNumeric = randuri.map((r) => (r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? r.op.suma : 0));
+  // Totalul general (grand total) e cunoscut din start — este cea mai lungă valoare numerică ce va
+  // apărea vreodată în coloanele Încasare/Plată (rulajul crește monoton spre el). Îl folosim ca
+  // seed în head/foot ÎNAINTE de desenare, ca AutoTable să rezerve lățimea de coloană corectă din
+  // faza de calcul, nu abia la desenare — vezi explicația din comentariile de mai jos.
+  const totalGeneralIncasari = incasareNumeric.reduce((a, b) => a + b, 0);
+  const totalGeneralPlati = plataNumeric.reduce((a, b) => a + b, 0);
 
   let rulajIncasari = 0;
   let rulajPlati = 0;
   let rulajIncasariAnterior = 0;
   let rulajPlatiAnterior = 0;
 
+  // Rândul special de antet (reportul din pagina precedentă) și cel de subsol (totalul cumulat).
+  // Coloanele Încasare/Plată sunt pre-populate cu TOTALUL GENERAL (cea mai lată valoare posibilă),
+  // ca AutoTable să rezerve lățimea corectă din start pentru cifre. Coloana Explicație rămâne
+  // goală aici în mod intenționat — eticheta lungă ("TOTAL ÎNCASĂRI...", "REPORT DIN...") NU mai
+  // e încredințată sistemului de celule al AutoTable deloc (nici măcar pre-populată din start):
+  // cu 13-14 coloane, lățimea disponibilă per coloană e prea mică pentru ca AutoTable să
+  // încadreze corect o propoziție întreagă pe mai multe linii — s-a confirmat concret (extragere
+  // de text din PDF) că trunchia caractere ("...CUMULAT DE LA" fără "NR. 1"), indiferent unde
+  // puneam textul sau cât de din timp îl "semănam". Soluția robustă: desenăm eticheta NOI ÎNȘINE,
+  // cu doc.splitTextToSize() + doc.text() (vezi didDrawCell mai jos) — mecanism jsPDF nativ care
+  // împarte textul pe atâtea linii cât e nevoie, fără să piardă vreodată vreun caracter.
+  const ETICHETA_REPORT = "REPORT DIN PAGINA PRECEDENTĂ";
+  const ETICHETA_TOTAL = "TOTAL ÎNCASĂRI / TOTAL PLĂȚI — CUMULAT DE LA NR. 1";
+  const randAntetReport = coloane.map((c) => {
+    if (c.key === "incasare") return fmt(totalGeneralIncasari);
+    if (c.key === "plata") return fmt(totalGeneralPlati);
+    return "";
+  });
+  const randSubsolTotal = coloane.map((c) => {
+    if (c.key === "incasare") return fmt(totalGeneralIncasari);
+    if (c.key === "plata") return fmt(totalGeneralPlati);
+    return "";
+  });
+
   autoTable(doc, {
     startY: 14,
     margin: { top: 14 },
-    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 7, cellPadding: 1.2 },
+    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 7, cellPadding: 1.2, overflow: "linebreak" },
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [31, 56, 100], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
-    head: [
-      coloane.map((c) => c.label),
-      // Rând special, needitat de datele reale — arată reportul de pe pagina precedentă. Pe
-      // pagina 1 rămâne gol (nu există nimic de reportat). Conținutul e completat/suprascris
-      // efectiv în willDrawCell, mai jos.
-      coloane.map(() => ""),
-    ],
-    foot: [coloane.map(() => "")],
+    head: [coloane.map((c) => c.label), randAntetReport],
+    foot: [randSubsolTotal],
     showHead: "everyPage",
     showFoot: "everyPage",
     body: bodyCells,
@@ -1366,14 +1391,37 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // Normalizare NFC universală, pe orice text ajunge într-o celulă (antet, corp, subsol) —
       // acoperă atât etichetele fixe cât și datele introduse de utilizator (partener, explicație,
       // denumirea contului etc.), indiferent de forma Unicode în care au fost stocate.
-      // IMPORTANT: acest hook rulează în faza de CALCUL a tabelului (măsurare/paginare), înainte
-      // ca vreo pagină să fie efectiv desenată — trece o singură dată prin toate rândurile,
-      // dintr-o singură "trecere". De aceea normalizarea de text e sigură aici (nu depinde de
-      // ordinea paginilor), dar acumularea rulajului NU e sigură aici — vezi didDrawCell mai jos.
       if (Array.isArray(data.cell.text)) {
         data.cell.text = data.cell.text.map((t) => uni(t));
       } else if (typeof data.cell.text === "string") {
         data.cell.text = uni(data.cell.text);
+      }
+      // Rezervăm din timp o înălțime minimă pe rândul cu eticheta (2 rânduri de text la fontSize
+      // 7 + padding), ca desenarea manuală de mai jos (didDrawCell) să nu se suprapună vizual cu
+      // rândul următor, indiferent pe câte linii se împarte eticheta la lățimea finală a coloanei.
+      if ((data.section === "head" && data.row.index === 1) || (data.section === "foot" && data.row.index === 0)) {
+        data.cell.styles.minCellHeight = 13;
+      }
+    },
+    willDrawCell: (data) => {
+      // Suprascriem valorile numerice cu rulajul real, cumulat până în acest punct — coloana
+      // rămâne suficient de lată (a fost dimensionată pe baza totalului general, cel mai lat șir
+      // posibil), deci orice valoare intermediară încape garantat.
+      if (data.section === "head" && data.row.index === 1) {
+        if (data.pageNumber === 1) {
+          if (data.column.index === idxIncasare || data.column.index === idxPlata) data.cell.text = [""];
+        } else if (data.column.index === idxIncasare) {
+          data.cell.text = [fmt(rulajIncasariAnterior)];
+        } else if (data.column.index === idxPlata) {
+          data.cell.text = [fmt(rulajPlatiAnterior)];
+        }
+      }
+      if (data.section === "foot" && data.row.index === 0) {
+        if (data.column.index === idxIncasare) {
+          data.cell.text = [fmt(rulajIncasari)];
+        } else if (data.column.index === idxPlata) {
+          data.cell.text = [fmt(rulajPlati)];
+        }
       }
     },
     didDrawCell: (data) => {
@@ -1387,31 +1435,25 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
         rulajIncasari += incasareNumeric[data.row.index] || 0;
         rulajPlati += plataNumeric[data.row.index] || 0;
       }
-    },
-    willDrawCell: (data) => {
-      if (data.section === "head" && data.row.index === 1) {
-        // Al doilea rând de antet = reportul din pagina precedentă (gol pe pagina 1).
-        if (data.pageNumber === 1) {
-          data.cell.text = [""];
-        } else if (data.column.index === 0) {
-          data.cell.text = ["REPORT DIN PAGINA PRECEDENTĂ"];
-        } else if (data.column.index === idxIncasare) {
-          data.cell.text = [fmt(rulajIncasariAnterior)];
-        } else if (data.column.index === idxPlata) {
-          data.cell.text = [fmt(rulajPlatiAnterior)];
-        } else {
-          data.cell.text = [""];
-        }
-      }
-      if (data.section === "foot" && data.row.index === 0) {
-        if (data.column.index === 0) {
-          data.cell.text = ["TOTAL ÎNCASĂRI / TOTAL PLĂȚI — CUMULAT DE LA NR. 1"];
-        } else if (data.column.index === idxIncasare) {
-          data.cell.text = [fmt(rulajIncasari)];
-        } else if (data.column.index === idxPlata) {
-          data.cell.text = [fmt(rulajPlati)];
-        } else {
-          data.cell.text = [""];
+      // Desenare manuală a etichetei, direct peste celula Explicație a rândului special — cu
+      // împărțire garantată pe linii (fără nicio pierdere de caractere), independent de cât de
+      // îngustă a ieșit coloana din calculul AutoTable.
+      if (data.column.index === idxExplicatie) {
+        let eticheta = null;
+        if (data.section === "head" && data.row.index === 1 && data.pageNumber > 1) eticheta = ETICHETA_REPORT;
+        if (data.section === "foot" && data.row.index === 0) eticheta = ETICHETA_TOTAL;
+        if (eticheta) {
+          const latimeDisponibila = data.cell.width - 2 * 1.2; // minus cellPadding stânga+dreapta
+          doc.setFont("NotoSans", "bold");
+          doc.setFontSize(7);
+          doc.setTextColor(data.section === "head" ? 255 : 41, data.section === "head" ? 255 : 37, data.section === "head" ? 255 : 36);
+          const linii = doc.splitTextToSize(uni(eticheta), latimeDisponibila);
+          const inaltimeLinie = 2.6;
+          const inaltimeTotalaText = linii.length * inaltimeLinie;
+          let yStart = data.cell.y + (data.cell.height - inaltimeTotalaText) / 2 + inaltimeLinie * 0.75;
+          linii.forEach((linie, i) => {
+            doc.text(linie, data.cell.x + 1.2, yStart + i * inaltimeLinie);
+          });
         }
       }
     },
@@ -1422,6 +1464,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       rulajPlatiAnterior = rulajPlati;
     },
   });
+
 
   doc.setFontSize(8);
   doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), 14, doc.internal.pageSize.getHeight() - 10);
