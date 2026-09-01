@@ -1364,7 +1364,6 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   // cu doc.splitTextToSize() + doc.text() (vezi didDrawCell mai jos) — mecanism jsPDF nativ care
   // împarte textul pe atâtea linii cât e nevoie, fără să piardă vreodată vreun caracter.
   const ETICHETA_REPORT = "REPORT DIN PAGINA PRECEDENTĂ";
-  const ETICHETA_TOTAL = "TOTAL ÎNCASĂRI / TOTAL PLĂȚI — CUMULAT DE LA NR. 1";
   const randAntetReport = coloane.map((c) => {
     if (c.key === "incasare") return fmt(totalGeneralIncasari);
     if (c.key === "plata") return fmt(totalGeneralPlati);
@@ -1396,11 +1395,16 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       } else if (typeof data.cell.text === "string") {
         data.cell.text = uni(data.cell.text);
       }
-      // Rezervăm din timp o înălțime minimă pe rândul cu eticheta (2 rânduri de text la fontSize
-      // 7 + padding), ca desenarea manuală de mai jos (didDrawCell) să nu se suprapună vizual cu
-      // rândul următor, indiferent pe câte linii se împarte eticheta la lățimea finală a coloanei.
-      if ((data.section === "head" && data.row.index === 1) || (data.section === "foot" && data.row.index === 0)) {
-        data.cell.styles.minCellHeight = 13;
+      // Rezervăm din timp o înălțime minimă pe rândul cu eticheta, diferențiat: rândul "Report"
+      // păstrează eticheta lungă ("REPORT DIN PAGINA PRECEDENTĂ", ~3 linii la lățimea coloanei
+      // Explicație), rândul "Total" are acum eticheta scurtă ("TOTAL (pagina X):", 1 linie în
+      // aproape orice caz — rezervăm totuși spațiu pentru 2, ca siguranță dacă numărul paginii
+      // ajunge la 3 cifre).
+      if (data.section === "head" && data.row.index === 1) {
+        data.cell.styles.minCellHeight = 9;
+      }
+      if (data.section === "foot" && data.row.index === 0) {
+        data.cell.styles.minCellHeight = 6.5;
       }
     },
     willDrawCell: (data) => {
@@ -1441,7 +1445,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       if (data.column.index === idxExplicatie) {
         let eticheta = null;
         if (data.section === "head" && data.row.index === 1 && data.pageNumber > 1) eticheta = ETICHETA_REPORT;
-        if (data.section === "foot" && data.row.index === 0) eticheta = ETICHETA_TOTAL;
+        if (data.section === "foot" && data.row.index === 0) eticheta = `TOTAL (pagina ${data.pageNumber}):`;
         if (eticheta) {
           const latimeDisponibila = data.cell.width - 2 * 1.2; // minus cellPadding stânga+dreapta
           doc.setFont("NotoSans", "bold");
