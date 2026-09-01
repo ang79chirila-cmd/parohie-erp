@@ -1298,18 +1298,115 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
   doc.setFont("NotoSans", "normal");
 
-  // Pagină de copertă, redusă (fără fontul arhaic, disponibil doar în varianta HTML/print) — doar
-  // ca să păstrăm minimul de context (parohie, titlu, dată) și pe acest raport.
+  // Pagină de copertă — banda de sus (albastru închis, aceeași culoare ca antetul tabelului mai
+  // jos, pentru coerență vizuală), cu numele parohiei în alb; sub bandă, o linie subțire "aurie"
+  // decorativă; apoi o linie de identificare (eparhie/protoierie/CIF), un separator, titlul
+  // raportului cu o bară de accent, și data generării. Font: NotoSans peste tot (verificat,
+  // acoperă complet diacriticele) — NU fontul arhaic: verificat cu fontTools, îi lipsesc glifele
+  // pentru ș/ț/Î/Ș/Ț, deci ar reda greșit orice nume de parohie care le conține.
+  const latimePagina = doc.internal.pageSize.getWidth();
+  const CULOARE_NAVY = [31, 56, 100];
+  const CULOARE_AUR = [180, 145, 60];
+  const CULOARE_GRI = [110, 116, 122];
+  const CULOARE_GRI_INCHIS = [55, 60, 66];
+  const MARGINE = 14;
+  const latimeUtila = latimePagina - 2 * MARGINE;
+
+  // Potrivire automată a dimensiunii fontului la lățimea paginii — micșorează progresiv până
+  // încape pe o linie; dacă nici la dimensiunea minimă nu încape (nume neobișnuit de lung),
+  // împarte pe mai multe linii cu splitTextToSize (jsPDF nativ, NU pierde niciodată caractere).
+  // Verificat concret: un nume lung testat anterior fără acest mecanism IEȘEA din pagină.
+  const potrivesteText = (text, fontStyle, fontSizeMax, fontSizeMin, latimeMaxima) => {
+    doc.setFont("NotoSans", fontStyle);
+    let fs = fontSizeMax;
+    doc.setFontSize(fs);
+    while (doc.getTextWidth(text) > latimeMaxima && fs > fontSizeMin) {
+      fs -= 1;
+      doc.setFontSize(fs);
+    }
+    const linii = doc.splitTextToSize(text, latimeMaxima);
+    return { linii, fontSize: fs };
+  };
+
+  const numeParohie = uni(p.denumire || "Parohia");
+  // Rezervăm din start lățimea crucii (simbol "†", prezent confirmat în fontul încorporat) +
+  // spațiul de după ea, ca potrivirea automată a dimensiunii numelui să țină cont de acest spațiu
+  // ocupat — altfel riscam să reintroducem exact trunchierea reparată mai devreme. Estimăm lățimea
+  // la dimensiunea maximă posibilă (conservator: dacă numele se micșorează, crucea are loc oricum).
   doc.setFont("NotoSans", "bold");
-  doc.setFontSize(16);
-  doc.text(uni(p.denumire || "Parohia"), 14, 20);
+  doc.setFontSize(20);
+  const latimeCruceMax = doc.getTextWidth("† ");
+  const { linii: liniiNume, fontSize: fsNume } = potrivesteText(numeParohie, "bold", 20, 13, latimeUtila - latimeCruceMax);
+  doc.setFontSize(fsNume);
+  const latimeCruce = doc.getTextWidth("† ");
+  const inaltimeLinieNume = fsNume * 0.42;
+  // Poziția reală a fiecărui element se calculează ÎNTÂI, iar înălțimea benzii se derivă din ea
+  // (nu invers) — altfel, la un nume pe 2+ linii, subtitlul ajungea desenat SUB bandă (pe fundal
+  // alb, cu o culoare gândită pentru fundal albastru), aproape invizibil. Verificat concret cu un
+  // nume extrem de lung, care forța exact acest caz.
+  const yNumeStart = 20;
+  const ySubtitlu = yNumeStart + (liniiNume.length - 1) * inaltimeLinieNume + 7;
+  const inaltimeBanda = ySubtitlu + 5;
+
+  doc.setFillColor(...CULOARE_NAVY);
+  doc.rect(0, 0, latimePagina, inaltimeBanda, "F");
+  doc.setFillColor(...CULOARE_AUR);
+  doc.rect(0, inaltimeBanda, latimePagina, 1.1, "F");
+
+  // Crucea — simbol discret, aurie, ca "ambalajul" să comunice din prima privire natura
+  // liturgică a documentului. O singură dată, pe primul rând; numele (chiar și pe mai multe
+  // linii) se aliniază după ea, ca un indent agățat (hanging indent), tipografic curat.
+  doc.setFont("NotoSans", "bold");
+  doc.setFontSize(fsNume);
+  doc.setTextColor(...CULOARE_AUR);
+  doc.text("†", MARGINE, yNumeStart);
+
+  doc.setTextColor(255, 255, 255);
+  liniiNume.forEach((linie, i) => doc.text(linie, MARGINE + latimeCruce, yNumeStart + i * inaltimeLinieNume));
+
   doc.setFont("NotoSans", "normal");
-  doc.setFontSize(10);
-  doc.text(uni(`Eparhia: ${p.eparhie || "—"}    Protoieria: ${p.protoierie || "—"}    CIF: ${p.cif || "—"}`), 14, 28);
-  doc.setFontSize(13);
-  doc.text(uni(titlu), 14, 40);
-  doc.setFontSize(9);
-  doc.text(uni(`Document generat automat la data de ${azi}.`), 14, 47);
+  doc.setFontSize(9.5);
+  doc.setTextColor(215, 222, 235);
+  doc.text(uni(`${p.eparhie || "—"}${p.protoierie ? "  ·  " + p.protoierie : ""}`), MARGINE, ySubtitlu);
+
+  // Linia de identificare (CIF), sub bandă.
+  let y = inaltimeBanda + 9;
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...CULOARE_GRI);
+  doc.text(uni(`CIF: ${p.cif || "—"}`), MARGINE, y);
+
+  // Separator subțire.
+  y += 6;
+  doc.setDrawColor(224, 226, 230);
+  doc.setLineWidth(0.3);
+  doc.line(MARGINE, y, latimePagina - MARGINE, y);
+
+  // Titlul raportului, cu o mică bară de accent (aur) în stânga textului — cu aceeași potrivire
+  // automată (titlurile de rapoarte pot varia mult în lungime).
+  y += 8;
+  const latimeTitluDisponibila = latimeUtila - 5; // minus bara de accent + spațiu
+  const { linii: liniiTitlu, fontSize: fsTitlu } = potrivesteText(uni(titlu), "bold", 16, 11, latimeTitluDisponibila);
+  const inaltimeLinieTitlu = fsTitlu * 0.42;
+  doc.setFillColor(...CULOARE_AUR);
+  doc.rect(MARGINE, y, 1.4, Math.max(8, liniiTitlu.length * inaltimeLinieTitlu), "F");
+  doc.setFont("NotoSans", "bold");
+  doc.setFontSize(fsTitlu);
+  doc.setTextColor(...CULOARE_GRI_INCHIS);
+  liniiTitlu.forEach((linie, i) => doc.text(linie, MARGINE + 5, y + 6 + i * inaltimeLinieTitlu));
+  y += Math.max(13, liniiTitlu.length * inaltimeLinieTitlu + 5);
+
+  // Data generării, discretă, sub titlu.
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...CULOARE_GRI);
+  doc.text(uni(`Document generat automat la data de ${azi}.`), MARGINE + 5, y);
+
+  // Resetăm culoarea de text la negru — TOT ce urmează (tabelul) își setează oricum propriile
+  // culori explicit, dar resetarea aici previne orice scurgere accidentală de stare.
+  doc.setTextColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+
   doc.addPage();
 
   const idxIncasare = coloane.findIndex((c) => c.key === "incasare");
