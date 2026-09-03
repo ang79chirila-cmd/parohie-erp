@@ -3400,9 +3400,31 @@ export default function ParohieERP() {
           </Modal>
         )}
         <div className="px-5 py-3 border-t border-white/10 text-[11px] text-white/40 leading-snug">
-          Modul curent: Contabilitate &amp; Pangar.
-          <br />
-          Module viitoare: Inventar, Cimitir, Corespondență.
+          {(() => {
+            const bt = typeof __BUILD_TIME__ !== "undefined" ? __BUILD_TIME__ : null;
+            const bv = typeof __BUILD_VERSION__ !== "undefined" ? __BUILD_VERSION__ : "0";
+            let zz = "--", ll = "--", aaaa = "----", hh = "--", mm = "--", ss = "--";
+            if (bt) {
+              // Build-ul rulează pe server Vercel, în UTC — convertim explicit la ora
+              // României, ca marcajul afișat să corespundă cu ceasul real al utilizatorului.
+              const parti = new Intl.DateTimeFormat("ro-RO", {
+                timeZone: "Europe/Bucharest",
+                day: "2-digit", month: "2-digit", year: "numeric",
+                hour: "2-digit", minute: "2-digit", second: "2-digit",
+                hour12: false,
+              }).formatToParts(new Date(bt));
+              const g = (tip) => parti.find((p) => p.type === tip)?.value ?? "--";
+              zz = g("day"); ll = g("month"); aaaa = g("year");
+              hh = g("hour"); mm = g("minute"); ss = g("second");
+            }
+            return (
+              <>
+                ParohieErp. v.{bv}.{zz}.{ll}.{aaaa}. {hh}:{mm}:{ss}.
+                <br />
+                (C) Anghel Chirilă 2025. Toate drepturile rezervate.
+              </>
+            );
+          })()}
         </div>
       </aside>
 
