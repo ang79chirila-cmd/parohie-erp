@@ -1518,7 +1518,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   autoTable(doc, {
     startY: 14,
     margin: { top: 14 },
-    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 12, cellPadding: 1.5, overflow: "linebreak" },
+    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [31, 56, 100], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
     head: [coloanePdf.map((c) => c.label), randAntetReport],
@@ -1540,10 +1540,10 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // rândul "Total" primește aceeași înălțime — valori recalculate pentru corpul de literă
       // 12pt (testate concret, fără suprapuneri).
       if (data.section === "head" && data.row.index === 1) {
-        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 32 : 20;
+        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 24 : 15;
       }
       if (data.section === "foot" && data.row.index === 0) {
-        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 32 : 20;
+        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 24 : 15;
       }
     },
     willDrawCell: (data) => {
@@ -1608,10 +1608,10 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
           for (let i = 0; i <= idxExplicatie; i++) latimeCombinata += data.table.columns[i].width;
           const latimeDisponibila = latimeCombinata - 2 * 1.5;
           doc.setFont("NotoSans", "bold");
-          doc.setFontSize(12);
+          doc.setFontSize(9);
           doc.setTextColor(data.section === "head" ? 255 : 41, data.section === "head" ? 255 : 37, data.section === "head" ? 255 : 36);
           const linii = liniiSursa.flatMap((l) => doc.splitTextToSize(uni(l), latimeDisponibila));
-          const inaltimeLinie = 12 * 0.42;
+          const inaltimeLinie = 9 * 0.42;
           const inaltimeTotalaText = linii.length * inaltimeLinie;
           let yStart = data.cell.y + (data.cell.height - inaltimeTotalaText) / 2 + inaltimeLinie * 0.75;
           const xStart = data.cell.x - (latimeCombinata - data.cell.width) + 1.5;
