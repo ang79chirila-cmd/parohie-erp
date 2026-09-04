@@ -1175,7 +1175,7 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       h2 { color: #1F3864; }
       .coperta { padding: 32px 24px; page-break-after: always; }
       .coperta h1 { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; font-size: 24px; margin-bottom: 4px; }
@@ -1184,13 +1184,13 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       .coperta td { padding: 5px 6px; border-bottom: 1px solid #e7e5e4; }
       .coperta td.label { color: #78716c; width: 45%; }
       .continut { padding: 0 24px; }
-      table.raport { width: 100%; border-collapse: collapse; font-size: 12px; }
+      table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; }
       table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
       table.raport thead.antet-repetat th { background: #1F3864; color: white; font-weight: normal; padding: 6px 8px; }
       table.raport thead.antet-repetat { display: table-header-group; }
       table.raport tbody.date-header th { background: #1F3864; color: white; }
       table.raport tfoot { display: table-footer-group; }
-      table.raport tfoot td { border: none; padding-top: 10px; font-size: 12px; color: #78716c; }
+      table.raport tfoot td { border: none; padding-top: 10px; font-size: 12pt; color: #78716c; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; }
       .nume-parohie-arhaic-alb { font-family: 'Arhaic Romanesc', Georgia, serif; color: white; }
       .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 20px; letter-spacing: 0.02em; }
@@ -1441,10 +1441,15 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
 
   doc.addPage();
 
-  const idxIncasare = coloane.findIndex((c) => c.key === "incasare");
-  const idxPlata = coloane.findIndex((c) => c.key === "plata");
-  const idxExplicatie = coloane.findIndex((c) => c.key === "explicatie");
-  const nrColoane = coloane.length;
+  // Coloanele pentru PDF exclud "Sold Depozit" — rămâne doar pe ecran (coloane, array-ul
+  // original, e folosit neschimbat de tabelul din aplicație). Pe hârtie, valoarea depozitului
+  // apare doar pe linia de total (subsol) și pe linia de report (antet paginii următoare), ca
+  // text, nu ca o coloană separată — eliberează lățime reală pentru celelalte 12 coloane.
+  const coloanePdf = coloane.filter((c) => c.key !== "soldDepozit" && c.key !== "soldFinal");
+  const idxIncasare = coloanePdf.findIndex((c) => c.key === "incasare");
+  const idxPlata = coloanePdf.findIndex((c) => c.key === "plata");
+  const idxExplicatie = coloanePdf.findIndex((c) => c.key === "explicatie");
+  const nrColoane = coloanePdf.length;
 
   const bodyCells = randuri.map((r) => {
     const eViramente = r.cont?.clasa === "viramente";
@@ -1459,12 +1464,14 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       r.op.tip === "incasare" ? fmt(r.op.suma) : "",
       r.op.tip === "plata" ? (r.op.contId === "581" ? `(${fmt(r.op.suma)})` : fmt(r.op.suma)) : "",
       r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă",
-      fmt(r.soldFinal),
       fmt(r.soldBanca),
       fmt(r.soldCasa),
-      ...(soldDepozitAn !== 0 ? [fmt(r.soldDepozit)] : []),
     ];
   });
+  // Valoarea reală, per rând, a soldului depozitului bancar și a soldului final (total) — nu mai
+  // sunt coloane pe hârtie, dar rămân accesibile pentru a fi afișate pe liniile de total/report.
+  const soldDepozitNumeric = randuri.map((r) => r.soldDepozit);
+  const soldFinalNumeric = randuri.map((r) => r.soldFinal);
   // Sumele cumulate exclud viramentele interne (581/5081) — exact ca "TOTAL" de pe ecran (vezi
   // totalIncasariAfisate/totalPlatiAfisate din OperatiuniTab).
   const incasareNumeric = randuri.map((r) => (r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? r.op.suma : 0));
@@ -1480,6 +1487,10 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   let rulajPlati = 0;
   let rulajIncasariAnterior = 0;
   let rulajPlatiAnterior = 0;
+  let soldDepozitCurent = 0;
+  let soldDepozitAnterior = 0;
+  let soldFinalCurent = 0;
+  let soldFinalAnterior = 0;
 
   // Rândul special de antet (reportul din pagina precedentă) și cel de subsol (totalul cumulat).
   // Coloanele Încasare/Plată sunt pre-populate cu TOTALUL GENERAL (cea mai lată valoare posibilă),
@@ -1493,12 +1504,12 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   // cu doc.splitTextToSize() + doc.text() (vezi didDrawCell mai jos) — mecanism jsPDF nativ care
   // împarte textul pe atâtea linii cât e nevoie, fără să piardă vreodată vreun caracter.
   const ETICHETA_REPORT = "REPORT DIN PAGINA PRECEDENTĂ";
-  const randAntetReport = coloane.map((c) => {
+  const randAntetReport = coloanePdf.map((c) => {
     if (c.key === "incasare") return fmt(totalGeneralIncasari);
     if (c.key === "plata") return fmt(totalGeneralPlati);
     return "";
   });
-  const randSubsolTotal = coloane.map((c) => {
+  const randSubsolTotal = coloanePdf.map((c) => {
     if (c.key === "incasare") return fmt(totalGeneralIncasari);
     if (c.key === "plata") return fmt(totalGeneralPlati);
     return "";
@@ -1507,10 +1518,10 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   autoTable(doc, {
     startY: 14,
     margin: { top: 14 },
-    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 7, cellPadding: 1.2, overflow: "linebreak" },
+    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 12, cellPadding: 1.5, overflow: "linebreak" },
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [31, 56, 100], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
-    head: [coloane.map((c) => c.label), randAntetReport],
+    head: [coloanePdf.map((c) => c.label), randAntetReport],
     foot: [randSubsolTotal],
     showHead: "everyPage",
     showFoot: "everyPage",
@@ -1525,15 +1536,14 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
         data.cell.text = uni(data.cell.text);
       }
       // Rezervăm din timp o înălțime minimă pe rândul cu eticheta, diferențiat: rândul "Report"
-      // păstrează eticheta lungă ("REPORT DIN PAGINA PRECEDENTĂ", ~3 linii la lățimea coloanei
-      // Explicație), rândul "Total" are acum eticheta scurtă ("TOTAL (pagina X):", 1 linie în
-      // aproape orice caz — rezervăm totuși spațiu pentru 2, ca siguranță dacă numărul paginii
-      // ajunge la 3 cifre).
+      // păstrează eticheta mai lungă (3 linii distincte quando parohia are depozit bancar),
+      // rândul "Total" primește aceeași înălțime — valori recalculate pentru corpul de literă
+      // 12pt (testate concret, fără suprapuneri).
       if (data.section === "head" && data.row.index === 1) {
-        data.cell.styles.minCellHeight = 9;
+        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 32 : 20;
       }
       if (data.section === "foot" && data.row.index === 0) {
-        data.cell.styles.minCellHeight = 6.5;
+        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 32 : 20;
       }
     },
     willDrawCell: (data) => {
@@ -1567,25 +1577,46 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       if (data.section === "body" && data.column.index === 0) {
         rulajIncasari += incasareNumeric[data.row.index] || 0;
         rulajPlati += plataNumeric[data.row.index] || 0;
+        soldDepozitCurent = soldDepozitNumeric[data.row.index];
+        soldFinalCurent = soldFinalNumeric[data.row.index];
       }
       // Desenare manuală a etichetei, direct peste celula Explicație a rândului special — cu
       // împărțire garantată pe linii (fără nicio pierdere de caractere), independent de cât de
-      // îngustă a ieșit coloana din calculul AutoTable.
+      // îngustă a ieșit coloana din calculul AutoTable. Include și soldul final (total, mereu
+      // relevant) și soldul depozitului bancar (doar dacă parohia chiar are depozit bancar,
+      // soldDepozitAn !== 0, la fel cum era condiționată fosta coloană) — niciunul dintre cele
+      // două nu mai e coloană separată pe hârtie.
       if (data.column.index === idxExplicatie) {
-        let eticheta = null;
-        if (data.section === "head" && data.row.index === 1 && data.pageNumber > 1) eticheta = ETICHETA_REPORT;
-        if (data.section === "foot" && data.row.index === 0) eticheta = `TOTAL (pagina ${data.pageNumber}):`;
-        if (eticheta) {
-          const latimeDisponibila = data.cell.width - 2 * 1.2; // minus cellPadding stânga+dreapta
+        let liniiSursa = null;
+        if (data.section === "head" && data.row.index === 1 && data.pageNumber > 1) {
+          liniiSursa = [ETICHETA_REPORT, `Sold final: ${fmt(soldFinalAnterior)} lei`];
+          if (soldDepozitAn !== 0) liniiSursa.push(`Sold Depozit bancar: ${fmt(soldDepozitAnterior)} lei`);
+        }
+        if (data.section === "foot" && data.row.index === 0) {
+          liniiSursa = [`TOTAL (pagina ${data.pageNumber}):`, `Sold final: ${fmt(soldFinalCurent)} lei`];
+          if (soldDepozitAn !== 0) liniiSursa.push(`Sold Depozit bancar: ${fmt(soldDepozitCurent)} lei`);
+        }
+        if (liniiSursa) {
+          // Rândul special (total/report) e gol pe TOATE coloanele dinaintea Explicație (Nr.,
+          // Data, Nr. chitanță etc.) — desenăm eticheta întinsă pe toată această lățime combinată,
+          // nu doar pe îngusta coloană Explicație. La 12pt, un singur șir de tipul
+          // "Sold final: 6.564.685,40 lei" nu mai încape în lățimea unei singure coloane
+          // (~20mm) — verificat concret, se rupea la mijlocul cifrei ("6.5" / "64.685,40").
+          // Fiecare informație e păstrată și pe rândul ei propriu (nu înlănțuită într-o singură
+          // propoziție lungă), ca risc suplimentar de rupere la mijloc.
+          let latimeCombinata = 0;
+          for (let i = 0; i <= idxExplicatie; i++) latimeCombinata += data.table.columns[i].width;
+          const latimeDisponibila = latimeCombinata - 2 * 1.5;
           doc.setFont("NotoSans", "bold");
-          doc.setFontSize(7);
+          doc.setFontSize(12);
           doc.setTextColor(data.section === "head" ? 255 : 41, data.section === "head" ? 255 : 37, data.section === "head" ? 255 : 36);
-          const linii = doc.splitTextToSize(uni(eticheta), latimeDisponibila);
-          const inaltimeLinie = 2.6;
+          const linii = liniiSursa.flatMap((l) => doc.splitTextToSize(uni(l), latimeDisponibila));
+          const inaltimeLinie = 12 * 0.42;
           const inaltimeTotalaText = linii.length * inaltimeLinie;
           let yStart = data.cell.y + (data.cell.height - inaltimeTotalaText) / 2 + inaltimeLinie * 0.75;
+          const xStart = data.cell.x - (latimeCombinata - data.cell.width) + 1.5;
           linii.forEach((linie, i) => {
-            doc.text(linie, data.cell.x + 1.2, yStart + i * inaltimeLinie);
+            doc.text(linie, xStart, yStart + i * inaltimeLinie);
           });
         }
       }
@@ -1595,6 +1626,8 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // să-l poată reproduce identic pe primul rând.
       rulajIncasariAnterior = rulajIncasari;
       rulajPlatiAnterior = rulajPlati;
+      soldDepozitAnterior = soldDepozitCurent;
+      soldFinalAnterior = soldFinalCurent;
     },
   });
 
@@ -1625,7 +1658,7 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       h2 { color: #1F3864; }
       .coperta { padding: 32px 24px; page-break-after: always; }
       .coperta h1 { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; font-size: 24px; margin-bottom: 4px; }
@@ -1636,7 +1669,7 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
       .continut { padding: 0 24px; }
       .grup-articol { margin-bottom: 18px; page-break-inside: avoid; }
       .grup-articol h3 { color: #1F3864; font-size: 13px; margin: 0 0 4px; }
-      table.raport { width: 100%; border-collapse: collapse; font-size: 12px; }
+      table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; }
       table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
       table.raport thead th { background: #1F3864; color: white; font-weight: normal; padding: 6px 8px; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; margin-top: 10px; }
@@ -1737,14 +1770,14 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
       .pagina-doc:last-child { page-break-after: auto; }
-      table.doc { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+      table.doc { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 10px; }
       table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
       table.doc th { background: #1F3864; color: white; font-weight: normal; }
       .total-row td { font-weight: bold; background: #f5f5f4; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
       .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 14px; color: #1F3864; }
     </style>`;
 
@@ -1859,18 +1892,18 @@ function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       .pagina { padding: 0 8mm; page-break-after: always; }
       .pagina:last-child { page-break-after: auto; }
       h2 { color: #1F3864; font-size: 18px; border-bottom: 2px solid #1F3864; padding-bottom: 4px; margin-top: 24px; }
-      table.raport { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+      table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 8px; }
       table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
       table.raport th { background: #1F3864; color: white; font-weight: normal; }
       .kpi { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
       .kpi div { border: 1px solid #d6d3d1; border-radius: 4px; padding: 8px 14px; flex: 1; min-width: 140px; }
-      .kpi .label { font-size: 12px; color: #78716c; text-transform: uppercase; }
+      .kpi .label { font-size: 12pt; color: #78716c; text-transform: uppercase; }
       .kpi .value { font-size: 16px; color: #1F3864; font-weight: bold; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
       .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; }
       .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; letter-spacing: 0.02em; }
     </style>`;
@@ -2008,14 +2041,14 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 13px; }
+      body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
       .pagina-doc:last-child { page-break-after: auto; }
-      table.doc { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+      table.doc { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 10px; }
       table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
       table.doc th { background: #1F3864; color: white; font-weight: normal; }
       .total-row td { font-weight: bold; background: #f5f5f4; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12px; color: #78716c; }
+      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
       .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 14px; color: #1F3864; }
     </style>`;
 
