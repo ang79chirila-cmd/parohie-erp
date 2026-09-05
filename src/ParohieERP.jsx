@@ -1516,8 +1516,8 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   });
 
   autoTable(doc, {
-    startY: 14,
-    margin: { top: 14 },
+    startY: 8,
+    margin: { top: 8, bottom: 8 },
     styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [31, 56, 100], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
@@ -1540,10 +1540,10 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // rândul "Total" primește aceeași înălțime — valori recalculate pentru corpul de literă
       // 12pt (testate concret, fără suprapuneri).
       if (data.section === "head" && data.row.index === 1) {
-        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 24 : 15;
+        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 17 : 12;
       }
       if (data.section === "foot" && data.row.index === 0) {
-        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 24 : 15;
+        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 17 : 12;
       }
     },
     willDrawCell: (data) => {
