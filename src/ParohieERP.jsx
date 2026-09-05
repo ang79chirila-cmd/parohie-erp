@@ -1194,7 +1194,7 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; }
       .nume-parohie-arhaic-alb { font-family: 'Arhaic Romanesc', Georgia, serif; color: white; }
       .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 20px; letter-spacing: 0.02em; }
-      @page { @bottom-right { content: "Pag. " counter(page) " / " counter(pages); font-size: 12px; color: #78716c; } }
+      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
     </style>`;
 
   const coperta = `
@@ -1688,6 +1688,21 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     },
   });
 
+  // Numerotare de pagină, colțul din dreapta jos, pe fiecare pagină — se aplică abia acum, după
+  // ce AutoTable a terminat de generat toate paginile (doar atunci se știe numărul lor real).
+  const totalPaginiDoc = doc.internal.getNumberOfPages();
+  for (let pg = 1; pg <= totalPaginiDoc; pg++) {
+    doc.setPage(pg);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text(
+      uni(`Pagina ${pg} din ${totalPaginiDoc}`),
+      doc.internal.pageSize.getWidth() - MARGINE,
+      doc.internal.pageSize.getHeight() - 6,
+      { align: "right" }
+    );
+  }
 
   doc.setFontSize(8);
   doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), 14, doc.internal.pageSize.getHeight() - 10);
@@ -1732,7 +1747,7 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; margin-top: 10px; }
       .nume-parohie-arhaic-alb { font-family: 'Arhaic Romanesc', Georgia, serif; color: white; }
       .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 20px; letter-spacing: 0.02em; }
-      @page { @bottom-right { content: "Pag. " counter(page) " / " counter(pages); font-size: 12px; color: #78716c; } }
+      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
     </style>`;
 
   const coperta = `
@@ -1827,6 +1842,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
+      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
       .pagina-doc:last-child { page-break-after: auto; }
@@ -1949,6 +1965,7 @@ function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
+      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       .pagina { padding: 0 8mm; page-break-after: always; }
       .pagina:last-child { page-break-after: auto; }
@@ -2098,6 +2115,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
     <style>
       ${ARHAIC_FONT_FACE_CSS}
       @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
+      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
       body { font-family: Georgia, serif; color: #292524; margin: 0; font-size: 12pt; }
       .pagina-doc { padding: 0 8mm; page-break-after: always; }
       .pagina-doc:last-child { page-break-after: auto; }
