@@ -1277,9 +1277,12 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
 // tabelul se desenează — subsolul arată mereu totalul de la nr. 1 până la ultimul rând desenat pe
 // acea pagină; la începutul paginii următoare, un rând special de antet arată același total,
 // "înghețat" chiar înainte ca pagina nouă să înceapă (nu se mai schimbă până la propriul ei subsol).
-function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, parohie, anSelectat, dataRaportCurenta, orientare, formatHartie) {
+function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, parohie, anSelectat, dataRaportCurenta, orientare, formatHartie, infoSelectie) {
   const p = parohie || {};
-  const titlu = `JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`;
+  const esteSelectie = !!(infoSelectie && infoSelectie.criterii && infoSelectie.criterii.length > 0);
+  const titlu = esteSelectie
+    ? `RAPORT DE SELECȚIE DIN REGISTRUL JURNAL PE ANUL ${anSelectat}`
+    : `JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`;
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
 
   // Normalizare Unicode (NFC) — datele introduse de utilizator (denumire parohie, eparhie,
@@ -1432,6 +1435,30 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   doc.setFontSize(8.5);
   doc.setTextColor(...CULOARE_GRI);
   doc.text(uni(`Document generat automat la data de ${azi}.`), MARGINE + 5, y);
+  y += 5;
+
+  // Raport de selecție (needentic cu jurnalul complet) — criteriile EXACTE de filtrare tastate
+  // de utilizator, plus contextul de scară (câte din câte), ca documentul să rămână auto-
+  // explicativ oricând e citit separat de aplicație, fără să poată fi confundat cu registrul
+  // integral.
+  if (esteSelectie) {
+    doc.setFont("NotoSans", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...CULOARE_GRI_INCHIS);
+    const textCriterii = `Criterii de selecție: ${infoSelectie.criterii.map((c) => `${c.eticheta}: „${c.valoare}"`).join("; ")}.`;
+    const liniiCriterii = doc.splitTextToSize(uni(textCriterii), latimeUtila - 5);
+    liniiCriterii.forEach((linie, i) => doc.text(linie, MARGINE + 5, y + i * 4.2));
+    y += liniiCriterii.length * 4.2 + 2;
+
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(
+      uni(`Înregistrări incluse în selecție: ${randuri.length} din ${infoSelectie.totalInregistrariAn} (total operațiuni pe anul ${anSelectat}).`),
+      MARGINE + 5, y
+    );
+    y += 5;
+  }
 
   // Resetăm culoarea de text la negru — TOT ce urmează (tabelul) își setează oricum propriile
   // culori explicit, dar resetarea aici previne orice scurgere accidentală de stare.
@@ -1445,7 +1472,11 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   // original, e folosit neschimbat de tabelul din aplicație). Pe hârtie, valoarea depozitului
   // apare doar pe linia de total (subsol) și pe linia de report (antet paginii următoare), ca
   // text, nu ca o coloană separată — eliberează lățime reală pentru celelalte 12 coloane.
-  const coloanePdf = coloane.filter((c) => c.key !== "soldDepozit" && c.key !== "soldFinal");
+  // "Sold final" e acum opțional — rămâne coloană reală pe rând DOAR dacă utilizatorul l-a bifat
+  // explicit în fereastra de selecție (deci e prezent în `coloane`); altfel, ca înainte, apare
+  // doar ca text pe rândul de subsol/report. "Sold Depozit" rămâne mereu doar text (needitabil).
+  const soldFinalCaColoana = coloane.some((c) => c.key === "soldFinal");
+  const coloanePdf = coloane.filter((c) => c.key !== "soldDepozit");
   const idxIncasare = coloanePdf.findIndex((c) => c.key === "incasare");
   const idxPlata = coloanePdf.findIndex((c) => c.key === "plata");
   const idxExplicatie = coloanePdf.findIndex((c) => c.key === "explicatie");
@@ -1453,20 +1484,30 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
 
   const bodyCells = randuri.map((r) => {
     const eViramente = r.cont?.clasa === "viramente";
-    return [
-      r.nrCrt,
-      fmtDataJurnal(r.op.data),
-      r.op.tip === "incasare" && !eViramente ? `${r.op.nr}${r.op.serie && r.op.numarIdentificare ? ` (${r.op.serie} ${r.op.numarIdentificare})` : ""}` : "",
-      r.op.tip === "plata" && !eViramente ? `${r.op.nr}` : "",
-      r.cont ? r.cont.simbol : r.op.contId,
-      r.op.tert || "",
-      r.op.explicatie || r.cont?.denumire || "",
-      r.op.tip === "incasare" ? fmt(r.op.suma) : "",
-      r.op.tip === "plata" ? (r.op.contId === "581" ? `(${fmt(r.op.suma)})` : fmt(r.op.suma)) : "",
-      r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă",
-      fmt(r.soldBanca),
-      fmt(r.soldCasa),
-    ];
+    // Toate valorile posibile, indexate pe cheie — NU un array cu poziții fixe. Poziția fixă
+    // presupunea implicit că toate coloanele sunt mereu prezente, în aceeași ordine; de când
+    // selecția de coloane poate elimina ORICARE coloană (nu doar de la capăt), un array fix
+    // producea o desincronizare gravă: eliminarea unei coloane din mijloc (ex. "Denumire
+    // partener") deplasa toate valorile de după ea cu o poziție — verificat concret, datele
+    // apăreau sub headerele greșite, silențios, fără nicio eroare. Aici, fiecare valoare e
+    // căutată explicit pe cheia coloanei corespunzătoare din `coloanePdf`, indiferent care
+    // coloane lipsesc sau în ce ordine au rămas.
+    const valori = {
+      nr: r.nrCrt,
+      data: fmtDataJurnal(r.op.data),
+      nrChitanta: r.op.tip === "incasare" && !eViramente ? `${r.op.nr}${r.op.serie && r.op.numarIdentificare ? ` (${r.op.serie} ${r.op.numarIdentificare})` : ""}` : "",
+      nrOP: r.op.tip === "plata" && !eViramente ? `${r.op.nr}` : "",
+      artBug: r.cont ? r.cont.simbol : r.op.contId,
+      partener: r.op.tert || "",
+      explicatie: r.op.explicatie || r.cont?.denumire || "",
+      incasare: r.op.tip === "incasare" ? fmt(r.op.suma) : "",
+      plata: r.op.tip === "plata" ? (r.op.contId === "581" ? `(${fmt(r.op.suma)})` : fmt(r.op.suma)) : "",
+      sursa: r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă",
+      soldFinal: fmt(r.soldFinal),
+      soldBanca: fmt(r.soldBanca),
+      soldCasa: fmt(r.soldCasa),
+    };
+    return coloanePdf.map((c) => valori[c.key] ?? "");
   });
   // Valoarea reală, per rând, a soldului depozitului bancar și a soldului final (total) — nu mai
   // sunt coloane pe hârtie, dar rămân accesibile pentru a fi afișate pe liniile de total/report.
@@ -1550,9 +1591,16 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // 12pt (testate concret, fără suprapuneri).
       if (data.section === "head" && data.row.index === 0) {
         data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 17 : 12;
+        // Aliniere sus (nu centrat pe tot blocul înalt) — ca prima linie a etichetei desenate
+        // manual (mai jos) să cadă exact la aceeași înălțime cu cifrele Încasare/Plată, pe care
+        // AutoTable le desenează singur, cu propria aliniere. Fără asta, cifrele (centrate
+        // implicit pe toată înălțimea rândului) apăreau vizual "coborâte" față de eticheta text,
+        // dând impresia că nu aparțin aceluiași rând.
+        data.cell.styles.valign = "top";
       }
       if (data.section === "foot" && data.row.index === 0) {
-        data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 17 : 12;
+        data.cell.styles.minCellHeight = 7;
+        data.cell.styles.valign = "top";
       }
     },
     willDrawCell: (data) => {
@@ -1591,19 +1639,18 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       }
       // Desenare manuală a etichetei, direct peste celula Explicație a rândului special — cu
       // împărțire garantată pe linii (fără nicio pierdere de caractere), independent de cât de
-      // îngustă a ieșit coloana din calculul AutoTable. Include și soldul final (total, mereu
-      // relevant) și soldul depozitului bancar (doar dacă parohia chiar are depozit bancar,
-      // soldDepozitAn !== 0, la fel cum era condiționată fosta coloană) — niciunul dintre cele
-      // două nu mai e coloană separată pe hârtie.
+      // îngustă a ieșit coloana din calculul AutoTable. Rândul de Report păstrează detaliile
+      // (sold final, sold depozit) — rândul de Total rămâne simplu, cerut explicit: doar
+      // cuvântul "TOTAL", fără alte etichete sau informații de sold.
       if (data.column.index === idxExplicatie) {
         let liniiSursa = null;
         if (data.section === "head" && data.row.index === 0 && data.pageNumber > 1) {
-          liniiSursa = [ETICHETA_REPORT, `Sold final: ${fmt(soldFinalAnterior)} lei`];
+          liniiSursa = [ETICHETA_REPORT];
+          if (!soldFinalCaColoana) liniiSursa.push(`Sold final: ${fmt(soldFinalAnterior)} lei`);
           if (soldDepozitAn !== 0) liniiSursa.push(`Sold Depozit bancar: ${fmt(soldDepozitAnterior)} lei`);
         }
         if (data.section === "foot" && data.row.index === 0) {
-          liniiSursa = [`TOTAL (pagina ${data.pageNumber}):`, `Sold final: ${fmt(soldFinalCurent)} lei`];
-          if (soldDepozitAn !== 0) liniiSursa.push(`Sold Depozit bancar: ${fmt(soldDepozitCurent)} lei`);
+          liniiSursa = ["TOTAL"];
         }
         if (liniiSursa) {
           // Rândul special (total/report) e gol pe TOATE coloanele dinaintea Explicație (Nr.,
@@ -1623,8 +1670,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
           doc.setTextColor(41, 37, 36);
           const linii = liniiSursa.flatMap((l) => doc.splitTextToSize(uni(l), latimeDisponibila));
           const inaltimeLinie = 9 * 0.42;
-          const inaltimeTotalaText = linii.length * inaltimeLinie;
-          let yStart = data.cell.y + (data.cell.height - inaltimeTotalaText) / 2 + inaltimeLinie * 0.75;
+          let yStart = data.cell.y + 1.5 + inaltimeLinie * 0.75;
           const xStart = data.cell.x - (latimeCombinata - data.cell.width) + 1.5;
           linii.forEach((linie, i) => {
             doc.text(linie, xStart, yStart + i * inaltimeLinie);
@@ -4712,6 +4758,23 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const soldCasaAn = ultimulRand?.soldCasa || 0;
   const soldDepozitAn = ultimulRand?.soldDepozit || 0;
 
+  // Criteriile EXACTE de selecție — șirul chiar tastat în fiecare câmp de filtrare (nu o
+  // reformulare), plus căutarea generală, dacă e completată. Servesc la marcarea raportului
+  // tipărit ca "raport de selecție" (needentic cu jurnalul complet), cu criteriul de selecție
+  // explicit pe copertă — cerut explicit, ca documentul să nu poată fi confundat cu registrul
+  // integral și să rămână auto-explicativ oricând e citit separat de aplicație.
+  const ETICHETE_FILTRE_JURNAL = {
+    data: "Data operațiunii", nrChitanta: "Nr. chitanță", nrOP: "Nr. OP", cont: "Art. bug. nr.",
+    partener: "Denumire partener", explicatie: "Explicație", incasare: "Încasare (lei)",
+    plata: "Plată (lei)", sursa: "Sursa/Destinație",
+  };
+  const criteriiSelectie = [
+    ...Object.entries(filtreColoane)
+      .filter(([, valoare]) => valoare && String(valoare).trim() !== "")
+      .map(([cheie, valoare]) => ({ eticheta: ETICHETE_FILTRE_JURNAL[cheie] || cheie, valoare: String(valoare) })),
+    ...(cautare && cautare.trim() !== "" ? [{ eticheta: "Căutare generală", valoare: cautare }] : []),
+  ];
+
   const coloaneJurnal = [
     { key: "nr", label: "Nr. crt." },
     { key: "data", label: "Data operațiunii" },
@@ -4728,7 +4791,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     { key: "soldCasa", label: "Sold Casă" },
     ...(soldDepozitAn !== 0 ? [{ key: "soldDepozit", label: "Sold Depozit" }] : []),
   ];
-  const randuriExportJurnal = randuri.map((r) => ({
+  const randuriExportJurnal = filtrate.map((r) => ({
     nr: r.nrCrt,
     data: fmtDataJurnal(r.op.data),
     nrChitanta: r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? `${r.op.nr}${r.op.serie && r.op.numarIdentificare ? ` (${r.op.serie} ${r.op.numarIdentificare})` : ""}` : "",
@@ -4833,9 +4896,9 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               columns={coloaneJurnal}
               rows={randuriExportJurnal}
               parohie={state.parohie}
-              coloaneExcluseDinSelectie={["soldFinal", "soldDepozit", "incasare", "plata", "explicatie"]}
+              coloaneExcluseDinSelectie={["soldDepozit", "incasare", "plata", "explicatie"]}
               customPdf={({ dataRaport, orientare, formatHartie, coloane }) =>
-                genereazaJurnalPDFCuTotalCumulat(randuri, coloane || coloaneJurnal, soldDepozitAn, state.parohie, anSelectat, dataRaport, orientare, formatHartie)
+                genereazaJurnalPDFCuTotalCumulat(filtrate, coloane || coloaneJurnal, soldDepozitAn, state.parohie, anSelectat, dataRaport, orientare, formatHartie, { criterii: criteriiSelectie, totalInregistrariAn: randuri.length })
               }
             />
           </div>
