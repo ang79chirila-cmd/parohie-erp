@@ -1521,7 +1521,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [31, 56, 100], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
-    head: [coloanePdf.map((c) => c.label), randAntetReport],
+    head: [randAntetReport, coloanePdf.map((c) => c.label)],
     foot: [randSubsolTotal],
     showHead: "everyPage",
     showFoot: "everyPage",
@@ -1535,11 +1535,20 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       } else if (typeof data.cell.text === "string") {
         data.cell.text = uni(data.cell.text);
       }
+      // Rândul "Report" (acum PRIMUL rând de antet, deasupra titlurilor de coloană) primește
+      // același stil ca subsolul (gri deschis, text închis) — nu bleumarin ca titlurile reale ale
+      // tabelului. Simetrie intenționată, cerută explicit: subsolul arată deja ca un "footer de
+      // pagină", exterior tabelului, care doar lămurește contextul fără să-l încarce — rândul de
+      // report trebuia să dea aceeași senzație, de "antet de pagină", nu îngropat sub titluri.
+      if (data.section === "head" && data.row.index === 0) {
+        data.cell.styles.fillColor = [231, 229, 228];
+        data.cell.styles.textColor = [41, 37, 36];
+      }
       // Rezervăm din timp o înălțime minimă pe rândul cu eticheta, diferențiat: rândul "Report"
       // păstrează eticheta mai lungă (3 linii distincte quando parohia are depozit bancar),
       // rândul "Total" primește aceeași înălțime — valori recalculate pentru corpul de literă
       // 12pt (testate concret, fără suprapuneri).
-      if (data.section === "head" && data.row.index === 1) {
+      if (data.section === "head" && data.row.index === 0) {
         data.cell.styles.minCellHeight = soldDepozitAn !== 0 ? 17 : 12;
       }
       if (data.section === "foot" && data.row.index === 0) {
@@ -1550,7 +1559,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // Suprascriem valorile numerice cu rulajul real, cumulat până în acest punct — coloana
       // rămâne suficient de lată (a fost dimensionată pe baza totalului general, cel mai lat șir
       // posibil), deci orice valoare intermediară încape garantat.
-      if (data.section === "head" && data.row.index === 1) {
+      if (data.section === "head" && data.row.index === 0) {
         if (data.pageNumber === 1) {
           if (data.column.index === idxIncasare || data.column.index === idxPlata) data.cell.text = [""];
         } else if (data.column.index === idxIncasare) {
@@ -1588,7 +1597,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
       // două nu mai e coloană separată pe hârtie.
       if (data.column.index === idxExplicatie) {
         let liniiSursa = null;
-        if (data.section === "head" && data.row.index === 1 && data.pageNumber > 1) {
+        if (data.section === "head" && data.row.index === 0 && data.pageNumber > 1) {
           liniiSursa = [ETICHETA_REPORT, `Sold final: ${fmt(soldFinalAnterior)} lei`];
           if (soldDepozitAn !== 0) liniiSursa.push(`Sold Depozit bancar: ${fmt(soldDepozitAnterior)} lei`);
         }
@@ -1609,7 +1618,9 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
           const latimeDisponibila = latimeCombinata - 2 * 1.5;
           doc.setFont("NotoSans", "bold");
           doc.setFontSize(9);
-          doc.setTextColor(data.section === "head" ? 255 : 41, data.section === "head" ? 255 : 37, data.section === "head" ? 255 : 36);
+          // Ambele rânduri speciale (report și total) au acum ACELAȘI stil vizual (gri, text
+          // închis) — nu mai există distincția albastru/gri de dinainte.
+          doc.setTextColor(41, 37, 36);
           const linii = liniiSursa.flatMap((l) => doc.splitTextToSize(uni(l), latimeDisponibila));
           const inaltimeLinie = 9 * 0.42;
           const inaltimeTotalaText = linii.length * inaltimeLinie;
