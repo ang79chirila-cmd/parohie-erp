@@ -2096,11 +2096,13 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
   setTimeout(() => win.print(), 300);
 }
 
-function ExportMenu({ titlu, columns, rows, parohie, customPdf }) {
+function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [] }) {
   const [open, setOpen] = useState(false);
   const [dataRaport, setDataRaport] = useState(todayISO());
   const [orientare, setOrientare] = useState("portrait");
   const [formatHartie, setFormatHartie] = useState("A4");
+  const [showSelectieColoane, setShowSelectieColoane] = useState(false);
+  const [coloaneSelectate, setColoaneSelectate] = useState({});
 
   // Câmpul de dată e relevant doar dacă raportul e pe anul curent (sau fără an explicit în titlu,
   // ex. un interval manual) — pentru un an anterior, exportul folosește oricum automat 31.12.{an}.
@@ -2109,21 +2111,38 @@ function ExportMenu({ titlu, columns, rows, parohie, customPdf }) {
   const anCurent = new Date().getFullYear();
   const eDataRelevanta = !anRaport || anRaport === anCurent;
 
+  // Coloanele needitabile în fereastra de selecție (ex. Sold final/Sold Depozit la Jurnal — rămân
+  // mereu incluse, gestionate separat de generatorul PDF, nu ca și coloane obișnuite pe rând).
+  const coloaneSelectabile = columns.filter((c) => !coloaneExcluseDinSelectie.includes(c.key));
+
   function run(fn) {
     fn(titlu, columns, rows, parohie, dataRaport, orientare, formatHartie);
     setOpen(false);
   }
 
-  // "PDF" foloseşte generatorul dedicat (jsPDF, cu paginare exactă) doar dacă e furnizat explicit
-  // prin `customPdf` — altfel rămâne varianta generică (tipărire HTML), ca la toate celelalte rapoarte.
-  function runPdf() {
-    if (customPdf) {
-      customPdf({ dataRaport, orientare, formatHartie });
-      setOpen(false);
-    } else {
-      run(exportPDF);
-    }
+  function deschideSelectieColoane() {
+    // Repornim mereu cu toate coloanele bifate, la fiecare deschidere — un start predictibil,
+    // nu o selecție veche, uitată, din altă sesiune de generare.
+    const initial = {};
+    coloaneSelectabile.forEach((c) => { initial[c.key] = true; });
+    setColoaneSelectate(initial);
+    setShowSelectieColoane(true);
+    setOpen(false);
   }
+
+  function genereazaCuColoaneleSelectate() {
+    const coloaneFinale = columns.filter(
+      (c) => coloaneExcluseDinSelectie.includes(c.key) || coloaneSelectate[c.key]
+    );
+    if (customPdf) {
+      customPdf({ dataRaport, orientare, formatHartie, coloane: coloaneFinale });
+    } else {
+      exportPDF(titlu, coloaneFinale, rows, parohie, dataRaport, orientare, formatHartie);
+    }
+    setShowSelectieColoane(false);
+  }
+
+  const numarBifate = coloaneSelectabile.filter((c) => coloaneSelectate[c.key]).length;
 
   return (
     <div className="relative inline-flex items-center gap-2">
@@ -2159,7 +2178,7 @@ function ExportMenu({ titlu, columns, rows, parohie, customPdf }) {
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-20 py-1 min-w-[140px]">
-            <button onClick={runPdf} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
+            <button onClick={deschideSelectieColoane} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
               <FileText size={14} className="text-rose-600" /> PDF
             </button>
             <button onClick={() => run(exportXLSX)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
@@ -2170,6 +2189,60 @@ function ExportMenu({ titlu, columns, rows, parohie, customPdf }) {
             </button>
           </div>
         </>
+      )}
+      {showSelectieColoane && (
+        <Modal title="Coloane de tipărit" onClose={() => setShowSelectieColoane(false)}>
+          <p className="text-sm text-stone-500 mb-3">
+            Bifează coloanele care apar în PDF-ul tipărit. Restul datelor rămân neschimbate în aplicație.
+          </p>
+          <div className="flex items-center gap-3 mb-3">
+            <button
+              type="button"
+              className="text-xs text-[#1F3864] underline"
+              onClick={() => {
+                const toate = {};
+                coloaneSelectabile.forEach((c) => { toate[c.key] = true; });
+                setColoaneSelectate(toate);
+              }}
+            >
+              Selectează tot
+            </button>
+            <button
+              type="button"
+              className="text-xs text-[#1F3864] underline"
+              onClick={() => {
+                const niciuna = {};
+                coloaneSelectabile.forEach((c) => { niciuna[c.key] = false; });
+                setColoaneSelectate(niciuna);
+              }}
+            >
+              Deselectează tot
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-4">
+            {coloaneSelectabile.map((c) => (
+              <label key={c.key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!coloaneSelectate[c.key]}
+                  onChange={(e) => setColoaneSelectate((prev) => ({ ...prev, [c.key]: e.target.checked }))}
+                />
+                {c.label}
+              </label>
+            ))}
+          </div>
+          {coloaneExcluseDinSelectie.length > 0 && (
+            <p className="text-xs text-stone-400 mb-4">
+              {coloaneExcluseDinSelectie.map((k) => columns.find((c) => c.key === k)?.label).filter(Boolean).join(", ")} rămân mereu incluse (afișate separat, nu ca și coloane).
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" onClick={() => setShowSelectieColoane(false)}>Renunță</Btn>
+            <Btn variant="primary" disabled={numarBifate === 0} onClick={genereazaCuColoaneleSelectate}>
+              Generează PDF {numarBifate > 0 ? `(${numarBifate} coloane)` : ""}
+            </Btn>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -4749,8 +4822,9 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               columns={coloaneJurnal}
               rows={randuriExportJurnal}
               parohie={state.parohie}
-              customPdf={({ dataRaport, orientare, formatHartie }) =>
-                genereazaJurnalPDFCuTotalCumulat(randuri, coloaneJurnal, soldDepozitAn, state.parohie, anSelectat, dataRaport, orientare, formatHartie)
+              coloaneExcluseDinSelectie={["soldFinal", "soldDepozit", "incasare", "plata", "explicatie"]}
+              customPdf={({ dataRaport, orientare, formatHartie, coloane }) =>
+                genereazaJurnalPDFCuTotalCumulat(randuri, coloane || coloaneJurnal, soldDepozitAn, state.parohie, anSelectat, dataRaport, orientare, formatHartie)
               }
             />
           </div>
