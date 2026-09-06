@@ -1078,13 +1078,13 @@ function ScrollOrizontalSus({ children }) {
   }
 
   return (
-    <div>
+    <div className="w-full">
       {latimeContinut > 0 && (
-        <div ref={susRef} onScroll={dinSus} className="overflow-x-auto overflow-y-hidden mb-1" style={{ height: 14 }}>
+        <div ref={susRef} onScroll={dinSus} className="overflow-x-auto overflow-y-hidden mb-1 w-full" style={{ height: 14 }}>
           <div style={{ width: latimeContinut, height: 1 }} />
         </div>
       )}
-      <div ref={josRef} onScroll={dinJos} className="overflow-x-auto">
+      <div ref={josRef} onScroll={dinJos} className="overflow-x-auto w-full">
         {children}
       </div>
     </div>
@@ -3778,7 +3778,15 @@ export default function ParohieERP() {
         { label: "Navigator bonuri", icon: FileText, onClick: () => navigheazaCuActiune("consumintern", "navigatorBonuri") },
       ],
     },
-    { id: "patrimoniu", label: "Inventar", icon: Gem },
+    {
+      id: "patrimoniu", label: "Inventar", icon: Gem,
+      items: [
+        { label: "Vezi Inventar", icon: Gem, onClick: () => setTab("patrimoniu") },
+        ...(!permisiuni.citireOnly ? [{ label: "Bun nou", icon: Plus, onClick: () => navigheazaCuActiune("patrimoniu", "bunNou") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Inventariere anuală", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("patrimoniu", "inventariere") }] : []),
+        { label: "Navigator procese-verbale", icon: FileText, onClick: () => navigheazaCuActiune("patrimoniu", "navigatorPV") },
+      ],
+    },
     { id: "cimitir", label: "Cimitir", icon: Cross },
     { id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText },
     { id: "organisme", label: "Organisme parohiale", icon: Church },
@@ -4032,7 +4040,7 @@ export default function ParohieERP() {
           {tabActiv === "conturi" && <ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} />}
           {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={tabActiv === "pangar" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "consumintern" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
+          {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "patrimoniu" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={tabActiv === "rapoarte" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
@@ -5289,7 +5297,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       </header>
 
       <ScrollOrizontalSus>
-      <Card className="">
+      <Card className="w-full">
         <BaraCautarePaginare
           cautare={cautare} onCautare={setCautare}
           pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
@@ -10962,13 +10970,23 @@ function BonConsumForm({ grupe, onClose, onSave }) {
 
 /* ------------------------------ Inventar & Patrimoniu -------------------------------- */
 
-function PatrimoniuTab({ state, setState, permisiuni, parohieId }) {
+function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
   const [showBun, setShowBun] = useState(false);
   const [casareFor, setCasareFor] = useState(null);
   const [showInventariere, setShowInventariere] = useState(false);
   const [verPV, setVerPV] = useState(null);
   const [editBunFor, setEditBunFor] = useState(null);
   const [notice, setNotice] = useState(null);
+
+  // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/Pangar/Consum intern.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    if (actiuneInitiala === "bunNou") setShowBun(true);
+    else if (actiuneInitiala === "inventariere") setShowInventariere(true);
+    else if (actiuneInitiala === "navigatorPV") setVerPV("browser");
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
 
   async function addBun({ denumire, categorie, dataAchizitie, sursa, valoare, locatie, note, referintaFoto, modPlata }) {
     const rezultat = await creeazaBunPatrimoniu(parohieId, { denumire, categorie, dataAchizitie, sursa, valoare, locatie, note, referintaFoto, modPlata });
@@ -11049,23 +11067,13 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between">
+      <header>
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Inventar & Patrimoniu</h1>
           <p className="text-sm text-stone-500">
             Bunuri peste {fmt(PRAG_BUN_VALOARE_MARE)} RON necesită fotografiere la intrare și aprobare suplimentară la casare.
           </p>
         </div>
-        {!permisiuni.citireOnly && (
-          <div className="flex gap-2">
-            <Btn variant="ghost" onClick={() => setShowInventariere(true)}>
-              <ClipboardCheck size={15} /> Inventariere anuală
-            </Btn>
-            <Btn variant="primary" onClick={() => setShowBun(true)}>
-              <Plus size={15} /> Bun nou
-            </Btn>
-          </div>
-        )}
       </header>
 
       {notice && (
@@ -11154,9 +11162,6 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId }) {
       <Card className="p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-serif text-lg text-[#1F3864]">Procese-verbale de inventariere</h2>
-          <Btn variant="ghost" onClick={() => setVerPV("browser")}>
-            <FileText size={14} /> Navigator procese-verbale
-          </Btn>
         </div>
         <table className="w-full text-sm">
           <thead>
