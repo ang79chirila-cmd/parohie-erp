@@ -696,12 +696,12 @@ const ROL_DB_LA_LOCAL = {
 const ROLURI = {
   preot_paroh: {
     id: "preot_paroh", label: "Preot paroh / Administrator parohie",
-    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte", "profil", "import"],
+    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte", "profil", "import"],
     citireOnly: false, poateEmiteOP: true,
   },
   contabil: {
     id: "contabil", label: "Contabil parohie",
-    tabs: ["dashboard", "operatiuni", "conturi", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte"],
+    tabs: ["dashboard", "operatiuni", "conturi", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte"],
     citireOnly: false, poateEmiteOP: true,
   },
   casier: {
@@ -716,7 +716,7 @@ const ROLURI = {
   },
   auditor: {
     id: "auditor", label: "Auditor extern (read-only)",
-    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "rapoarte"],
+    tabs: ["dashboard", "operatiuni", "conturi", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte"],
     citireOnly: true, poateEmiteOP: false,
   },
 };
@@ -926,6 +926,94 @@ function Btn({ children, onClick, variant = "primary", type = "button", disabled
   );
 }
 
+// Element de meniu pentru bara principală (navy, sus) — buton cu etichetă + iconiță, desfășoară
+// o listă albă la clic. Vizual distinct de MenuDropdown (alb, folosit în interiorul paginilor) —
+// aici fundalul e închis, deci starea inactivă/hover trebuie să rămână lizibilă pe navy.
+function MenuBarItem({ label, icon: Icon, items, activ }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-flex shrink-0">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors whitespace-nowrap ${
+          activ || open
+            ? "bg-white/10 text-white border-[#B8860B]"
+            : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
+        }`}
+      >
+        <Icon size={15} /> {label} <ChevronDown size={12} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-40 py-1 min-w-[240px]">
+            {items.map((it, i) => (
+              <button
+                key={i}
+                onClick={() => { it.onClick(); setOpen(false); }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+              >
+                {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Placeholder pentru "Organisme parohiale" — modul nou, needezvoltat încă. Rezervă locul în
+// navigare, dar conținutul (Adunare parohială, Consiliu, Comitet — membri, mandate, procese-
+// verbale) e o lucrare separată, neediscutată în detaliu.
+function OrganismeParohialeTab() {
+  return (
+    <div className="flex flex-col gap-4">
+      <header>
+        <h1 className="font-serif text-2xl text-[#1F3864]">Organisme parohiale</h1>
+        <p className="text-sm text-stone-500">
+          Modul nou — rezervat în navigare. Conținutul (Adunarea parohială, Consiliul parohial, Comitetul parohial:
+          componență, mandate, procese-verbale de ședință) urmează să fie construit separat.
+        </p>
+      </header>
+      <Card className="p-6 text-center text-stone-400">
+        Încă neconstruit.
+      </Card>
+    </div>
+  );
+}
+
+
+// Meniu desfășurabil reutilizabil, folosit ÎN INTERIORUL paginilor (fundal alb) — grupează mai
+// multe acțiuni secundare sub UN singur buton vizibil, cu lista desfășurată la clic. Distinct de
+// MenuBarItem (bara navy de sus, meniul principal).
+function MenuDropdown({ label, icon: Icon, items }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative inline-flex">
+      <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setOpen((o) => !o)}>
+        {Icon && <Icon size={14} />} {label} <ChevronDown size={12} />
+      </Btn>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-20 py-1 min-w-[220px]">
+            {items.map((it, i) => (
+              <button
+                key={i}
+                onClick={() => { it.onClick(); setOpen(false); }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50"
+              >
+                {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Hook reutilizabil: căutare text simplă + paginare, pentru orice tabel din aplicație.
 function useTabelFiltrat(items, searchFields, pageSize = 15) {
   const [cautare, setCautareRaw] = useState("");
@@ -1051,6 +1139,28 @@ function xmlEscape(v) {
   return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Setul COMPLET al datelor parohiei, ca rânduri de tabel HTML — reutilizat de TOATE rapoartele
+// tipărite (cerut explicit: nu doar un subset abreviat, ci tot ce există în "Date parohie").
+// Câmpurile opționale (necompletate) sunt omise curat, nu afișate ca gol.
+function randuriCompleteDateParohie(p, culoareLabel) {
+  const stilLabel = `color:${culoareLabel || "#78716c"}; width:35%;`;
+  const randuri = [
+    ["Denumirea unității de cult", xmlEscape(p.denumire || "—")],
+  ];
+  if (p.hram) randuri.push(["Hram", xmlEscape(p.hram)]);
+  randuri.push(["Eparhia / Protoieria", `${xmlEscape(p.eparhie || "—")} / ${xmlEscape(p.protoierie || "—")}`]);
+  randuri.push(["Cod fiscal (CIF)", xmlEscape(p.cif || "—")]);
+  if (p.nrAnaf) randuri.push(["Nr. Registrul ANAF", xmlEscape(p.nrAnaf)]);
+  if (p.codLMI) randuri.push(["Cod LMI", xmlEscape(p.codLMI)]);
+  randuri.push(["Adresă", xmlEscape([p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", ") || "—")]);
+  if (p.telefon || p.email) randuri.push(["Telefon / E-mail", xmlEscape([p.telefon, p.email].filter(Boolean).join(" / "))]);
+  randuri.push(["Preot paroh", xmlEscape(p.preotParoh || "—")]);
+  if (p.telefonPreot || p.emailPreot) randuri.push(["Contact preot paroh", xmlEscape([p.telefonPreot, p.emailPreot].filter(Boolean).join(" / "))]);
+  if (p.banca || p.iban) randuri.push(["Bancă / IBAN", xmlEscape([p.banca, p.iban].filter(Boolean).join(" / "))]);
+  if (p.dataInfiintare) randuri.push(["Data înființării", xmlEscape(fmtDataJurnal(p.dataInfiintare))]);
+  return randuri.map(([label, val]) => `<tr><td style="${stilLabel}">${label}</td><td>${val}</td></tr>`).join("");
+}
+
 // Salvare/restaurare completă a bazei de date proprii a parohiei — un singur fișier JSON,
 // de sine stătător, transferabil către altă instalare (secțiunea 2.1 din specificație).
 const BACKUP_VERSIUNE = 1;
@@ -1102,7 +1212,11 @@ function calculeazaDataRaport(titlu, dataRaportCurenta) {
 // Multe coloane din rapoarte conțin sume deja formatate pentru afișare (via fmt(), ex. "1.379,00"
 // — punct ca separator de mii, virgulă zecimală).
 function esteSumaFormatata(v) {
-  return typeof v === "string" && /^-?\d{1,3}(\.\d{3})*,\d{2}$/.test(v);
+  // Acceptă și forma cu paranteze — "(1.234,00)" — folosită pentru viramentele interne (581/5081).
+  // Fără asta, o singură valoare de acest tip într-o coloană bloca detecția "coloană numerică"
+  // pentru ÎNTREAGA coloană (verificat concret, regex-ul vechi respingea "(1.234,00)"), lăsând
+  // toate sumele needate din acea coloană aliniate la stânga.
+  return typeof v === "string" && /^\(?-?\d{1,3}(\.\d{3})*,\d{2}\)?$/.test(v);
 }
 // ... convertim înapoi în număr real doar dacă textul chiar respectă exact acest tipar (altfel îl
 // lăsăm neatins — text, cod, dată etc.) — corect pentru PDF, dar greșit pentru XLSX, unde Excel
@@ -1165,7 +1279,7 @@ function exportXML(titlu, columns, rows, parohie, dataRaportCurenta) {
   URL.revokeObjectURL(url);
 }
 
-function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie) {
+function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie, extraCoperta = "") {
   const win = window.open("", "_blank");
   if (!win) return;
   const p = parohie || {};
@@ -1200,18 +1314,10 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
   const coperta = `
     <div class="coperta">
       <h1>${xmlEscape(p.denumire || "Parohia")}</h1>
-      <div class="hram">${xmlEscape(p.hram || "")}</div>
       <table>
-        <tr><td class="label">Eparhia</td><td>${xmlEscape(p.eparhie)}</td></tr>
-        <tr><td class="label">Protoieria</td><td>${xmlEscape(p.protoierie)}</td></tr>
-        <tr><td class="label">Cod fiscal (CIF)</td><td>${xmlEscape(p.cif)}</td></tr>
-        <tr><td class="label">Înscrisă în Registrul ANAF</td><td>${p.inscrisAnaf === "inscris" ? "Da" : p.inscrisAnaf === "neinscris" ? "Nu" : "—"}</td></tr>
-        ${p.codLMI ? `<tr><td class="label">Cod LMI</td><td>${xmlEscape(p.codLMI)}</td></tr>` : ""}
-        <tr><td class="label">Adresă</td><td>${xmlEscape([p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", "))}</td></tr>
-        <tr><td class="label">Telefon / E-mail</td><td>${xmlEscape([p.telefon, p.email].filter(Boolean).join(" / "))}</td></tr>
-        <tr><td class="label">Preot paroh</td><td>${xmlEscape(p.preotParoh)}</td></tr>
-        <tr><td class="label">Bancă / IBAN</td><td>${xmlEscape([p.banca, p.iban].filter(Boolean).join(" / "))}</td></tr>
+        ${randuriCompleteDateParohie(p)}
       </table>
+      ${extraCoperta}
       <h2 class="titlu-raport-arhaic" style="margin-top:28px;">${xmlEscape(titlu)}</h2>
       <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
     </div>`;
@@ -1403,12 +1509,31 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   doc.setTextColor(215, 222, 235);
   doc.text(uni(`${p.eparhie || "—"}${p.protoierie ? "  ·  " + p.protoierie : ""}`), MARGINE, ySubtitlu);
 
-  // Linia de identificare (CIF), sub bandă.
+  // Setul COMPLET al datelor parohiei — cerut explicit, nu doar un subset (Eparhia/Protoieria
+  // rămân în bandă, mai sus, ca să nu se dubleze). Fiecare câmp opțional necompletat e omis curat.
   let y = inaltimeBanda + 9;
+  const campuriParohie = [];
+  if (p.hram) campuriParohie.push(`Hram: ${p.hram}`);
+  campuriParohie.push(`CIF: ${p.cif || "—"}`);
+  if (p.nrAnaf) campuriParohie.push(`Nr. Registrul ANAF: ${p.nrAnaf}`);
+  if (p.codLMI) campuriParohie.push(`Cod LMI: ${p.codLMI}`);
+  campuriParohie.push(`Adresă: ${[p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", ") || "—"}`);
+  if (p.telefon || p.email) campuriParohie.push(`Telefon / E-mail: ${[p.telefon, p.email].filter(Boolean).join(" / ")}`);
+  campuriParohie.push(`Preot paroh: ${p.preotParoh || "—"}`);
+  if (p.telefonPreot || p.emailPreot) campuriParohie.push(`Contact preot paroh: ${[p.telefonPreot, p.emailPreot].filter(Boolean).join(" / ")}`);
+  if (p.banca || p.iban) campuriParohie.push(`Bancă / IBAN: ${[p.banca, p.iban].filter(Boolean).join(" / ")}`);
+  if (p.dataInfiintare) campuriParohie.push(`Data înființării: ${fmtDataJurnal(p.dataInfiintare)}`);
+
   doc.setFont("NotoSans", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(...CULOARE_GRI);
-  doc.text(uni(`CIF: ${p.cif || "—"}`), MARGINE, y);
+  campuriParohie.forEach((text) => {
+    const linii = doc.splitTextToSize(uni(text), latimeUtila - 5);
+    linii.forEach((linie) => {
+      doc.text(linie, MARGINE, y);
+      y += 4.5;
+    });
+  });
 
   // Separator subțire.
   y += 6;
@@ -1481,6 +1606,15 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   const idxPlata = coloanePdf.findIndex((c) => c.key === "plata");
   const idxExplicatie = coloanePdf.findIndex((c) => c.key === "explicatie");
   const nrColoane = coloanePdf.length;
+
+  // Toate coloanele exprimate în lei/RON se aliniază la dreapta — cerut explicit, în toate
+  // rapoartele. AutoTable indexează stilurile de coloană după poziție, nu după cheie, deci
+  // construim maparea dinamic (coloanele pot lipsi/varia, din selecția de coloane de mai sus).
+  const CHEI_SUME_LEI = ["incasare", "plata", "soldFinal", "soldBanca", "soldCasa"];
+  const columnStyles = {};
+  coloanePdf.forEach((c, i) => {
+    if (CHEI_SUME_LEI.includes(c.key)) columnStyles[i] = { halign: "right" };
+  });
 
   const bodyCells = randuri.map((r) => {
     const eViramente = r.cont?.clasa === "viramente";
@@ -1562,6 +1696,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [31, 56, 100], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
+    columnStyles,
     head: [randAntetReport, coloanePdf.map((c) => c.label)],
     foot: [randSubsolTotal],
     showHead: "everyPage",
@@ -1753,17 +1888,8 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
   const coperta = `
     <div class="coperta">
       <h1>${xmlEscape(p.denumire || "Parohia")}</h1>
-      <div class="hram">${xmlEscape(p.hram || "")}</div>
       <table>
-        <tr><td class="label">Eparhia</td><td>${xmlEscape(p.eparhie)}</td></tr>
-        <tr><td class="label">Protoieria</td><td>${xmlEscape(p.protoierie)}</td></tr>
-        <tr><td class="label">Cod fiscal (CIF)</td><td>${xmlEscape(p.cif)}</td></tr>
-        <tr><td class="label">Înscrisă în Registrul ANAF</td><td>${p.inscrisAnaf === "inscris" ? "Da" : p.inscrisAnaf === "neinscris" ? "Nu" : "—"}</td></tr>
-        ${p.codLMI ? `<tr><td class="label">Cod LMI</td><td>${xmlEscape(p.codLMI)}</td></tr>` : ""}
-        <tr><td class="label">Adresă</td><td>${xmlEscape([p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", "))}</td></tr>
-        <tr><td class="label">Telefon / E-mail</td><td>${xmlEscape([p.telefon, p.email].filter(Boolean).join(" / "))}</td></tr>
-        <tr><td class="label">Preot paroh</td><td>${xmlEscape(p.preotParoh)}</td></tr>
-        <tr><td class="label">Bancă / IBAN</td><td>${xmlEscape([p.banca, p.iban].filter(Boolean).join(" / "))}</td></tr>
+        ${randuriCompleteDateParohie(p)}
       </table>
       <h2 class="titlu-raport-arhaic" style="margin-top:28px;">${xmlEscape(titlu)}</h2>
       <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
@@ -1991,12 +2117,7 @@ function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
         <p style="color:#78716c;">Toate modulele: Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență</p>
       </div>
       <table class="raport" style="margin-top:40px;">
-        <tr><td style="width:35%; color:#78716c;">Denumirea unității de cult</td><td class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</td></tr>
-        <tr><td style="color:#78716c;">Eparhia / Protoieria</td><td>${xmlEscape(p.eparhie)} / ${xmlEscape(p.protoierie)}</td></tr>
-        <tr><td style="color:#78716c;">Cod fiscal (CIF)</td><td>${xmlEscape(p.cif)}</td></tr>
-        <tr><td style="color:#78716c;">Nr. Registrul ANAF</td><td>${xmlEscape(p.nrAnaf)}</td></tr>
-        <tr><td style="color:#78716c;">Adresă</td><td>${xmlEscape([p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", "))}</td></tr>
-        <tr><td style="color:#78716c;">Preot Paroh</td><td>${xmlEscape(p.preotParoh)}</td></tr>
+        ${randuriCompleteDateParohie(p)}
         <tr><td style="color:#78716c;">Exercițiu financiar ${raport.an}</td><td>${raport.exercitiuInchis ? "Închis" : "Deschis"}</td></tr>
       </table>
     </div>`;
@@ -2171,7 +2292,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
   setTimeout(() => win.print(), 300);
 }
 
-function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [] }) {
+function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [], extraCoperta = "" }) {
   const [open, setOpen] = useState(false);
   const [dataRaport, setDataRaport] = useState(todayISO());
   const [orientare, setOrientare] = useState("portrait");
@@ -2212,7 +2333,7 @@ function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDi
     if (customPdf) {
       customPdf({ dataRaport, orientare, formatHartie, coloane: coloaneFinale });
     } else {
-      exportPDF(titlu, coloaneFinale, rows, parohie, dataRaport, orientare, formatHartie);
+      exportPDF(titlu, coloaneFinale, rows, parohie, dataRaport, orientare, formatHartie, extraCoperta);
     }
     setShowSelectieColoane(false);
   }
@@ -2912,6 +3033,15 @@ export default function ParohieERP() {
 
   const [state, setState] = useState(null);
   const [tab, setTab] = useState("dashboard");
+  // Acțiune "de deschis" imediat după navigare — folosită de meniul principal, ca să poți declanșa
+  // direct o acțiune dintr-un modul (ex. "Chitanță nouă") fără să navighezi mai întâi manual acolo.
+  // Modulul țintă citește acest semnal o singură dată (la montare/schimbare) și îl "consumă"
+  // (îl golește), ca să nu se redeschidă singur la o navigare ulterioară către același tab.
+  const [actiuneInitiala, setActiuneInitiala] = useState(null);
+  function navigheazaCuActiune(tabId, actiune) {
+    setTab(tabId);
+    setActiuneInitiala(actiune);
+  }
   const [receptieRapidaArticolId, setReceptieRapidaArticolId] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -3442,17 +3572,48 @@ export default function ParohieERP() {
   const permisiuni = ROLURI[rolActiv];
   const NAV_TOATE = [
     { id: "dashboard", label: "Tablou de bord", icon: Church },
-    { id: "operatiuni", label: "Registru Jurnal", icon: BookOpen },
-    { id: "pangar", label: "Pangar", icon: Flame },
+    {
+      id: "nomenclatoare", label: "Nomenclatoare", icon: Landmark,
+      items: [
+        { label: "Articole bugetare", icon: Landmark, onClick: () => setTab("conturi") },
+        { label: "Produse Pangar", icon: Flame, onClick: () => setTab("pangar") },
+      ],
+    },
+    {
+      id: "operatiuni", label: "Registru Jurnal", icon: BookOpen,
+      subTabs: ["operatiuni", "conturi"],
+      items: [
+        { label: "Vezi registrul", icon: BookOpen, onClick: () => setTab("operatiuni") },
+        ...(!permisiuni.citireOnly ? [{ label: "Chitanță nouă", icon: ArrowDownCircle, onClick: () => navigheazaCuActiune("operatiuni", "chitanta") }] : []),
+        ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP ? [{ label: "Ordin de plată nou", icon: ArrowUpCircle, onClick: () => navigheazaCuActiune("operatiuni", "op") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Transfer casă/bancă", icon: ArrowLeftRight, onClick: () => navigheazaCuActiune("operatiuni", "transfer") }] : []),
+        { label: "Chitanțe emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "chitanteEmise") },
+        { label: "Ordine de plată emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "opEmise") },
+        { label: "Registrul viramentelor", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "registrulViramente") },
+        { label: "Reconciliere bancară", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("operatiuni", "reconciliere") },
+      ],
+    },
+    {
+      id: "pangar", label: "Pangar", icon: Flame,
+      items: [
+        { label: "Vezi pangarul", icon: Flame, onClick: () => setTab("pangar") },
+        ...(!permisiuni.citireOnly ? [{ label: "Recepție marfă (NRCD)", icon: FileText, onClick: () => navigheazaCuActiune("pangar", "receptieNRCD") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Vânzare", icon: ArrowDownCircle, onClick: () => navigheazaCuActiune("pangar", "vanzare") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Stoc inițial", icon: Boxes, onClick: () => navigheazaCuActiune("pangar", "stocInitial") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Produs nou", icon: Plus, onClick: () => navigheazaCuActiune("pangar", "produsNou") }] : []),
+        { label: "Rapoarte Pangar", icon: FileBarChart, onClick: () => navigheazaCuActiune("pangar", "rapoarte") },
+        { label: "Note de Recepție (NRCD)", icon: FileText, onClick: () => navigheazaCuActiune("pangar", "nrcd") },
+      ],
+    },
     { id: "consumintern", label: "Consum intern & Filantropie", icon: HeartHandshake },
-    { id: "patrimoniu", label: "Inventar & Patrimoniu", icon: Gem },
-    { id: "cimitir", label: "Cimitir Parohial", icon: Cross },
+    { id: "patrimoniu", label: "Inventar", icon: Gem },
+    { id: "cimitir", label: "Cimitir", icon: Cross },
     { id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText },
+    { id: "organisme", label: "Organisme parohiale", icon: Church },
     { id: "rapoarte", label: "Rapoarte", icon: FileBarChart },
-   { id: "profil", label: "Date parohie", icon: Building2 },
     { id: "import", label: "Import date", icon: Upload },
   ];
-  const NAV = NAV_TOATE.filter((n) => permisiuni.tabs.includes(n.id) && (n.id !== "cimitir" || state.parohie?.areCimitir));
+  const NAV = NAV_TOATE.filter((n) => (n.id === "nomenclatoare" || permisiuni.tabs.includes(n.id)) && (n.id !== "cimitir" || state.parohie?.areCimitir));
   const tabActiv = permisiuni.tabs.includes(tab) ? tab : NAV[0].id;
 
   // Creare Ordin de plată provenit din citirea automată AI (Import date) — mirror exact al
@@ -3478,75 +3639,72 @@ export default function ParohieERP() {
   }
 
   return (
-    <div className="h-screen bg-[#FAF8F3] text-stone-800 flex font-sans overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-60 bg-[#1F3864] text-white flex flex-col shrink-0">
-        <div className="flex items-center gap-2 px-5 py-5 border-b border-white/10">
-          <div className="font-arhaic text-lg leading-snug text-[#F0E4C8]">
-            {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
-          </div>
+    <div className="h-screen bg-[#FAF8F3] text-stone-800 flex flex-col font-sans overflow-hidden">
+      {/* Bară principală de navigare, orizontală, sus */}
+      <header className="bg-[#1F3864] text-white flex items-center gap-1 px-4 shrink-0 h-14 border-b border-white/10 overflow-x-auto">
+        <div className="font-arhaic text-base leading-snug text-[#F0E4C8] pr-3 border-r border-white/10 mr-1 shrink-0">
+          {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
         </div>
-        <div className="px-5 pb-3 -mt-2 border-b border-white/10">
-          <div className="text-[11px] text-white/50 leading-tight">
-            {session === DEMO_CIF
-              ? "mediu de test · date fictive"
-              : ([state.parohie?.localitate, state.parohie?.judet].filter(Boolean).join(", ") || "prototip · multi-parohie, izolat pe cont")}
-          </div>
-        </div>
-        <div className="px-5 py-2.5 border-b border-white/10 flex items-center gap-2 min-w-0">
-          <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-            <User size={12} className="text-white/70" />
-          </div>
-          <span className="text-xs text-white/70 truncate">CIF {session}</span>
-        </div>
-        <nav className="flex-1 py-3 overflow-y-auto px-2 flex flex-col gap-1.5">
-          {NAV.map((n) => (
+        {/* Tablou de bord — pagina de start, separată vizual de restul modulelor de lucru */}
+        <button
+          onClick={() => setTab("dashboard")}
+          title="Tablou de bord"
+          className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
+            tabActiv === "dashboard"
+              ? "bg-white/10 text-white border-[#B8860B]"
+              : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
+          }`}
+        >
+          <Church size={15} />
+          Tablou de bord
+        </button>
+        <div className="w-px h-6 bg-white/15 mx-1 shrink-0" />
+        {NAV.filter((n) => n.id !== "dashboard").map((n) =>
+          n.items ? (
+            <MenuBarItem key={n.id} label={n.label} icon={n.icon} items={n.items} activ={tabActiv === n.id || (n.subTabs && n.subTabs.includes(tabActiv))} />
+          ) : (
             <button
               key={n.id}
               onClick={() => setTab(n.id)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-md border transition-colors ${
+              className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
                 tabActiv === n.id
                   ? "bg-white/10 text-white border-[#B8860B]"
-                  : "text-white/70 border-white/15 hover:bg-white/5 hover:text-white hover:border-white/30"
+                  : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
               }`}
             >
-              <n.icon size={16} />
+              <n.icon size={15} />
               {n.label}
             </button>
-          ))}
-        </nav>
-        {session === DEMO_CIF && (
-          <div className="px-5 py-2.5 border-t border-white/10">
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="w-full flex items-center justify-center gap-1.5 text-[11px] text-[#B8860B] hover:text-white border border-[#B8860B]/40 hover:bg-[#B8860B]/20 rounded-md py-1.5 transition-colors"
-            >
-              <RotateCcw size={12} /> Resetează mediul de test
-            </button>
-          </div>
+          )
         )}
-        <div className="px-5 py-2.5 border-t border-white/10">
-          <span className="text-[11px] text-white/50">Rol activ: <span className="text-white/80">{permisiuni.label}</span></span>
+        <div className="flex-1" />
+        <div className="text-[11px] text-white/50 shrink-0 mr-2 whitespace-nowrap">
+          Rol activ: <span className="text-white/80">{permisiuni.label}</span>
         </div>
-        <div className="px-2 py-2 border-t border-white/10 flex items-center gap-1.5">
-          <button
-            title="Setări — jurnal de audit, deblocare 2FA, securitate, schimbă parola"
-            onClick={() => setShowSetari(true)}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors"
-          >
-            <Settings size={14} /> Setări
-          </button>
-          <button
-            title="Ieșire din cont — încheie sesiunea curentă"
-            onClick={() => setShowLogoutConfirm(true)}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors"
-          >
-            <LogOut size={14} /> Ieșire
-          </button>
-        </div>
+        <button
+          title="Setări — jurnal de audit, deblocare 2FA, securitate, schimbă parola, date parohie"
+          onClick={() => setShowSetari(true)}
+          className="flex items-center gap-1.5 px-3 h-9 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors shrink-0"
+        >
+          <Settings size={14} /> Setări
+        </button>
+        <button
+          title="Ieșire din cont — încheie sesiunea curentă"
+          onClick={() => setShowLogoutConfirm(true)}
+          className="flex items-center gap-1.5 px-3 h-9 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors shrink-0 ml-1"
+        >
+          <LogOut size={14} /> Ieșire
+        </button>
         {showSetari && (
           <Modal title="Setări" onClose={() => setShowSetari(false)}>
             <div className="flex flex-col gap-1.5">
+              <button
+                title="Date parohie — datele complete ale unității de cult, folosite pe toate rapoartele"
+                onClick={() => { setShowSetari(false); setTab("profil"); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-md border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
+              >
+                <Building2 size={15} /> Date parohie
+              </button>
               <button
                 title="Jurnal de audit — istoricul complet al acțiunilor efectuate în cont (cine, ce, când)"
                 onClick={() => { setShowSetari(false); setShowAudit(true); }}
@@ -3577,37 +3735,43 @@ export default function ParohieERP() {
               >
                 <KeyRound size={15} /> Schimbă parola
               </button>
+              {session === DEMO_CIF && (
+                <button
+                  onClick={() => { setShowSetari(false); setShowResetConfirm(true); }}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs text-[#B8860B] hover:text-white border border-[#B8860B]/40 hover:bg-[#B8860B]/20 rounded-md py-2 mt-1 transition-colors"
+                >
+                  <RotateCcw size={13} /> Resetează mediul de test
+                </button>
+              )}
+              <div className="text-[11px] text-stone-400 leading-snug pt-2 mt-1 border-t border-stone-100">
+                {(() => {
+                  const bt = typeof __BUILD_TIME__ !== "undefined" ? __BUILD_TIME__ : null;
+                  const bv = typeof __BUILD_VERSION__ !== "undefined" ? __BUILD_VERSION__ : "0";
+                  let zz = "--", ll = "--", aaaa = "----", hh = "--", mm = "--", ss = "--";
+                  if (bt) {
+                    const parti = new Intl.DateTimeFormat("ro-RO", {
+                      timeZone: "Europe/Bucharest",
+                      day: "2-digit", month: "2-digit", year: "numeric",
+                      hour: "2-digit", minute: "2-digit", second: "2-digit",
+                      hour12: false,
+                    }).formatToParts(new Date(bt));
+                    const g = (tip) => parti.find((p) => p.type === tip)?.value ?? "--";
+                    zz = g("day"); ll = g("month"); aaaa = g("year");
+                    hh = g("hour"); mm = g("minute"); ss = g("second");
+                  }
+                  return (
+                    <>
+                      ParohieErp. v.{bv}.{zz}.{ll}.{aaaa}. {hh}:{mm}:{ss}.
+                      <br />
+                      (C) Anghel Chirilă 2025. Toate drepturile rezervate.
+                    </>
+                  );
+                })()}
+              </div>
             </div>
           </Modal>
         )}
-        <div className="px-5 py-3 border-t border-white/10 text-[11px] text-white/40 leading-snug">
-          {(() => {
-            const bt = typeof __BUILD_TIME__ !== "undefined" ? __BUILD_TIME__ : null;
-            const bv = typeof __BUILD_VERSION__ !== "undefined" ? __BUILD_VERSION__ : "0";
-            let zz = "--", ll = "--", aaaa = "----", hh = "--", mm = "--", ss = "--";
-            if (bt) {
-              // Build-ul rulează pe server Vercel, în UTC — convertim explicit la ora
-              // României, ca marcajul afișat să corespundă cu ceasul real al utilizatorului.
-              const parti = new Intl.DateTimeFormat("ro-RO", {
-                timeZone: "Europe/Bucharest",
-                day: "2-digit", month: "2-digit", year: "numeric",
-                hour: "2-digit", minute: "2-digit", second: "2-digit",
-                hour12: false,
-              }).formatToParts(new Date(bt));
-              const g = (tip) => parti.find((p) => p.type === tip)?.value ?? "--";
-              zz = g("day"); ll = g("month"); aaaa = g("year");
-              hh = g("hour"); mm = g("minute"); ss = g("second");
-            }
-            return (
-              <>
-                ParohieErp. v.{bv}.{zz}.{ll}.{aaaa}. {hh}:{mm}:{ss}.
-                <br />
-                (C) Anghel Chirilă 2025. Toate drepturile rezervate.
-              </>
-            );
-          })()}
-        </div>
-      </aside>
+      </header>
 
       {/* Main */}
       <main className="flex-1 overflow-y-auto">
@@ -3645,14 +3809,15 @@ export default function ParohieERP() {
               }}
             />
           )}
-          {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} />}
+          {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={tabActiv === "operatiuni" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "conturi" && <ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} />}
-          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} />}
+          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={tabActiv === "pangar" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} />}
+          {tabActiv === "organisme" && <OrganismeParohialeTab />}
           {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
           {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} />}
         </div>
@@ -4584,12 +4749,27 @@ function fmtDataJurnal(iso) {
   return `${zi}.${luna}.${an}`;
 }
 
-function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener }) {
+function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener, actiuneInitiala, onConsumaActiuneInitiala }) {
   const [showChitanta, setShowChitanta] = useState(false);
   const [showOP, setShowOP] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
   const [showReconciliere, setShowReconciliere] = useState(false);
   const [browseTip, setBrowseTip] = useState(null); // null | "incasare" | "plata"
+
+  // Acțiune declanșată din meniul principal (bara de sus) — deschide direct modalul/acțiunea
+  // cerută, indiferent dacă utilizatorul tocmai a navigat aici sau era deja pe acest tab.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    if (actiuneInitiala === "chitanta") setShowChitanta(true);
+    else if (actiuneInitiala === "op") setShowOP(true);
+    else if (actiuneInitiala === "transfer") setShowTransfer(true);
+    else if (actiuneInitiala === "chitanteEmise") setBrowseTip("incasare");
+    else if (actiuneInitiala === "opEmise") setBrowseTip("plata");
+    else if (actiuneInitiala === "reconciliere") setShowReconciliere(true);
+    else if (actiuneInitiala === "registrulViramente") genereazaRegistrulViramente();
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
   const [browseSaltNr, setBrowseSaltNr] = useState(null); // numărul documentului la care se deschide direct navigatorul (link din tabelul Jurnal)
 
   // Fiecare nume nou folosit vreodată la o Chitanță devine automat sugestie pentru viitor —
@@ -4875,40 +5055,6 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               </select>
             </Field>
             <div className="w-px h-8 bg-stone-300 mx-1" />
-            {!permisiuni.citireOnly && (
-              <Btn variant="verde" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowChitanta(true)}>
-                <ArrowDownCircle size={15} /> Chitanță
-              </Btn>
-            )}
-            {!permisiuni.citireOnly && permisiuni.poateEmiteOP && (
-              <Btn variant="primary" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowOP(true)}>
-                <ArrowUpCircle size={15} /> Ordin de plată
-              </Btn>
-            )}
-            {!permisiuni.citireOnly && (
-              <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowTransfer(true)}>
-                <ArrowLeftRight size={15} /> Transfer casă/bancă
-              </Btn>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setBrowseTip("incasare")}>
-              <FileText size={14} /> Chitanțe emise
-            </Btn>
-            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setBrowseTip("plata")}>
-              <FileText size={14} /> Ordine de plată emise
-            </Btn>
-            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={genereazaRegistrulViramente}>
-              <FileText size={14} /> Registrul viramentelor ({anSelectat})
-            </Btn>
-            <div className="w-px h-6 bg-stone-300 mx-1" />
-            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setTab("conturi")}>
-              <Landmark size={15} /> Articole bugetare
-            </Btn>
-            <Btn variant="ghost" className="shadow-sm hover:shadow-md transition-shadow" onClick={() => setShowReconciliere(true)}>
-              <ClipboardCheck size={14} /> Reconciliere bancară
-            </Btn>
-            <div className="w-px h-6 bg-stone-300 mx-1" />
             <ExportMenu
               titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`}
               columns={coloaneJurnal}
@@ -6305,7 +6451,7 @@ function ContForm({ existente, editing, onClose, onSave }) {
 
 /* ------------------------------ Pangar -------------------------------- */
 
-function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener, receptieRapidaArticolId, onConsumatReceptieRapida }) {
+function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener, receptieRapidaArticolId, onConsumatReceptieRapida, actiuneInitiala, onConsumaActiuneInitiala }) {
   const [showArticol, setShowArticol] = useState(false);
   const [variantaFor, setVariantaFor] = useState(null);
   const [showReceptieNRCD, setShowReceptieNRCD] = useState(false);
@@ -6317,6 +6463,19 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const [showNRCD, setShowNRCD] = useState(false);
   const [showRapoarte, setShowRapoarte] = useState(false);
   const [showStocInitial, setShowStocInitial] = useState(false);
+
+  // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    if (actiuneInitiala === "receptieNRCD") setShowReceptieNRCD(true);
+    else if (actiuneInitiala === "vanzare") setShowVanzare(true);
+    else if (actiuneInitiala === "stocInitial") setShowStocInitial(true);
+    else if (actiuneInitiala === "produsNou") setShowArticol(true);
+    else if (actiuneInitiala === "rapoarte") setShowRapoarte(true);
+    else if (actiuneInitiala === "nrcd") setShowNRCD(true);
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
 
   // La primirea unui semnal din Tabloul de bord ("Propune recepție" pe o alertă de stoc scăzut),
   // deschidem direct formularul de recepție NRCD, cu articolul deja selectat pe prima linie.
@@ -6646,6 +6805,44 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // Pentru fiecare mișcare se calculează stocul rezultat AL CODULUI specific (imutabil ca preț) și,
   // agregat, stocul + valoarea de stoc la preț de vânzare ALE PRODUSULUI (toate codurile lui).
   // Rulează pe tot istoricul (nu doar anul selectat) ca soldurile per-an să pornească din contextul real.
+  // Totaluri curente de stoc, la preț de vânzare, grupate pe categoriile cerute explicit —
+  // Lumânări (unește LUMÂNĂRI DE CULT + LUMÂNĂRI DE CEARĂ, categorii separate doar pentru
+  // sortarea nomenclatorului), Candele, Colportaj, Vin, Calendare, plus TOTAL General (suma
+  // TUTUROR produselor, inclusiv oricare needcategorizat, nu doar cele 5 numite). Recalculat
+  // automat la orice schimbare (recepție, vânzare, stoc inițial) — e un useMemo peste
+  // state.articole, needependent de vreo acțiune explicită de "refresh".
+  const totaluriCategoriiPangar = useMemo(() => {
+    const totaluri = { "Lumânări": 0, "Candele": 0, "Colportaj": 0, "Vin": 0, "Calendare": 0 };
+    let totalGeneral = 0;
+    for (const a of state.articole) {
+      const valoare = (a.stoc || 0) * (a.pretVanzare || 0);
+      totalGeneral += valoare;
+      const cat = categorieAfisarePangar(a.bazaCod);
+      if (cat === "LUMÂNĂRI DE CULT" || cat === "LUMÂNĂRI DE CEARĂ") totaluri["Lumânări"] += valoare;
+      else if (cat === "CANDELE DE CULT") totaluri["Candele"] += valoare;
+      else if (cat === "COLPORTAJ") totaluri["Colportaj"] += valoare;
+      else if (cat === "VIN") totaluri["Vin"] += valoare;
+      else if (cat === "CALENDARE") totaluri["Calendare"] += valoare;
+    }
+    return { ...totaluri, "TOTAL General": totalGeneral };
+  }, [state.articole]);
+
+  // Același sumar, ca fragment HTML, pentru copertă — folosit de toate cele 3 rapoarte Pangar
+  // (cerut explicit: "similar și în toate rapoartele"). Reutilizează valorile deja calculate mai
+  // sus, nu recalculează nimic separat.
+  const extraCopertaTotaluriPangar = `
+    <div style="margin-top:20px;">
+      <p style="color:#78716c; font-size:12px; margin-bottom:6px;">Totaluri curente de stoc, la preț de vânzare:</p>
+      <table class="raport">
+        <tr><td style="color:#78716c; width:35%;">Lumânări</td><td style="text-align:right;">${fmt(totaluriCategoriiPangar["Lumânări"])} lei</td></tr>
+        <tr><td style="color:#78716c;">Candele</td><td style="text-align:right;">${fmt(totaluriCategoriiPangar["Candele"])} lei</td></tr>
+        <tr><td style="color:#78716c;">Colportaj</td><td style="text-align:right;">${fmt(totaluriCategoriiPangar["Colportaj"])} lei</td></tr>
+        <tr><td style="color:#78716c;">Vin</td><td style="text-align:right;">${fmt(totaluriCategoriiPangar["Vin"])} lei</td></tr>
+        <tr><td style="color:#78716c;">Calendare</td><td style="text-align:right;">${fmt(totaluriCategoriiPangar["Calendare"])} lei</td></tr>
+        <tr style="font-weight:bold;"><td>TOTAL General</td><td style="text-align:right;">${fmt(totaluriCategoriiPangar["TOTAL General"])} lei</td></tr>
+      </table>
+    </div>`;
+
   const evenimentePangar = useMemo(() => {
     const stocPerCod = {};
     const articolePorBazaCod = {};
@@ -6832,30 +7029,19 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           <Btn variant="ghost" onClick={() => setShowNomenclator((v) => !v)}>
             {showNomenclator ? "Ascunde nomenclatorul" : "Vezi nomenclatorul"}
           </Btn>
-          <Btn variant="ghost" onClick={() => setShowRapoarte(true)}>
-            <FileBarChart size={14} /> Rapoarte Pangar
-          </Btn>
-          <Btn variant="ghost" onClick={() => setShowNRCD(true)}>
-            <FileText size={14} /> Note de Recepție (NRCD)
-          </Btn>
-          {!permisiuni.citireOnly && (
-            <>
-              <Btn variant="ghost" onClick={() => setShowStocInitial(true)}>
-                <Boxes size={14} /> Stoc inițial
-              </Btn>
-              <Btn variant="verde" onClick={() => setShowReceptieNRCD(true)}>
-                <FileText size={15} /> Recepție marfă (NRCD)
-              </Btn>
-              <Btn variant="gold" onClick={() => setShowVanzare(true)} disabled={state.articole.every((a) => a.stoc === 0)}>
-                <ArrowDownCircle size={15} /> Vânzare
-              </Btn>
-              <Btn variant="primary" onClick={() => setShowArticol(true)}>
-                <Plus size={15} /> Produs nou
-              </Btn>
-            </>
-          )}
         </div>
       </header>
+
+      <Card className="p-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {Object.entries(totaluriCategoriiPangar).map(([nume, valoare]) => (
+            <div key={nume} className={`rounded-lg border p-3 ${nume === "TOTAL General" ? "border-[#1F3864] bg-[#1F3864]/5" : "border-stone-200 bg-white"}`}>
+              <div className={`text-xs uppercase tracking-wide ${nume === "TOTAL General" ? "text-[#1F3864] font-semibold" : "text-stone-500"}`}>{nume}</div>
+              <div className={`text-lg font-serif ${nume === "TOTAL General" ? "text-[#1F3864] font-semibold" : "text-stone-700"}`}>{fmt(valoare)} lei</div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {showRapoarte && (
         <Modal title={`Rapoarte Pangar — anul ${anPangar}`} onClose={() => setShowRapoarte(false)} wide>
@@ -6865,7 +7051,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 <div className="text-sm font-medium text-stone-700">Registru Pangar (cantitativ-valoric)</div>
                 <p className="text-xs text-stone-500">Toate tranzacțiile anului {anPangar} — toate produsele, în ordine cronologică (recepții înaintea vânzărilor la dată egală).</p>
               </div>
-              <ExportMenu titlu={`REGISTRU PANGAR CANTITATIV-VALORIC PE ANUL ${anPangar}`} columns={coloaneRegistruPangar} rows={randuriRegistruPangar} parohie={state.parohie} />
+              <ExportMenu titlu={`REGISTRU PANGAR CANTITATIV-VALORIC PE ANUL ${anPangar}`} columns={coloaneRegistruPangar} rows={randuriRegistruPangar} parohie={state.parohie} extraCoperta={extraCopertaTotaluriPangar} />
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -6881,7 +7067,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 <div className="text-sm font-medium text-stone-700">Fișă cronologică de produs</div>
                 <p className="text-xs text-stone-500">Toate tranzacțiile din {anPangar} ale produsului „{produsInfoSelectat?.denumire || "—"}" — toate codurile lui, cronologic, cu stoc și valoare de stoc agregate la nivel de produs.</p>
               </div>
-              <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaCronologica} rows={randuriFisaCronologica} parohie={state.parohie} />
+              <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaCronologica} rows={randuriFisaCronologica} parohie={state.parohie} extraCoperta={extraCopertaTotaluriPangar} />
             </div>
 
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -6889,7 +7075,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 <div className="text-sm font-medium text-stone-700">Fișă sintetică de produs</div>
                 <p className="text-xs text-stone-500">Stoc inițial / intrări / ieșiri / stoc final pentru „{produsInfoSelectat?.denumire || "—"}" în {anPangar}, cantitativ și valoric (la preț de vânzare).</p>
               </div>
-              <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaSintetica} rows={randuriFisaSintetica} parohie={state.parohie} />
+              <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaSintetica} rows={randuriFisaSintetica} parohie={state.parohie} extraCoperta={extraCopertaTotaluriPangar} />
             </div>
           </div>
         </Modal>
