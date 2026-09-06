@@ -1046,6 +1046,51 @@ function OrganismeParohialeTab() {
 // Meniu desfășurabil reutilizabil, folosit ÎN INTERIORUL paginilor (fundal alb) — grupează mai
 // multe acțiuni secundare sub UN singur buton vizibil, cu lista desfășurată la clic. Distinct de
 // MenuBarItem (bara navy de sus, meniul principal).
+// Bară de scroll orizontal DUPLICATĂ, sus — sincronizată cu conținutul real de dedesubt. Pentru
+// un tabel foarte înalt (sute de rânduri), bara de scroll orizontal "reală" ajunge la baza
+// conținutului — la distanță mare de vârf. Aici, o bară subțire, identică ca poziție de scroll,
+// stă chiar deasupra conținutului; mutarea oricăreia dintre cele două mișcă și pe cealaltă.
+function ScrollOrizontalSus({ children }) {
+  const susRef = useRef(null);
+  const josRef = useRef(null);
+  const [latimeContinut, setLatimeContinut] = useState(0);
+  const sincronizeaza = useRef(false);
+
+  useEffect(() => {
+    const elJos = josRef.current;
+    if (!elJos) return;
+    const actualizeaza = () => setLatimeContinut(elJos.scrollWidth);
+    actualizeaza();
+    const observer = new ResizeObserver(actualizeaza);
+    observer.observe(elJos);
+    return () => observer.disconnect();
+  }, [children]);
+
+  function dinSus() {
+    if (sincronizeaza.current) { sincronizeaza.current = false; return; }
+    sincronizeaza.current = true;
+    josRef.current.scrollLeft = susRef.current.scrollLeft;
+  }
+  function dinJos() {
+    if (sincronizeaza.current) { sincronizeaza.current = false; return; }
+    sincronizeaza.current = true;
+    susRef.current.scrollLeft = josRef.current.scrollLeft;
+  }
+
+  return (
+    <div>
+      {latimeContinut > 0 && (
+        <div ref={susRef} onScroll={dinSus} className="overflow-x-auto overflow-y-hidden mb-1" style={{ height: 14 }}>
+          <div style={{ width: latimeContinut, height: 1 }} />
+        </div>
+      )}
+      <div ref={josRef} onScroll={dinJos} className="overflow-x-auto">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function MenuDropdown({ label, icon: Icon, items }) {
   const [open, setOpen] = useState(false);
   return (
@@ -3721,7 +3766,18 @@ export default function ParohieERP() {
         { label: "Note de Recepție (NRCD)", icon: FileText, onClick: () => navigheazaCuActiune("pangar", "nrcd") },
       ],
     },
-    { id: "consumintern", label: "Consum intern & Filantropie", icon: HeartHandshake },
+    {
+      id: "consumintern", label: "Consum intern & Filantropie", icon: HeartHandshake,
+      items: [
+        { label: "Vezi Consum intern", icon: HeartHandshake, onClick: () => setTab("consumintern") },
+        ...(!permisiuni.citireOnly ? [{ label: "Recepție articole", icon: FileText, onClick: () => navigheazaCuActiune("consumintern", "receptie") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Bon de consum nou", icon: Plus, onClick: () => navigheazaCuActiune("consumintern", "bon") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Stoc inițial", icon: Boxes, onClick: () => navigheazaCuActiune("consumintern", "stocInitial") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Articol nou", icon: Plus, onClick: () => navigheazaCuActiune("consumintern", "articolNou") }] : []),
+        { label: "Rapoarte Consum intern", icon: FileBarChart, onClick: () => navigheazaCuActiune("consumintern", "rapoarte") },
+        { label: "Navigator bonuri", icon: FileText, onClick: () => navigheazaCuActiune("consumintern", "navigatorBonuri") },
+      ],
+    },
     { id: "patrimoniu", label: "Inventar", icon: Gem },
     { id: "cimitir", label: "Cimitir", icon: Cross },
     { id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText },
@@ -3801,7 +3857,7 @@ export default function ParohieERP() {
     <div className="h-screen bg-[#FAF8F3] text-stone-800 flex flex-col font-sans overflow-hidden">
       {/* Bară principală de navigare — două rânduri: sus identitatea parohiei + cont, jos navigarea */}
       <header className="bg-[#1F3864] text-white flex flex-col shrink-0 border-b border-white/10">
-        <div className="flex items-center gap-1 px-4 h-11 border-b border-white/10">
+        <div className="flex items-center gap-1 px-6 h-11 border-b border-white/10">
           <div className="font-arhaic text-base leading-snug text-[#F0E4C8] shrink-0">
             {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
           </div>
@@ -3824,7 +3880,7 @@ export default function ParohieERP() {
             <LogOut size={14} /> Ieșire
           </button>
         </div>
-        <div className="flex items-center gap-1 px-4 h-14 overflow-x-auto">
+        <div className="flex items-center gap-1 px-6 h-14 overflow-x-auto">
           {/* Tablou de bord — pagina de start, separată vizual de restul modulelor de lucru */}
           <button
             onClick={() => setTab("dashboard")}
@@ -3938,7 +3994,7 @@ export default function ParohieERP() {
 
       {/* Main */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto p-6">
+        <div className="w-full px-6 py-6">
           {tabActiv === "dashboard" && (
             <Dashboard
               state={state}
@@ -3975,7 +4031,7 @@ export default function ParohieERP() {
           {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={tabActiv === "operatiuni" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "conturi" && <ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} />}
           {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={tabActiv === "pangar" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
+          {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "consumintern" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
@@ -5232,41 +5288,42 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         </div>
       </header>
 
-      <Card className="overflow-x-auto">
+      <ScrollOrizontalSus>
+      <Card className="">
         <BaraCautarePaginare
           cautare={cautare} onCautare={setCautare}
           pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
           totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
         />
-        <table className="w-full text-xs">
+        <table className="w-full text-sm">
           <thead>
             <tr className="text-left uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-1.5 py-1.5">Nr. crt.</th>
-              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-1.5 py-1.5 align-bottom" />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-1.5 py-1.5 align-bottom" />
-              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-1.5 py-1.5 align-bottom" />
-              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-1.5 py-1.5 align-bottom" />
-              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-1.5 py-1.5 align-bottom max-w-[100px]" />
-              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-1.5 py-1.5 align-bottom max-w-[130px]" />
-              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-1.5 py-1.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-1.5 py-1.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="sursa" eticheta="Sursa/Destinație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-1.5 py-1.5 align-bottom" />
-              <th className="px-1.5 py-1.5 text-right">Sold final</th>
-              <th className="px-1.5 py-1.5 text-right">Sold „Bancă”</th>
-              <th className="px-1.5 py-1.5 text-right">Sold „Casă”</th>
-              {soldDepozitAn !== 0 && <th className="px-1.5 py-1.5 text-right">Sold „Depozit”</th>}
+              <th className="px-2.5 py-2.5">Nr. crt.</th>
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-2.5 align-bottom" />
+              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-2.5 align-bottom" />
+              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-2.5 align-bottom" />
+              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-2.5 align-bottom max-w-[220px]" />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-2.5 align-bottom max-w-[280px]" />
+              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-2.5 align-bottom text-right" />
+              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-2.5 align-bottom text-right" />
+              <AntetFiltrabil cheie="sursa" eticheta="Sursa/Destinație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-2.5 align-bottom" />
+              <th className="px-2.5 py-2.5 text-right">Sold final</th>
+              <th className="px-2.5 py-2.5 text-right">Sold „Bancă”</th>
+              <th className="px-2.5 py-2.5 text-right">Sold „Casă”</th>
+              {soldDepozitAn !== 0 && <th className="px-2.5 py-2.5 text-right">Sold „Depozit”</th>}
             </tr>
           </thead>
           <tbody>
             <tr className="bg-stone-50 font-semibold border-b-2 border-stone-300">
-              <td colSpan={7} className="px-1.5 py-1.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
-              <td className="px-1.5 py-1.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
-              <td className="px-1.5 py-1.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
+              <td colSpan={7} className="px-2.5 py-2.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
+              <td className="px-2.5 py-2.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
+              <td className="px-2.5 py-2.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
               <td></td>
-              <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldFinalAn)}</td>
-              <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldBancaAn)}</td>
-              <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldCasaAn)}</td>
-              {soldDepozitAn !== 0 && <td className="px-1.5 py-1.5 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
+              <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldFinalAn)}</td>
+              <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldBancaAn)}</td>
+              <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldCasaAn)}</td>
+              {soldDepozitAn !== 0 && <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
             </tr>
             {afisate.length === 0 && (
               <tr>
@@ -5277,14 +5334,14 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             )}
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 hover:bg-stone-50">
-                <td className="px-1.5 py-1 tabular-nums text-stone-500">{r.nrCrt}</td>
-                <td className="px-1.5 py-1 tabular-nums leading-tight">
+                <td className="px-2.5 py-2 tabular-nums text-stone-500">{r.nrCrt}</td>
+                <td className="px-2.5 py-2 tabular-nums leading-tight">
                   <div className="flex flex-col">
                     <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td className="px-1.5 py-1 tabular-nums">
+                <td className="px-2.5 py-2 tabular-nums">
                   {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -5300,7 +5357,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-1.5 py-1 tabular-nums">
+                <td className="px-2.5 py-2 tabular-nums">
                   {r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -5316,16 +5373,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-1.5 py-1 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
-                <td className="px-1.5 py-1 max-w-[100px] truncate" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
-                <td className="px-1.5 py-1 text-stone-500 max-w-[130px] truncate" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
-                <td className="px-1.5 py-1 text-right tabular-nums text-emerald-700">
+                <td className="px-2.5 py-2 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
+                <td className="px-2.5 py-2 max-w-[220px] truncate" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
+                <td className="px-2.5 py-2 text-stone-500 max-w-[280px] truncate" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums text-emerald-700">
                   {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-1.5 py-1 text-right tabular-nums text-rose-700">
+                <td className="px-2.5 py-2 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-1.5 py-1">
+                <td className="px-2.5 py-2">
                   <span className="flex items-center gap-1">
                     {r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}
                     {r.cont?.clasa === "viramente" && !permisiuni.citireOnly && (
@@ -5344,15 +5401,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     )}
                   </span>
                 </td>
-                <td className="px-1.5 py-1 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
-                <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
-                <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
-                {soldDepozitAn !== 0 && <td className="px-1.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
+                <td className="px-2.5 py-2 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
+                <td className="px-2.5 py-2 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
+                {soldDepozitAn !== 0 && <td className="px-2.5 py-2 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
               </tr>
             ))}
           </tbody>
         </table>
       </Card>
+      </ScrollOrizontalSus>
 
       {showChitanta && (
         <ChitantaForm
@@ -9492,14 +9550,29 @@ const MOTIVE_CONSUM = {
   protocol: { label: "Protocol", contId: "623", cereBeneficiar: false },
 };
 
-function ConsumInternTab({ state, setState, permisiuni, parohieId }) {
+function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
   const [showArticol, setShowArticol] = useState(false);
   const [showReceptie, setShowReceptie] = useState(false);
   const [showBon, setShowBon] = useState(false);
   const [showBrowserBon, setShowBrowserBon] = useState(false);
+  const [showStocInitial, setShowStocInitial] = useState(false);
+  const [showRapoarte, setShowRapoarte] = useState(false);
   const [notice, setNotice] = useState(null);
   const [editReceptieFor, setEditReceptieFor] = useState(null);
   const [editBonFor, setEditBonFor] = useState(null);
+
+  // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/Pangar.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    if (actiuneInitiala === "receptie") setShowReceptie(true);
+    else if (actiuneInitiala === "bon") setShowBon(true);
+    else if (actiuneInitiala === "articolNou") setShowArticol(true);
+    else if (actiuneInitiala === "navigatorBonuri") setShowBrowserBon(true);
+    else if (actiuneInitiala === "stocInitial") setShowStocInitial(true);
+    else if (actiuneInitiala === "rapoarte") setShowRapoarte(true);
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
 
   function addArticol(denumire, um) {
     setState((s) => ({
@@ -9530,6 +9603,69 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId }) {
         articoleConsumIntern,
         miscariConsumIntern: [...s.miscariConsumIntern, ...miscariNoi],
         jurnalAudit: adaugaAudit(s, permisiuni.label, `Recepție Consum intern — ${linii.map((l) => l.denumire).join(", ")}`),
+      };
+    });
+  }
+
+  // Stoc inițial — introducere directă de stoc deja existent fizic, fără o recepție formală.
+  // Spre deosebire de Pangar (unde stocul se adaugă la un produs existent), la Consum intern
+  // fiecare linie de stoc inițial creează, la fel ca o recepție normală, propriul ei lot nou —
+  // marcat distinct (stocInitial: true), ca să poată fi identificat/editat separat mai târziu.
+  function creeazaStocInitialConsumIntern(denumire, um, cantitate, cost, data) {
+    setState((s) => {
+      const lotNou = { id: uid(), seq: s.articoleConsumIntern.length + 1, denumire, um, costUnitar: cost, stoc: cantitate };
+      const miscareNoua = {
+        id: uid(), data, tip: "intrare", articolId: lotNou.id, cantitate,
+        valoareUnitara: cost, valoareTotala: cantitate * cost, stocInitial: true,
+      };
+      return {
+        ...s,
+        articoleConsumIntern: [...s.articoleConsumIntern, lotNou],
+        miscariConsumIntern: [...s.miscariConsumIntern, miscareNoua],
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Stoc inițial Consum intern — ${denumire}`),
+      };
+    });
+  }
+
+  function editeazaStocInitialConsumIntern(miscareId, opts) {
+    setState((s) => {
+      const miscare = s.miscariConsumIntern.find((m) => m.id === miscareId);
+      if (!miscare || !miscare.stocInitial) return s;
+      const lot = s.articoleConsumIntern.find((a) => a.id === miscare.articolId);
+      if (!lot) return s;
+      const consumatDejaDinLot = miscare.cantitate - lot.stoc;
+      if (opts.cantitate < consumatDejaDinLot) {
+        setNotice(`Nu poți reduce cantitatea sub ce s-a consumat deja din acest lot (${consumatDejaDinLot} ${lot.um}).`);
+        return s;
+      }
+      const stocNouLot = opts.cantitate - consumatDejaDinLot;
+      const articoleConsumIntern = s.articoleConsumIntern.map((a) => (a.id === lot.id ? { ...a, stoc: stocNouLot, costUnitar: opts.cost } : a));
+      const miscariConsumIntern = s.miscariConsumIntern.map((m) => (m.id === miscareId ? {
+        ...m, data: opts.data, cantitate: opts.cantitate, valoareUnitara: opts.cost, valoareTotala: opts.cantitate * opts.cost,
+      } : m));
+      return {
+        ...s, articoleConsumIntern, miscariConsumIntern,
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare stoc inițial Consum intern — ${lot.denumire}`),
+      };
+    });
+  }
+
+  function stergeStocInitialConsumIntern(miscareId) {
+    setState((s) => {
+      const miscare = s.miscariConsumIntern.find((m) => m.id === miscareId);
+      if (!miscare || !miscare.stocInitial) return s;
+      const lot = s.articoleConsumIntern.find((a) => a.id === miscare.articolId);
+      if (!lot) return s;
+      const consumatDejaDinLot = miscare.cantitate - lot.stoc;
+      if (consumatDejaDinLot > 0) {
+        setNotice(`Nu poți șterge acest stoc inițial — s-a consumat deja ${consumatDejaDinLot} ${lot.um} din el.`);
+        return s;
+      }
+      return {
+        ...s,
+        articoleConsumIntern: s.articoleConsumIntern.filter((a) => a.id !== lot.id),
+        miscariConsumIntern: s.miscariConsumIntern.filter((m) => m.id !== miscareId),
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere stoc inițial Consum intern — ${lot.denumire}`),
       };
     });
   }
@@ -9710,6 +9846,162 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId }) {
     return Array.from(map.values()).sort((a, b) => a.denumire.localeCompare(b.denumire));
   }, [state.articoleConsumIntern]);
 
+  // Simulare cronologică globală (aceeași logică precum evenimentePangar, adaptată la modelul
+  // Consum intern: fiecare LOT e propriul lui "cod"; gruparea de "produs" se face după denumire+um,
+  // nu după bazaCod; valoarea de stoc e la COST DE INTRARE, nu preț de vânzare — distincția
+  // explicită față de Pangar, cerută la construirea acestui modul).
+  const evenimenteConsumIntern = useMemo(() => {
+    const stocPerLot = {};
+    const loturiPerProdus = {};
+    for (const a of state.articoleConsumIntern) {
+      const cheie = `${a.denumire}|||${a.um}`;
+      if (!loturiPerProdus[cheie]) loturiPerProdus[cheie] = [];
+      loturiPerProdus[cheie].push(a);
+    }
+    const indexate = state.miscariConsumIntern.map((m, idx) => ({ m, idx }));
+    indexate.sort((a, b) => {
+      if (a.m.data !== b.m.data) return a.m.data < b.m.data ? -1 : 1;
+      if (a.m.tip !== b.m.tip) return a.m.tip === "intrare" ? -1 : 1;
+      return a.idx - b.idx;
+    });
+    return indexate.map(({ m }) => {
+      const lot = state.articoleConsumIntern.find((a) => a.id === m.articolId);
+      const cheieProdus = lot ? `${lot.denumire}|||${lot.um}` : m.articolId;
+      const semn = m.tip === "intrare" ? 1 : -1;
+      stocPerLot[m.articolId] = (stocPerLot[m.articolId] || 0) + semn * m.cantitate;
+      const stocLotDupa = stocPerLot[m.articolId];
+      const surori = loturiPerProdus[cheieProdus] || [];
+      let stocProdusDupa = 0;
+      let valoareProdusDupa = 0;
+      for (const s of surori) {
+        const stocS = stocPerLot[s.id] || 0;
+        stocProdusDupa += stocS;
+        valoareProdusDupa += stocS * (s.costUnitar || 0);
+      }
+      let tert = "", document = "";
+      if (m.tip === "intrare") {
+        document = m.stocInitial ? "Stoc inițial" : "Recepție";
+      } else if (m.tip === "iesire" && m.nrBon) {
+        const bon = state.bonuriConsum.find((b) => b.nr === m.nrBon && b.an === yearOf(m.data));
+        document = `Bon de consum nr. ${m.nrBon}/${yearOf(m.data)}`;
+        tert = bon?.beneficiar || "";
+      }
+      return {
+        data: m.data, an: yearOf(m.data), tip: m.tip, document,
+        articolId: m.articolId, cheieProdus,
+        denumire: lot?.denumire || "", um: lot?.um || "", costUnitar: lot?.costUnitar || 0,
+        cantitate: m.cantitate, tert,
+        stocLotDupa, valoareLotDupa: stocLotDupa * (lot?.costUnitar || 0),
+        stocProdusDupa, valoareProdusDupa,
+      };
+    });
+  }, [state.miscariConsumIntern, state.articoleConsumIntern, state.bonuriConsum]);
+
+  const anCurentConsumIntern = new Date().getFullYear();
+  const [anConsumIntern, setAnConsumIntern] = useState(anCurentConsumIntern);
+  const aniDisponibiliConsumIntern = useMemo(() => {
+    const ani = new Set([anCurentConsumIntern]);
+    for (const e of evenimenteConsumIntern) ani.add(e.an);
+    return Array.from(ani).sort((a, b) => b - a);
+  }, [evenimenteConsumIntern, anCurentConsumIntern]);
+
+  // 1. REGISTRU CONSUM INTERN — toate tranzacțiile (toate articolele), strict anul selectat, cronologic.
+  const registruConsumInternAn = useMemo(() => evenimenteConsumIntern.filter((e) => e.an === anConsumIntern), [evenimenteConsumIntern, anConsumIntern]);
+  const coloaneRegistruConsumIntern = [
+    { key: "nrCrt", label: "Nr. crt." },
+    { key: "data", label: "Data" },
+    { key: "document", label: "Document" },
+    { key: "denumire", label: "Denumire" },
+    { key: "beneficiar", label: "Beneficiar/Motiv" },
+    { key: "cantitateIntrata", label: "Cantitate intrată" },
+    { key: "cantitateIesita", label: "Cantitate ieșită" },
+    { key: "stoc", label: "Stoc" },
+    { key: "valoareStoc", label: "Valoare stoc la cost de intrare (lei)" },
+  ];
+  const randuriRegistruConsumIntern = useMemo(() => registruConsumInternAn.map((e, i) => ({
+    nrCrt: i + 1, data: fmtDataJurnal(e.data), document: e.document, denumire: e.denumire, beneficiar: e.tert,
+    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
+    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
+    stoc: `${e.stocLotDupa} ${e.um}`, valoareStoc: fmt(e.valoareLotDupa),
+  })), [registruConsumInternAn]);
+
+  // Selector de produs pentru fișele 2 și 3, implicit primul din nomenclator.
+  const [produsSelectatConsumIntern, setProdusSelectatConsumIntern] = useState("");
+  useEffect(() => {
+    if (!produsSelectatConsumIntern && grupeConsumIntern.length > 0) {
+      setProdusSelectatConsumIntern(`${grupeConsumIntern[0].denumire}|||${grupeConsumIntern[0].um}`);
+    }
+  }, [grupeConsumIntern, produsSelectatConsumIntern]);
+  const produsInfoSelectatConsumIntern = grupeConsumIntern.find((g) => `${g.denumire}|||${g.um}` === produsSelectatConsumIntern);
+
+  // 2. FIȘĂ CRONOLOGICĂ DE PRODUS — toate tranzacțiile unui singur produs (toate loturile lui),
+  // strict anul selectat, cronologic; Stoc/Valoare = agregat la nivel de PRODUS.
+  const evenimenteProdusAnConsumIntern = useMemo(
+    () => evenimenteConsumIntern.filter((e) => e.cheieProdus === produsSelectatConsumIntern && e.an === anConsumIntern),
+    [evenimenteConsumIntern, produsSelectatConsumIntern, anConsumIntern]
+  );
+  const coloaneFisaCronologicaConsumIntern = [
+    { key: "nrCrt", label: "Nr. crt." },
+    { key: "data", label: "Data" },
+    { key: "document", label: "Document" },
+    { key: "beneficiar", label: "Beneficiar/Motiv" },
+    { key: "cantitateIntrata", label: "Cantitate intrată" },
+    { key: "cantitateIesita", label: "Cantitate ieșită" },
+    { key: "stoc", label: "Stoc produs" },
+    { key: "valoareStoc", label: "Valoare stoc produs la cost de intrare (lei)" },
+  ];
+  const randuriFisaCronologicaConsumIntern = useMemo(() => evenimenteProdusAnConsumIntern.map((e, i) => ({
+    nrCrt: i + 1, data: fmtDataJurnal(e.data), document: e.document, beneficiar: e.tert,
+    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
+    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
+    stoc: `${e.stocProdusDupa} ${e.um}`, valoareStoc: fmt(e.valoareProdusDupa),
+  })), [evenimenteProdusAnConsumIntern]);
+
+  // 3. FIȘĂ SINTETICĂ DE PRODUS — stoc inițial (snapshot înainte de an) / intrat / ieșit / stoc final,
+  // cantitativ și valoric (la cost de intrare), pentru produsul selectat.
+  const fisaSinteticaProdusConsumIntern = useMemo(() => {
+    const toateProdus = evenimenteConsumIntern.filter((e) => e.cheieProdus === produsSelectatConsumIntern);
+    const inceputAn = `${anConsumIntern}-01-01`;
+    const inainteDeAn = toateProdus.filter((e) => e.data < inceputAn);
+    const ultimulInainte = inainteDeAn[inainteDeAn.length - 1];
+    const stocInitial = ultimulInainte ? ultimulInainte.stocProdusDupa : 0;
+    const valoareInitial = ultimulInainte ? ultimulInainte.valoareProdusDupa : 0;
+
+    const dinAn = toateProdus.filter((e) => e.an === anConsumIntern);
+    let cantitateIntrata = 0, valoareIntrata = 0, cantitateIesita = 0, valoareIesita = 0;
+    for (const e of dinAn) {
+      if (e.tip === "intrare") { cantitateIntrata += e.cantitate; valoareIntrata += e.cantitate * e.costUnitar; }
+      else { cantitateIesita += e.cantitate; valoareIesita += e.cantitate * e.costUnitar; }
+    }
+    const ultimulDinAn = dinAn[dinAn.length - 1];
+    const stocFinal = ultimulDinAn ? ultimulDinAn.stocProdusDupa : stocInitial;
+    const valoareFinal = ultimulDinAn ? ultimulDinAn.valoareProdusDupa : valoareInitial;
+
+    return { stocInitial, valoareInitial, cantitateIntrata, valoareIntrata, cantitateIesita, valoareIesita, stocFinal, valoareFinal };
+  }, [evenimenteConsumIntern, produsSelectatConsumIntern, anConsumIntern]);
+
+  const coloaneFisaSinteticaConsumIntern = [
+    { key: "eticheta", label: "" },
+    { key: "stocInitial", label: "STOC INIȚIAL" },
+    { key: "cantitateIntrata", label: "CANTITATE TOTALĂ INTRATĂ" },
+    { key: "cantitateIesita", label: "CANTITATE TOTALĂ IEȘITĂ" },
+    { key: "stocFinal", label: "STOC FINAL" },
+  ];
+  const randuriFisaSinteticaConsumIntern = [
+    {
+      eticheta: "Cantitate", stocInitial: fisaSinteticaProdusConsumIntern.stocInitial,
+      cantitateIntrata: fisaSinteticaProdusConsumIntern.cantitateIntrata,
+      cantitateIesita: fisaSinteticaProdusConsumIntern.cantitateIesita,
+      stocFinal: fisaSinteticaProdusConsumIntern.stocFinal,
+    },
+    {
+      eticheta: "Valoare la cost de intrare (lei)", stocInitial: fmt(fisaSinteticaProdusConsumIntern.valoareInitial),
+      cantitateIntrata: fmt(fisaSinteticaProdusConsumIntern.valoareIntrata),
+      cantitateIesita: fmt(fisaSinteticaProdusConsumIntern.valoareIesita),
+      stocFinal: fmt(fisaSinteticaProdusConsumIntern.valoareFinal),
+    },
+  ];
+
   const configColoaneConsumIntern = useMemo(() => ({
     articol: { get: (g) => g.denumire },
     stoc: { get: (g) => g.stocTotal },
@@ -9731,23 +10023,13 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between">
+      <header>
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Consum propriu intern & Acte filantropice & Protocol</h1>
           <p className="text-sm text-stone-500">
             Gestiune FIFO, pe loturi la cost de intrare — distinctă de pangar, evaluat la preț de vânzare.
           </p>
         </div>
-        {!permisiuni.citireOnly && (
-          <div className="flex gap-2">
-            <Btn variant="verde" onClick={() => setShowReceptie(true)}>
-              <FileText size={15} /> Recepție articole
-            </Btn>
-            <Btn variant="primary" onClick={() => setShowArticol(true)}>
-              <Plus size={15} /> Articol nou
-            </Btn>
-          </div>
-        )}
       </header>
 
       {notice && (
@@ -9890,16 +10172,6 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId }) {
       <Card className="p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-serif text-lg text-[#1F3864]">Bonuri de consum emise</h2>
-          <div className="flex gap-2">
-            <Btn variant="ghost" onClick={() => setShowBrowserBon(true)}>
-              <FileText size={14} /> Navigator bonuri
-            </Btn>
-            {!permisiuni.citireOnly && (
-              <Btn variant="gold" onClick={() => setShowBon(true)} disabled={state.articoleConsumIntern.every((a) => a.stoc === 0)}>
-                <Plus size={14} /> Bon de consum nou
-              </Btn>
-            )}
-          </div>
         </div>
         <BaraCautarePaginare
           cautare={cautareBonuri} onCautare={setCautareBonuri}
@@ -9942,6 +10214,62 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId }) {
           onClose={() => setShowReceptie(false)}
           onSave={async (data, linii) => { await receptieMultipla(data, linii); setShowReceptie(false); }}
         />
+      )}
+      {showStocInitial && (
+        <StocInitialConsumInternModal
+          grupe={grupeConsumIntern}
+          articole={state.articoleConsumIntern}
+          miscariStocInitiale={state.miscariConsumIntern.filter((m) => m.stocInitial)}
+          onClose={() => setShowStocInitial(false)}
+          onAdauga={async (denumire, um, cantitate, cost, data) => creeazaStocInitialConsumIntern(denumire, um, cantitate, cost, data)}
+          onModifica={async (miscareId, opts) => editeazaStocInitialConsumIntern(miscareId, opts)}
+          onSterge={async (miscareId) => stergeStocInitialConsumIntern(miscareId)}
+        />
+      )}
+      {showRapoarte && (
+        <Modal title={`Rapoarte Consum intern & Filantropie — anul ${anConsumIntern}`} onClose={() => setShowRapoarte(false)} wide>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Field label="An">
+                <select className={`${inputCls} w-28`} value={anConsumIntern} onChange={(e) => setAnConsumIntern(Number(e.target.value))}>
+                  {aniDisponibiliConsumIntern.map((an) => <option key={an} value={an}>{an}</option>)}
+                </select>
+              </Field>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
+              <div>
+                <div className="text-sm font-medium text-stone-700">Registru Consum intern (cantitativ-valoric)</div>
+                <p className="text-xs text-stone-500">Toate tranzacțiile anului {anConsumIntern} — toate articolele, în ordine cronologică.</p>
+              </div>
+              <ExportMenu titlu={`REGISTRU CONSUM INTERN CANTITATIV-VALORIC PE ANUL ${anConsumIntern}`} columns={coloaneRegistruConsumIntern} rows={randuriRegistruConsumIntern} parohie={state.parohie} />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Field label="Articol">
+                <select className={`${inputCls} min-w-[220px]`} value={produsSelectatConsumIntern} onChange={(e) => setProdusSelectatConsumIntern(e.target.value)}>
+                  {grupeConsumIntern.map((g) => <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire}</option>)}
+                </select>
+              </Field>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
+              <div>
+                <div className="text-sm font-medium text-stone-700">Fișă cronologică de produs</div>
+                <p className="text-xs text-stone-500">Toate tranzacțiile din {anConsumIntern} ale articolului „{produsInfoSelectatConsumIntern?.denumire || "—"}" — toate loturile lui, cronologic, cu stoc și valoare de stoc agregate la nivel de produs.</p>
+              </div>
+              <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectatConsumIntern?.denumire || "").toUpperCase()} PE ANUL ${anConsumIntern}`} columns={coloaneFisaCronologicaConsumIntern} rows={randuriFisaCronologicaConsumIntern} parohie={state.parohie} />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-sm font-medium text-stone-700">Fișă sintetică de produs</div>
+                <p className="text-xs text-stone-500">Stoc inițial / intrări / ieșiri / stoc final pentru „{produsInfoSelectatConsumIntern?.denumire || "—"}" în {anConsumIntern}, cantitativ și valoric (la cost de intrare).</p>
+              </div>
+              <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectatConsumIntern?.denumire || "").toUpperCase()} PE ANUL ${anConsumIntern}`} columns={coloaneFisaSinteticaConsumIntern} rows={randuriFisaSinteticaConsumIntern} parohie={state.parohie} />
+            </div>
+          </div>
+        </Modal>
       )}
       {showBon && (
         <BonConsumForm
@@ -10258,6 +10586,215 @@ function ReceptieConsumInternMultiForm({ grupe, onClose, onSave }) {
         <div className="flex justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
           <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă recepția"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, onClose, onAdauga, onModifica, onSterge }) {
+  const grupeSortate = useMemo(() => [...grupe].sort((a, b) => a.denumire.localeCompare(b.denumire)), [grupe]);
+  const [editari, setEditari] = useState({}); // miscareId -> { cantitate, cost, data }
+  const [salvandId, setSalvandId] = useState(null);
+  const [confirmareStergereId, setConfirmareStergereId] = useState(null);
+  const [error, setError] = useState("");
+
+  let idLinieNoua = 0;
+  function linieGoala() {
+    idLinieNoua += 1;
+    return { key: `linie-noua-${Date.now()}-${idLinieNoua}`, denumire: "", um: "", cantitate: "", cost: "", data: todayISO() };
+  }
+  const [liniiNoi, setLiniiNoi] = useState(() => [linieGoala()]);
+  const [salvandKeyNou, setSalvandKeyNou] = useState(null);
+
+  function actualizeazaLinieNoua(key, patch) {
+    setLiniiNoi((linii) => linii.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+  function adaugaLinieNoua() {
+    setLiniiNoi((linii) => [...linii, linieGoala()]);
+  }
+  function eliminaLinieNoua(key) {
+    setLiniiNoi((linii) => {
+      const ramase = linii.filter((l) => l.key !== key);
+      return ramase.length > 0 ? ramase : [linieGoala()];
+    });
+  }
+
+  async function submitLinieNoua(l) {
+    if (!l.denumire) { setError("Selectați un articol pentru această linie."); return; }
+    const cantitate = Number(l.cantitate);
+    if (!cantitate || cantitate <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    const cost = Number(l.cost);
+    if (!cost || cost <= 0) { setError("Introduceți un cost valid, mai mare ca 0."); return; }
+    if (!l.data) { setError("Data este obligatorie."); return; }
+    setError("");
+    setSalvandKeyNou(l.key);
+    try {
+      await onAdauga(l.denumire, l.um, cantitate, cost, l.data);
+      eliminaLinieNoua(l.key);
+    } catch (e) {
+      setError(e.message || "Eroare la adăugarea stocului inițial. Încearcă din nou.");
+    } finally {
+      setSalvandKeyNou(null);
+    }
+  }
+
+  function valoareEditata(m, camp) {
+    if (editari[m.id]?.[camp] !== undefined) return editari[m.id][camp];
+    if (camp === "cantitate") return String(m.cantitate);
+    if (camp === "cost") return String(m.valoareUnitara);
+    return m.data;
+  }
+  function actualizeazaEditare(miscareId, camp, valoare) {
+    setEditari((e) => ({ ...e, [miscareId]: { ...e[miscareId], [camp]: valoare } }));
+  }
+
+  async function submitModifica(m) {
+    const cantitate = Number(valoareEditata(m, "cantitate"));
+    const cost = Number(valoareEditata(m, "cost"));
+    const data = valoareEditata(m, "data");
+    if (!cantitate || cantitate <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    if (!cost || cost <= 0) { setError("Introduceți un cost valid, mai mare ca 0."); return; }
+    if (!data) { setError("Data este obligatorie."); return; }
+    setError("");
+    setSalvandId(m.id);
+    try {
+      await onModifica(m.id, { cantitate, cost, data });
+      setEditari((e) => { const nou = { ...e }; delete nou[m.id]; return nou; });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
+    } finally {
+      setSalvandId(null);
+    }
+  }
+
+  async function submitSterge(m) {
+    setSalvandId(m.id);
+    try {
+      await onSterge(m.id);
+      setConfirmareStergereId(null);
+    } catch (e) {
+      setError(e.message || "Eroare la ștergere. Încearcă din nou.");
+    } finally {
+      setSalvandId(null);
+    }
+  }
+
+  return (
+    <Modal title="Stoc inițial — Consum intern & Filantropie" onClose={onClose} wide="xl">
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Pentru introducerea directă a stocului deja existent fizic, fără o recepție formală asociată.
+          Fiecare linie creează propriul ei lot, la fel ca o recepție obișnuită. Articolul trebuie să existe deja
+          în nomenclator (creează-l întâi din „Articol nou", dacă e cazul).
+        </p>
+
+        {miscariStocInitiale.length > 0 && (
+          <Card className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                  <th className="px-3 py-2">Denumire</th>
+                  <th className="px-3 py-2">U.M.</th>
+                  <th className="px-3 py-2 text-right">Cantitate</th>
+                  <th className="px-3 py-2 text-right">Cost/unitate</th>
+                  <th className="px-3 py-2">Data</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {miscariStocInitiale.map((m) => {
+                  const lot = articole.find((a) => a.id === m.articolId);
+                  if (!lot) return null;
+                  return (
+                    <tr key={m.id} className="border-b border-stone-100">
+                      <td className="px-3 py-2">{lot.denumire}</td>
+                      <td className="px-3 py-2 text-stone-500">{lot.um}</td>
+                      <td className="px-3 py-2 text-right">
+                        <input type="number" className={`${inputCls} w-24 text-right`} value={valoareEditata(m, "cantitate")} onChange={(e) => actualizeazaEditare(m.id, "cantitate", e.target.value)} />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input type="number" step="0.01" className={`${inputCls} w-24 text-right`} value={valoareEditata(m, "cost")} onChange={(e) => actualizeazaEditare(m.id, "cost", e.target.value)} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="date" className={`${inputCls} w-36`} value={valoareEditata(m, "data")} onChange={(e) => actualizeazaEditare(m.id, "data", e.target.value)} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <Btn variant="gold" onClick={() => submitModifica(m)} disabled={salvandId === m.id}>Modifică</Btn>
+                          {confirmareStergereId === m.id ? (
+                            <>
+                              <Btn variant="danger" onClick={() => submitSterge(m)} disabled={salvandId === m.id}>Confirmă</Btn>
+                              <Btn variant="ghost" onClick={() => setConfirmareStergereId(null)}>Anulează</Btn>
+                            </>
+                          ) : (
+                            <Btn variant="ghost" onClick={() => setConfirmareStergereId(m.id)}>Șterge</Btn>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Linii noi de adăugat</div>
+          {liniiNoi.map((l, i) => (
+            <Card key={l.key} className="p-3 grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-4">
+                <Field label={`Articol (linia ${i + 1})`}>
+                  <select
+                    className={inputCls}
+                    value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                    onChange={(e) => {
+                      const [denumire, um] = e.target.value.split("|||");
+                      actualizeazaLinieNoua(l.key, { denumire, um });
+                    }}
+                  >
+                    <option value="">— selectați din nomenclator —</option>
+                    {grupeSortate.map((g) => (
+                      <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire} ({g.um})</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="Cantitate">
+                  <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinieNoua(l.key, { cantitate: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="Cost/unitate (lei)">
+                  <input type="number" step="0.01" className={inputCls} value={l.cost} onChange={(e) => actualizeazaLinieNoua(l.key, { cost: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-2">
+                <Field label="Data">
+                  <input type="date" className={inputCls} value={l.data} onChange={(e) => actualizeazaLinieNoua(l.key, { data: e.target.value })} />
+                </Field>
+              </div>
+              <div className="col-span-1">
+                <Btn variant="gold" onClick={() => submitLinieNoua(l)} disabled={salvandKeyNou === l.key}>Modifică</Btn>
+              </div>
+              <div className="col-span-1 flex justify-center">
+                <button type="button" onClick={() => eliminaLinieNoua(l.key)} className="text-stone-300 hover:text-rose-600">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </Card>
+          ))}
+          <Btn variant="ghost" onClick={adaugaLinieNoua} className="self-start">
+            <Plus size={14} /> Adaugă linie
+          </Btn>
+        </div>
+
+        {error && <p className="text-sm text-rose-600">{error}</p>}
+        <div className="flex justify-end">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
         </div>
       </div>
     </Modal>
