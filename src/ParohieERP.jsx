@@ -3640,61 +3640,65 @@ export default function ParohieERP() {
 
   return (
     <div className="h-screen bg-[#FAF8F3] text-stone-800 flex flex-col font-sans overflow-hidden">
-      {/* Bară principală de navigare, orizontală, sus */}
-      <header className="bg-[#1F3864] text-white flex items-center gap-1 px-4 shrink-0 h-14 border-b border-white/10 overflow-x-auto">
-        <div className="font-arhaic text-base leading-snug text-[#F0E4C8] pr-3 border-r border-white/10 mr-1 shrink-0">
-          {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
+      {/* Bară principală de navigare — două rânduri: sus identitatea parohiei + cont, jos navigarea */}
+      <header className="bg-[#1F3864] text-white flex flex-col shrink-0 border-b border-white/10">
+        <div className="flex items-center gap-1 px-4 h-11 border-b border-white/10">
+          <div className="font-arhaic text-base leading-snug text-[#F0E4C8] shrink-0">
+            {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
+          </div>
+          <div className="flex-1" />
+          <div className="text-[11px] text-white/50 shrink-0 mr-2 whitespace-nowrap">
+            Rol activ: <span className="text-white/80">{permisiuni.label}</span>
+          </div>
+          <button
+            title="Setări — jurnal de audit, deblocare 2FA, securitate, schimbă parola, date parohie"
+            onClick={() => setShowSetari(true)}
+            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors shrink-0"
+          >
+            <Settings size={14} /> Setări
+          </button>
+          <button
+            title="Ieșire din cont — încheie sesiunea curentă"
+            onClick={() => setShowLogoutConfirm(true)}
+            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors shrink-0 ml-1"
+          >
+            <LogOut size={14} /> Ieșire
+          </button>
         </div>
-        {/* Tablou de bord — pagina de start, separată vizual de restul modulelor de lucru */}
-        <button
-          onClick={() => setTab("dashboard")}
-          title="Tablou de bord"
-          className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
-            tabActiv === "dashboard"
-              ? "bg-white/10 text-white border-[#B8860B]"
-              : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
-          }`}
-        >
-          <Church size={15} />
-          Tablou de bord
-        </button>
-        <div className="w-px h-6 bg-white/15 mx-1 shrink-0" />
-        {NAV.filter((n) => n.id !== "dashboard").map((n) =>
-          n.items ? (
-            <MenuBarItem key={n.id} label={n.label} icon={n.icon} items={n.items} activ={tabActiv === n.id || (n.subTabs && n.subTabs.includes(tabActiv))} />
-          ) : (
-            <button
-              key={n.id}
-              onClick={() => setTab(n.id)}
-              className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
-                tabActiv === n.id
-                  ? "bg-white/10 text-white border-[#B8860B]"
-                  : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
-              }`}
-            >
-              <n.icon size={15} />
-              {n.label}
-            </button>
-          )
-        )}
-        <div className="flex-1" />
-        <div className="text-[11px] text-white/50 shrink-0 mr-2 whitespace-nowrap">
-          Rol activ: <span className="text-white/80">{permisiuni.label}</span>
+        <div className="flex items-center gap-1 px-4 h-14 overflow-x-auto">
+          {/* Tablou de bord — pagina de start, separată vizual de restul modulelor de lucru */}
+          <button
+            onClick={() => setTab("dashboard")}
+            title="Tablou de bord"
+            className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
+              tabActiv === "dashboard"
+                ? "bg-white/10 text-white border-[#B8860B]"
+                : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
+            }`}
+          >
+            <Church size={15} />
+            Tablou de bord
+          </button>
+          <div className="w-px h-6 bg-white/15 mx-1 shrink-0" />
+          {NAV.filter((n) => n.id !== "dashboard").map((n) =>
+            n.items ? (
+              <MenuBarItem key={n.id} label={n.label} icon={n.icon} items={n.items} activ={tabActiv === n.id || (n.subTabs && n.subTabs.includes(tabActiv))} />
+            ) : (
+              <button
+                key={n.id}
+                onClick={() => setTab(n.id)}
+                className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
+                  tabActiv === n.id
+                    ? "bg-white/10 text-white border-[#B8860B]"
+                    : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
+                }`}
+              >
+                <n.icon size={15} />
+                {n.label}
+              </button>
+            )
+          )}
         </div>
-        <button
-          title="Setări — jurnal de audit, deblocare 2FA, securitate, schimbă parola, date parohie"
-          onClick={() => setShowSetari(true)}
-          className="flex items-center gap-1.5 px-3 h-9 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors shrink-0"
-        >
-          <Settings size={14} /> Setări
-        </button>
-        <button
-          title="Ieșire din cont — încheie sesiunea curentă"
-          onClick={() => setShowLogoutConfirm(true)}
-          className="flex items-center gap-1.5 px-3 h-9 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors shrink-0 ml-1"
-        >
-          <LogOut size={14} /> Ieșire
-        </button>
         {showSetari && (
           <Modal title="Setări" onClose={() => setShowSetari(false)}>
             <div className="flex flex-col gap-1.5">
