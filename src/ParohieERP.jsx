@@ -933,7 +933,10 @@ function Btn({ children, onClick, variant = "primary", type = "button", disabled
 function MenuBarItem({ label, icon: Icon, items, activ }) {
   const [open, setOpen] = useState(false);
   const [pozitie, setPozitie] = useState(null);
+  const [subDeschis, setSubDeschis] = useState(null); // index-ul itemului al cărui submeniu e deschis
+  const [subPozitie, setSubPozitie] = useState(null);
   const butonRef = useRef(null);
+  const subRefs = useRef({});
 
   function deschide() {
     const r = butonRef.current.getBoundingClientRect();
@@ -941,11 +944,22 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
     setOpen(true);
   }
 
+  function inchideTot() {
+    setOpen(false);
+    setSubDeschis(null);
+  }
+
+  function deschideSub(i) {
+    const r = subRefs.current[i].getBoundingClientRect();
+    setSubPozitie({ top: r.top, left: r.right + 4 });
+    setSubDeschis(i);
+  }
+
   return (
     <div className="relative inline-flex shrink-0">
       <button
         ref={butonRef}
-        onClick={() => (open ? setOpen(false) : deschide())}
+        onClick={() => (open ? inchideTot() : deschide())}
         className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors whitespace-nowrap ${
           activ || open
             ? "bg-white/10 text-white border-[#B8860B]"
@@ -956,21 +970,51 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
       </button>
       {open && pozitie && createPortal(
         <>
-          <div className="fixed inset-0 z-[100]" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-[100]" onClick={inchideTot} />
           <div
             className="fixed bg-white border border-stone-200 rounded-md shadow-lg z-[101] py-1 min-w-[240px]"
             style={{ top: pozitie.top, left: pozitie.left }}
           >
-            {items.map((it, i) => (
-              <button
-                key={i}
-                onClick={() => { it.onClick(); setOpen(false); }}
-                className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
-              >
-                {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
-              </button>
-            ))}
+            {items.map((it, i) =>
+              it.sub ? (
+                <button
+                  key={i}
+                  ref={(el) => (subRefs.current[i] = el)}
+                  onClick={(e) => { e.stopPropagation(); subDeschis === i ? setSubDeschis(null) : deschideSub(i); }}
+                  className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50 ${subDeschis === i ? "bg-stone-50 text-stone-900" : "text-stone-700"}`}
+                >
+                  <span className="flex items-center gap-2">
+                    {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
+                  </span>
+                  <ChevronDown size={12} className="-rotate-90 text-stone-400" />
+                </button>
+              ) : (
+                <button
+                  key={i}
+                  onClick={() => { it.onClick(); inchideTot(); }}
+                  className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+                >
+                  {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
+                </button>
+              )
+            )}
           </div>
+          {subDeschis !== null && subPozitie && items[subDeschis].sub && (
+            <div
+              className="fixed bg-white border border-stone-200 rounded-md shadow-lg z-[102] py-1 min-w-[140px]"
+              style={{ top: subPozitie.top, left: subPozitie.left }}
+            >
+              {items[subDeschis].sub.map((sit, j) => (
+                <button
+                  key={j}
+                  onClick={() => { sit.onClick(); inchideTot(); }}
+                  className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+                >
+                  {sit.icon && <sit.icon size={14} className="text-stone-500" />} {sit.label}
+                </button>
+              ))}
+            </div>
+          )}
         </>,
         document.body
       )}
@@ -1870,6 +1914,63 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
 // distinct per articol bugetar, cu codul+denumirea articolului scrise deasupra tabelului, nu ca
 // rând în el). `grupuri` = [{ eticheta, columns, rows }, ...] — fiecare grup e independent, poate
 // avea propriul set de coloane (deși, în practică, toate grupurile unui raport folosesc aceleași).
+// Echivalentul XLSX al exportPDFGrupat — un singur foaie, fiecare grup (cont bugetar) apare ca
+// o secțiune: rând-etichetă, apoi rândul de coloane, apoi rândurile de date, apoi un rând gol.
+function exportXLSXGrupat(titlu, grupuri, parohie, dataRaportCurenta) {
+  const p = parohie || {};
+  const antet = [
+    [`Denumirea unității de cult: ${p.denumire || ""}`],
+    [`Cod fiscal: ${p.cif || ""}`],
+    [`Preot Paroh: ${p.preotParoh || ""}`],
+    [`Data: ${calculeazaDataRaport(titlu, dataRaportCurenta)}`],
+    [],
+  ];
+  const corp = [];
+  for (const g of grupuri) {
+    corp.push([g.eticheta]);
+    corp.push(g.columns.map((c) => c.label));
+    for (const r of g.rows) corp.push(g.columns.map((c) => parseSumaFormatata(r[c.key] ?? "")));
+    corp.push([]);
+  }
+  const aoa = [...antet, ...corp];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Raport");
+  XLSX.writeFile(wb, `${titlu}.xlsx`);
+}
+
+// Echivalentul XML al exportPDFGrupat — fiecare grup (cont bugetar) devine un element <Grup>
+// separat, cu eticheta lui și rândurile proprii — aceeași structură pe care o are deja PDF-ul.
+function exportXMLGrupat(titlu, grupuri, parohie, dataRaportCurenta) {
+  const p = parohie || {};
+  const antet = `<Antet>
+    <DenumireUnitateCult>${xmlEscape(p.denumire)}</DenumireUnitateCult>
+    <CodFiscal>${xmlEscape(p.cif)}</CodFiscal>
+    <Eparhie>${xmlEscape(p.eparhie)}</Eparhie>
+    <Protoierie>${xmlEscape(p.protoierie)}</Protoierie>
+    <PreotParoh>${xmlEscape(p.preotParoh)}</PreotParoh>
+    <DataGenerare>${xmlEscape(calculeazaDataRaport(titlu, dataRaportCurenta))}</DataGenerare>
+  </Antet>`;
+  const corpGrupuri = grupuri
+    .map((g) => {
+      const randuri = g.rows
+        .map((r) => `    <Rand>${g.columns.map((c) => `<${c.key}>${xmlEscape(r[c.key])}</${c.key}>`).join("")}</Rand>`)
+        .join("\n");
+      return `  <Grup eticheta="${xmlEscape(g.eticheta)}">\n${randuri}\n  </Grup>`;
+    })
+    .join("\n");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<Raport titlu="${xmlEscape(titlu)}">\n${antet}\n${corpGrupuri}\n</Raport>`;
+  const blob = new Blob([xml], { type: "application/xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${titlu}.xml`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) return;
@@ -3625,7 +3726,50 @@ export default function ParohieERP() {
     { id: "cimitir", label: "Cimitir", icon: Cross },
     { id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText },
     { id: "organisme", label: "Organisme parohiale", icon: Church },
-    { id: "rapoarte", label: "Rapoarte", icon: FileBarChart },
+    {
+      id: "rapoarte", label: "Rapoarte", icon: FileBarChart,
+      items: [
+        {
+          label: "Raport anual de sinteză", icon: FileText,
+          sub: [
+            { label: "PDF", icon: FileText, onClick: () => navigheazaCuActiune("rapoarte", "raportAnual:pdf") },
+            { label: "XLSX", icon: FileSpreadsheet, onClick: () => navigheazaCuActiune("rapoarte", "raportAnual:xlsx") },
+          ],
+        },
+        {
+          label: "Partizi Venituri - Încasări", icon: Download,
+          sub: [
+            { label: "PDF", icon: FileText, onClick: () => navigheazaCuActiune("rapoarte", "partiziVenituri:pdf") },
+            { label: "XLSX", icon: FileSpreadsheet, onClick: () => navigheazaCuActiune("rapoarte", "partiziVenituri:xlsx") },
+            { label: "XML", icon: FileCode, onClick: () => navigheazaCuActiune("rapoarte", "partiziVenituri:xml") },
+          ],
+        },
+        {
+          label: "Partizi Cheltuieli - Plăți", icon: Download,
+          sub: [
+            { label: "PDF", icon: FileText, onClick: () => navigheazaCuActiune("rapoarte", "partiziCheltuieli:pdf") },
+            { label: "XLSX", icon: FileSpreadsheet, onClick: () => navigheazaCuActiune("rapoarte", "partiziCheltuieli:xlsx") },
+            { label: "XML", icon: FileCode, onClick: () => navigheazaCuActiune("rapoarte", "partiziCheltuieli:xml") },
+          ],
+        },
+        {
+          label: "Buget Prevederi", icon: Download,
+          sub: [
+            { label: "PDF", icon: FileText, onClick: () => navigheazaCuActiune("rapoarte", "bugetPrevederi:pdf") },
+            { label: "XLSX", icon: FileSpreadsheet, onClick: () => navigheazaCuActiune("rapoarte", "bugetPrevederi:xlsx") },
+            { label: "XML", icon: FileCode, onClick: () => navigheazaCuActiune("rapoarte", "bugetPrevederi:xml") },
+          ],
+        },
+        {
+          label: "Buget Execuție", icon: Download,
+          sub: [
+            { label: "PDF", icon: FileText, onClick: () => navigheazaCuActiune("rapoarte", "bugetExecutie:pdf") },
+            { label: "XLSX", icon: FileSpreadsheet, onClick: () => navigheazaCuActiune("rapoarte", "bugetExecutie:xlsx") },
+            { label: "XML", icon: FileCode, onClick: () => navigheazaCuActiune("rapoarte", "bugetExecutie:xml") },
+          ],
+        },
+      ],
+    },
     { id: "import", label: "Import date", icon: Upload },
   ];
   const NAV = NAV_TOATE.filter((n) => (n.id === "nomenclatoare" || permisiuni.tabs.includes(n.id)) && (n.id !== "cimitir" || state.parohie?.areCimitir));
@@ -3835,7 +3979,7 @@ export default function ParohieERP() {
           {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
-          {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} />}
+          {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={tabActiv === "rapoarte" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "organisme" && <OrganismeParohialeTab />}
           {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
           {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} />}
@@ -8543,7 +8687,7 @@ function construiesteRaportDetaliatPartizi(operatiuni, conturi, tip, interval) {
     .filter((g) => g.randuri.length > 0);
 }
 
-function RapoarteTab({ state, setState, derived }) {
+function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiuneInitiala }) {
   const aniDisponibili = useMemo(() => {
     const ani = new Set(state.operatiuni.map((op) => op.an));
     Object.keys(state.prevederiBugetare || {}).forEach((a) => ani.add(Number(a)));
@@ -8558,6 +8702,23 @@ function RapoarteTab({ state, setState, derived }) {
   const [formatHartieRaportAnual, setFormatHartieRaportAnual] = useState("A4");
   const [dataStart, setDataStart] = useState(`${aniDisponibili[0]}-01-01`);
   const [dataFinal, setDataFinal] = useState(todayISO());
+
+  // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/Pangar.
+  // Codificată ca "tip:format" (ex. "partiziVenituri:xlsx"), ca fiecare tip de raport să poată fi
+  // generat în oricare din formatele disponibile, alese direct din submeniul de format.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    const [tip, format] = actiuneInitiala.split(":");
+    if (tip === "raportAnual") {
+      if (format === "pdf") printeazaRaportAnualComplet(raportAnual, state.parohie, orientareRaportAnual, formatHartieRaportAnual);
+      else if (format === "xlsx") exportRaportAnualXLSX(raportAnual, state.parohie);
+    } else if (tip === "partiziVenituri") genereazaPartiziVenituri(format);
+    else if (tip === "partiziCheltuieli") genereazaPartiziCheltuieli(format);
+    else if (tip === "bugetPrevederi") genereazaBugetPrevederi(format);
+    else if (tip === "bugetExecutie") genereazaBugetExecutie(format);
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
 
   const interval = modInterval === "an"
     ? { start: `${anSelectat}-01-01`, final: `${anSelectat}-12-31` }
@@ -8616,7 +8777,7 @@ function RapoarteTab({ state, setState, derived }) {
     return rez;
   }, [state.operatiuni, anSelectat]);
 
-  function genereazaPartiziVenituri() {
+  function genereazaPartiziVenituri(format = "pdf") {
     const coloane = [
       { key: "data", label: "Data" },
       { key: "nrDoc", label: "Nr. chitanță" },
@@ -8642,10 +8803,12 @@ function RapoarteTab({ state, setState, derived }) {
     const titlu = modInterval === "an"
       ? `PARTIZI VENITURI - INCASARI PE ANUL ${anSelectat}`
       : `PARTIZI VENITURI - INCASARI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
-    exportPDFGrupat(titlu, grupuriRaport, state.parohie);
+    if (format === "xlsx") exportXLSXGrupat(titlu, grupuriRaport, state.parohie);
+    else if (format === "xml") exportXMLGrupat(titlu, grupuriRaport, state.parohie);
+    else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
   }
 
-  function genereazaPartiziCheltuieli() {
+  function genereazaPartiziCheltuieli(format = "pdf") {
     const coloane = [
       { key: "data", label: "Data" },
       { key: "nrDoc", label: "Nr. OP" },
@@ -8671,23 +8834,25 @@ function RapoarteTab({ state, setState, derived }) {
     const titlu = modInterval === "an"
       ? `PARTIZI CHELTUIELI - PLATI PE ANUL ${anSelectat}`
       : `PARTIZI CHELTUIELI - PLATI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
-    exportPDFGrupat(titlu, grupuriRaport, state.parohie);
+    if (format === "xlsx") exportXLSXGrupat(titlu, grupuriRaport, state.parohie);
+    else if (format === "xml") exportXMLGrupat(titlu, grupuriRaport, state.parohie);
+    else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
   }
 
-  function genereazaBugetPrevederi() {
+  function genereazaBugetPrevederi(format = "pdf") {
     const toate = [...venituriConturi, ...cheltuieliConturi];
     const rows = toate.map((c) => ({
       cont: c.simbol, denumire: c.denumire, clasa: c.clasa === "venit" ? "Venit" : "Cheltuială",
       bugetat: fmt((state.buget[c.id] || {})[anSelectat] || 0),
     }));
-    exportPDF(
-      `BUGET - PREVEDERI PE ANUL ${anSelectat}`,
-      [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" }, { key: "bugetat", label: "Prevăzut (lei)" }],
-      rows, state.parohie
-    );
+    const coloane = [{ key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" }, { key: "bugetat", label: "Prevăzut (lei)" }];
+    const titlu = `BUGET - PREVEDERI PE ANUL ${anSelectat}`;
+    if (format === "xlsx") exportXLSX(titlu, coloane, rows, state.parohie);
+    else if (format === "xml") exportXML(titlu, coloane, rows, state.parohie);
+    else exportPDF(titlu, coloane, rows, state.parohie);
   }
 
-  function genereazaBugetExecutie() {
+  function genereazaBugetExecutie(format = "pdf") {
     const toate = [...venituriConturi, ...cheltuieliConturi];
     const rows = toate.map((c) => {
       const bugetat = (state.buget[c.id] || {})[anSelectat] || 0;
@@ -8699,15 +8864,15 @@ function RapoarteTab({ state, setState, derived }) {
         bugetat: fmt(bugetat), realizat: fmt(realizat), diferenta: fmt(diferenta), procent: `${procent.toFixed(0)}%`,
       };
     });
-    exportPDF(
-      `BUGET - EXECUTIE PE ANUL ${anSelectat}`,
-      [
-        { key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" },
-        { key: "bugetat", label: "Prevăzut (lei)" }, { key: "realizat", label: "Realizat (lei)" },
-        { key: "diferenta", label: "Diferență (lei)" }, { key: "procent", label: "% realizare" },
-      ],
-      rows, state.parohie
-    );
+    const coloane = [
+      { key: "cont", label: "Art. bug. nr." }, { key: "denumire", label: "Denumire" }, { key: "clasa", label: "Clasă" },
+      { key: "bugetat", label: "Prevăzut (lei)" }, { key: "realizat", label: "Realizat (lei)" },
+      { key: "diferenta", label: "Diferență (lei)" }, { key: "procent", label: "% realizare" },
+    ];
+    const titlu = `BUGET - EXECUTIE PE ANUL ${anSelectat}`;
+    if (format === "xlsx") exportXLSX(titlu, coloane, rows, state.parohie);
+    else if (format === "xml") exportXML(titlu, coloane, rows, state.parohie);
+    else exportPDF(titlu, coloane, rows, state.parohie);
   }
 
   return (
@@ -8718,32 +8883,10 @@ function RapoarteTab({ state, setState, derived }) {
       </header>
 
       <Card className="p-4 border-[#1F3864]/30 bg-[#1F3864]/5">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h2 className="font-serif text-lg text-[#1F3864]">Raport anual de sinteză — toate modulele</h2>
-            <p className="text-xs text-stone-500">
-              Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență — un singur document, pentru anul {anSelectat}.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Btn variant="ghost" onClick={() => exportRaportAnualXLSX(raportAnual, state.parohie)}>
-              <FileSpreadsheet size={14} /> XLSX
-            </Btn>
-            <select className={`${inputCls} w-28`} value={orientareRaportAnual} onChange={(e) => setOrientareRaportAnual(e.target.value)} title="Orientarea paginii">
-              <option value="portrait">Portret</option>
-              <option value="landscape">Peisaj</option>
-            </select>
-            <select className={`${inputCls} w-24`} value={formatHartieRaportAnual} onChange={(e) => setFormatHartieRaportAnual(e.target.value)} title="Formatul hârtiei">
-              <option value="A4">A4</option>
-              <option value="A3">A3</option>
-              <option value="letter">Letter</option>
-              <option value="legal">Legal</option>
-            </select>
-            <Btn variant="gold" onClick={() => printeazaRaportAnualComplet(raportAnual, state.parohie, orientareRaportAnual, formatHartieRaportAnual)}>
-              <Download size={14} /> Generează raport PDF
-            </Btn>
-          </div>
-        </div>
+        <h2 className="font-serif text-lg text-[#1F3864]">Raport anual de sinteză — toate modulele</h2>
+        <p className="text-xs text-stone-500">
+          Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență — un singur document, pentru anul {anSelectat}. Se generează din meniul „Rapoarte" (bara de sus).
+        </p>
       </Card>
 
       <Card className="p-4">
@@ -8772,7 +8915,7 @@ function RapoarteTab({ state, setState, derived }) {
           )}
         </div>
         <p className="text-xs text-stone-400 mt-2">
-          Perioadă activă: {fmtDataJurnal(interval.start)} – {fmtDataJurnal(interval.final)}
+          Perioadă activă: {fmtDataJurnal(interval.start)} – {fmtDataJurnal(interval.final)}. Partizile (din meniul „Rapoarte") se generează pentru această perioadă; rapoartele de buget sunt mereu anuale, pentru anul {anSelectat}.
         </p>
       </Card>
 
@@ -8785,27 +8928,6 @@ function RapoarteTab({ state, setState, derived }) {
           <StatCard label="Sold depozit bancar la dată" value={`${fmt(stats.soldDepozitLaData)} RON`} />
         )}
       </div>
-
-      <Card className="p-4">
-        <h2 className="font-serif text-lg text-[#1F3864] mb-1">Generează rapoarte</h2>
-        <p className="text-xs text-stone-500 mb-3">
-          Partizile se generează pentru perioada selectată mai sus; rapoartele de buget sunt mereu anuale, pentru anul {anSelectat}.
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Btn variant="gold" onClick={genereazaPartiziVenituri} className="justify-center">
-            <Download size={14} /> Partizi Venituri - Încasări
-          </Btn>
-          <Btn variant="gold" onClick={genereazaPartiziCheltuieli} className="justify-center">
-            <Download size={14} /> Partizi Cheltuieli - Plăți
-          </Btn>
-          <Btn variant="gold" onClick={genereazaBugetPrevederi} className="justify-center">
-            <Download size={14} /> Buget Prevederi
-          </Btn>
-          <Btn variant="gold" onClick={genereazaBugetExecutie} className="justify-center">
-            <Download size={14} /> Buget Execuție
-          </Btn>
-        </div>
-      </Card>
     </div>
   );
 }
