@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -931,10 +932,20 @@ function Btn({ children, onClick, variant = "primary", type = "button", disabled
 // aici fundalul e închis, deci starea inactivă/hover trebuie să rămână lizibilă pe navy.
 function MenuBarItem({ label, icon: Icon, items, activ }) {
   const [open, setOpen] = useState(false);
+  const [pozitie, setPozitie] = useState(null);
+  const butonRef = useRef(null);
+
+  function deschide() {
+    const r = butonRef.current.getBoundingClientRect();
+    setPozitie({ top: r.bottom + 4, left: r.left });
+    setOpen(true);
+  }
+
   return (
     <div className="relative inline-flex shrink-0">
       <button
-        onClick={() => setOpen((o) => !o)}
+        ref={butonRef}
+        onClick={() => (open ? setOpen(false) : deschide())}
         className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors whitespace-nowrap ${
           activ || open
             ? "bg-white/10 text-white border-[#B8860B]"
@@ -943,10 +954,13 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
       >
         <Icon size={15} /> {label} <ChevronDown size={12} />
       </button>
-      {open && (
+      {open && pozitie && createPortal(
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 bg-white border border-stone-200 rounded-md shadow-lg z-40 py-1 min-w-[240px]">
+          <div className="fixed inset-0 z-[100]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed bg-white border border-stone-200 rounded-md shadow-lg z-[101] py-1 min-w-[240px]"
+            style={{ top: pozitie.top, left: pozitie.left }}
+          >
             {items.map((it, i) => (
               <button
                 key={i}
@@ -957,7 +971,8 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
