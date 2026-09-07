@@ -887,27 +887,62 @@ export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata
 // Editează o recepție NRCD existentă (o singură mișcare de intrare) — actualizează stocul prin
 // diferență, actualizează mișcarea, actualizează documentul NRCD (dată/furnizor/factură/scadență),
 // și — dacă factura era deja plătită — actualizează și suma pe Ordinul de plată legat.
-export async function editeazaReceptiePangar(miscareId, { data, cantitate, furnizor, nrFactura, dataScadenta, nrOP }) {
+// `articolIdNou` (opțional) — corectează codul de produs greșit înregistrat la recepție: dacă
+// diferă de codul curent al mișcării, cantitatea se mută integral de pe codul vechi pe cel nou
+// (validat separat: reducerea pe codul vechi nu poate duce stocul lui sub 0 — adică nu s-a vândut
+// deja din el). Dacă e omis sau identic cu cel curent, comportamentul e cel de dinainte (un singur
+// cod, ajustat prin diferență).
+export async function editeazaReceptiePangar(miscareId, { data, cantitate, furnizor, nrFactura, dataScadenta, nrOP, articolIdNou }) {
   const { data: miscare, error: errM } = await supabase.from("miscari_stoc_pangar").select("*").eq("id", miscareId).single();
   if (errM) throw errM;
   if (miscare.tip !== "intrare") throw new Error("Doar mișcările de recepție pot fi editate astfel.");
 
-  const { data: articol, error: errA } = await supabase.from("articole_pangar").select("*").eq("id", miscare.articol_id).single();
+  const idNou = articolIdNou && articolIdNou !== miscare.articol_id ? articolIdNou : null;
+
+  const { data: articolVechi, error: errA } = await supabase.from("articole_pangar").select("*").eq("id", miscare.articol_id).single();
   if (errA) throw errA;
 
-  const delta = cantitate - Number(miscare.cantitate);
-  const stocNou = Number(articol.stoc) + delta;
-  if (stocNou < 0) {
-    throw new Error(`Nu poți reduce cantitatea sub ce s-a vândut deja din acest cod (stoc curent: ${articol.stoc}, reducere cerută: ${-delta}).`);
+  let articolePatch = [];
+  let articolFinal; // codul pe care rămâne mișcarea, pentru calculul valorilor de mai jos
+
+  if (!idNou) {
+    // Același cod — ajustare prin diferența de cantitate, ca înainte.
+    const delta = cantitate - Number(miscare.cantitate);
+    const stocNou = Number(articolVechi.stoc) + delta;
+    if (stocNou < 0) {
+      throw new Error(`Nu poți reduce cantitatea sub ce s-a vândut deja din acest cod (stoc curent: ${articolVechi.stoc}, reducere cerută: ${-delta}).`);
+    }
+    const { error: errUpdArt } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", articolVechi.id);
+    if (errUpdArt) throw errUpdArt;
+    articolFinal = { ...articolVechi, stoc: stocNou };
+    articolePatch = [{ id: articolVechi.id, stoc: stocNou, stocReferinta: stocNou }];
+  } else {
+    // Cod diferit — se scoate integral cantitatea de pe codul vechi și se adaugă pe cel nou.
+    const { data: articolNou, error: errAN } = await supabase.from("articole_pangar").select("*").eq("id", idNou).single();
+    if (errAN) throw errAN;
+
+    const stocVechiNou = Number(articolVechi.stoc) - Number(miscare.cantitate);
+    if (stocVechiNou < 0) {
+      throw new Error(`Nu poți muta recepția pe alt cod — codul greșit (${articolVechi.cod}) are deja stoc vândut din cantitatea recepționată aici (stoc curent: ${articolVechi.stoc}, de scos: ${miscare.cantitate}).`);
+    }
+    const stocNouNou = Number(articolNou.stoc) + cantitate;
+
+    const { error: errUpdVechi } = await supabase.from("articole_pangar").update({ stoc: stocVechiNou, stoc_referinta: stocVechiNou }).eq("id", articolVechi.id);
+    if (errUpdVechi) throw errUpdVechi;
+    const { error: errUpdNou } = await supabase.from("articole_pangar").update({ stoc: stocNouNou, stoc_referinta: stocNouNou }).eq("id", articolNou.id);
+    if (errUpdNou) throw errUpdNou;
+
+    articolFinal = { ...articolNou, stoc: stocNouNou };
+    articolePatch = [
+      { id: articolVechi.id, stoc: stocVechiNou, stocReferinta: stocVechiNou },
+      { id: articolNou.id, stoc: stocNouNou, stocReferinta: stocNouNou },
+    ];
   }
 
-  const { error: errUpdArt } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", articol.id);
-  if (errUpdArt) throw errUpdArt;
-
-  const valoareTotala = cantitate * Number(articol.pret_vanzare);
+  const valoareTotala = cantitate * Number(articolFinal.pret_vanzare);
   const { error: errUpdM } = await supabase
     .from("miscari_stoc_pangar")
-    .update({ data, cantitate, valoare_totala: valoareTotala })
+    .update({ data, cantitate, valoare_unitara: articolFinal.pret_vanzare, valoare_totala: valoareTotala, ...(idNou ? { articol_id: idNou } : {}) })
     .eq("id", miscareId);
   if (errUpdM) throw errUpdM;
 
@@ -919,7 +954,7 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
     .single();
   if (errNrcd) throw errNrcd;
 
-  const valoareAchizitieNoua = cantitate * Number(articol.pret_achizitie);
+  const valoareAchizitieNoua = cantitate * Number(articolFinal.pret_achizitie);
 
   // Dacă factura era deja achitată, actualizăm și Ordinul de plată legat (identificat prin
   // document_sursa_id) — presupunem o singură linie de plată, cazul obișnuit pentru o recepție
@@ -955,11 +990,74 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
   }
 
   return {
-    articolActualizat: { stoc: stocNou, stocReferinta: stocNou },
-    miscareActualizata: { data, cantitate, valoareTotala, valoareAchizitie: valoareAchizitieNoua },
+    articolePatch,
+    miscareActualizata: { data, cantitate, valoareTotala, valoareAchizitie: valoareAchizitieNoua, articolId: idNou || miscare.articol_id },
     documentIdOP,
     renumerotari,
   };
+}
+
+// Șterge o recepție NRCD întreagă (documentul + toate liniile lui de stoc — un NRCD poate avea
+// mai multe produse pe aceeași factură). Restituie stocul consumat pe fiecare cod atins, ca la
+// stergeVanzarePangar, dar cu validare ÎNAINTE de orice scriere: dacă pe vreun cod s-a vândut deja
+// din cantitatea recepționată aici, ștergerea e blocată în întregime (nicio linie nu se atinge).
+// Dacă recepția era deja achitată (are un Ordin de plată legat prin document_sursa_id), ștergerea
+// e blocată — utilizatorul trebuie să șteargă întâi Ordinul de plată legat, ca să nu rămână o
+// plată înregistrată către o factură care nu mai există.
+export async function stergeReceptiePangar(documentId) {
+  const { data: platiLegate, error: errPlati } = await supabase
+    .from("documente")
+    .select("id, nr, an")
+    .eq("document_sursa_id", documentId)
+    .eq("tip", "ordin_plata");
+  if (errPlati) throw errPlati;
+  if (platiLegate && platiLegate.length > 0) {
+    const op = platiLegate[0];
+    throw new Error(`Această recepție este deja achitată prin Ordinul de plată nr. ${op.nr}/${op.an} — șterge întâi ordinul de plată legat.`);
+  }
+
+  const { data: miscariVechi, error: errMV } = await supabase
+    .from("miscari_stoc_pangar")
+    .select("*")
+    .eq("document_id", documentId)
+    .eq("tip", "intrare");
+  if (errMV) throw errMV;
+  if (!miscariVechi || miscariVechi.length === 0) throw new Error("Nu s-au găsit mișcări de stoc pentru această recepție.");
+
+  // Agregăm cantitatea de scos per cod (o recepție poate avea mai multe linii pe același cod,
+  // deși neobișnuit) — ca să citim/scriem stocul fiecărui cod o singură dată.
+  const cantitatePeArticol = new Map();
+  for (const m of miscariVechi) {
+    cantitatePeArticol.set(m.articol_id, (cantitatePeArticol.get(m.articol_id) || 0) + Number(m.cantitate));
+  }
+
+  const idsAtinse = [...cantitatePeArticol.keys()];
+  const { data: articoleAtinse, error: errArt } = await supabase.from("articole_pangar").select("id, cod, stoc").in("id", idsAtinse);
+  if (errArt) throw errArt;
+
+  // Validăm ÎNTÂI toate codurile — dacă vreunul ar duce stocul sub 0, nu se scrie nimic.
+  for (const art of articoleAtinse) {
+    const deScos = cantitatePeArticol.get(art.id);
+    if (Number(art.stoc) - deScos < 0) {
+      throw new Error(`Nu poți șterge recepția — s-a vândut deja din ce s-a recepționat pe codul ${art.cod} (stoc curent: ${art.stoc}, de scos: ${deScos}).`);
+    }
+  }
+
+  for (const art of articoleAtinse) {
+    const stocNou = Number(art.stoc) - cantitatePeArticol.get(art.id);
+    const { error: errRest } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", art.id);
+    if (errRest) throw errRest;
+  }
+
+  const { error: errDelM } = await supabase.from("miscari_stoc_pangar").delete().eq("document_id", documentId).eq("tip", "intrare");
+  if (errDelM) throw errDelM;
+
+  const { renumerotari } = await stergeDocument(documentId);
+
+  const { data: articoleFinale, error: errFinale } = await supabase.from("articole_pangar").select("id, stoc").in("id", idsAtinse);
+  if (errFinale) throw errFinale;
+
+  return { articolePatch: articoleFinale.map((a) => ({ id: a.id, stoc: Number(a.stoc), stocReferinta: Number(a.stoc) })), renumerotari };
 }
 
 // Stoc inițial — intrare de stoc FĂRĂ document asociat (nu generează NRCD, nu generează
