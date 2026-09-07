@@ -790,8 +790,8 @@ function seedDemoState() {
     const costAchizitie = cantitate * art.pretAchizitie;
     const venitPropriu = cantitate * art.pretVanzare - costAchizitie;
     const cat = CATEGORII_PANGAR[art.categorieBVC];
-    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitTranzitoriu, data, suma: costAchizitie, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod}`, nr, an });
-    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitPropriu, data, suma: venitPropriu, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} (marjă)`, nr, an });
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitTranzitoriu, data, suma: costAchizitie, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} x ${Number(art.pretVanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei`, nr, an });
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitPropriu, data, suma: venitPropriu, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} x ${Number(art.pretVanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei (marjă)`, nr, an });
     miscariStoc.push({ id: uid(), data, tip: "iesire", articolId: art.id, cantitate, valoareUnitara: art.pretVanzare, valoareTotala: cantitate * art.pretVanzare });
   };
 
@@ -7255,16 +7255,32 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     { key: "stoc", label: "Stoc produs" },
     { key: "valoareStoc", label: "Valoare stoc produs la preț vânzare (lei)" },
   ];
-  const randuriFisaCronologica = useMemo(() => evenimenteProdusAn.map((e, i) => ({
-    nrCrt: i + 1,
-    data: fmtDataJurnal(e.data),
-    document: e.document,
-    cod: e.cod,
-    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
-    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
-    stoc: `${e.stocProdusDupa} ${e.um}`,
-    valoareStoc: fmt(e.valoareProdusDupa),
-  })), [evenimenteProdusAn]);
+  const randuriFisaCronologica = useMemo(() => {
+    const randuri = evenimenteProdusAn.map((e, i) => ({
+      nrCrt: i + 1,
+      data: fmtDataJurnal(e.data),
+      document: e.document,
+      cod: e.cod,
+      cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
+      cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
+      stoc: `${e.stocProdusDupa} ${e.um}`,
+      valoareStoc: fmt(e.valoareProdusDupa),
+    }));
+    if (evenimenteProdusAn.length === 0) return randuri;
+    // Rând de TOTAL, la fel ca la Registrul Jurnal — eticheta "TOTAL" pe coloana de document,
+    // valori brute (fără text suplimentar) pe coloanele numerice. Cantitate intrată/ieșită se
+    // însumează normal; Valoare stoc e o valoare CUMULATĂ (nu o sumă de rând), deci "totalul" ei
+    // e valoarea stocului la sfârșitul perioadei — ultima valoare din listă.
+    const totalIntrata = evenimenteProdusAn.reduce((s, e) => s + (e.tip === "intrare" ? e.cantitate : 0), 0);
+    const totalIesita = evenimenteProdusAn.reduce((s, e) => s + (e.tip === "iesire" ? e.cantitate : 0), 0);
+    const valoareStocLaFinal = evenimenteProdusAn[evenimenteProdusAn.length - 1].valoareProdusDupa;
+    randuri.push({
+      nrCrt: "", data: "", document: "TOTAL", cod: "",
+      cantitateIntrata: totalIntrata, cantitateIesita: totalIesita,
+      stoc: "", valoareStoc: fmt(valoareStocLaFinal),
+    });
+    return randuri;
+  }, [evenimenteProdusAn]);
 
   // 3. FIȘĂ SINTETICĂ DE PRODUS — stoc inițial (snapshot înainte de an) / intrat / ieșit / stoc final,
   // cantitativ și valoric (la preț de vânzare), pentru produsul selectat.
