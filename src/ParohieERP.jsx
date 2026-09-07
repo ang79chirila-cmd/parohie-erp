@@ -3197,6 +3197,15 @@ export default function ParohieERP() {
       .font-sans, .font-serif, body {
         font-family: 'NotoSans', Arial, sans-serif !important;
       }
+      /* Scară unitară de dimensiuni de font — 4 trepte, aplicate consecvent peste tot prin
+         suprascrierea claselor Tailwind deja folosite în cod (fără nicio modificare de JSX):
+         text-xs (etichete/text mic), text-sm + text-base (text obișnuit — unificate, erau
+         aproape identice), text-lg + text-xl (titlu secundar — unificate), text-2xl + text-3xl
+         (titlu principal — unificate). Reduce cele 7 dimensiuni Tailwind folosite azi la 4. */
+      .text-xs { font-size: 0.75rem !important; line-height: 1.15 !important; }
+      .text-sm, .text-base { font-size: 0.9375rem !important; line-height: 1.4 !important; }
+      .text-lg, .text-xl { font-size: 1.1875rem !important; line-height: 1.3 !important; }
+      .text-2xl, .text-3xl { font-size: 1.6875rem !important; line-height: 1.25 !important; }
       select {
         -webkit-appearance: none;
         -moz-appearance: none;
@@ -6818,7 +6827,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     }
     const rezultat = await editeazaReceptiePangar(miscareId, {
       data: opts.data, cantitate: opts.cantitate, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataScadenta: opts.dataScadenta, nrOP: opts.nrOP,
-      articolIdNou: opts.articolIdNou,
+      articolIdNou: opts.articolIdNou, categoriiPangar: CATEGORII_PANGAR,
     });
     setState((s) => {
       const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
@@ -6829,14 +6838,16 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           return patch ? { ...a, ...patch } : a;
         }),
         miscariStoc: sPatched.miscariStoc.map((m) => (m.id === miscareId ? { ...m, ...rezultat.miscareActualizata, furnizor: opts.furnizor, nrFactura: opts.nrFactura } : m)),
-        datoriiFurnizori: (sPatched.datoriiFurnizori || []).map((d) =>
-          d.nrNRCD === miscare.nrNRCD ? { ...d, suma: rezultat.miscareActualizata.valoareAchizitie, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataFactura: opts.data, dataScadenta: opts.dataScadenta } : d
-        ),
-        operatiuni: sPatched.operatiuni.map((op) =>
-          rezultat.documentIdOP && op.documentId === rezultat.documentIdOP
-            ? { ...op, suma: rezultat.miscareActualizata.valoareAchizitie, tert: opts.furnizor, data: opts.data }
-            : op
-        ),
+        datoriiFurnizori: rezultat.datorieActualizata
+          ? (sPatched.datoriiFurnizori || []).map((d) =>
+              d.documentId === miscare.documentId
+                ? { ...d, ...rezultat.datorieActualizata, furnizor: opts.furnizor, nrFactura: opts.nrFactura, dataFactura: opts.data, dataScadenta: opts.dataScadenta }
+                : d
+            )
+          : sPatched.datoriiFurnizori,
+        operatiuni: rezultat.documentIdOP
+          ? [...sPatched.operatiuni.filter((op) => op.documentId !== rezultat.documentIdOP), ...rezultat.operatiuniNoiOP]
+          : sPatched.operatiuni,
         jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare recepție NRCD nr. ${miscare.nrNRCD}/${anNou}`),
       };
     });

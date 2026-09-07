@@ -892,7 +892,7 @@ export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata
 // (validat separat: reducerea pe codul vechi nu poate duce stocul lui sub 0 — adică nu s-a vândut
 // deja din el). Dacă e omis sau identic cu cel curent, comportamentul e cel de dinainte (un singur
 // cod, ajustat prin diferență).
-export async function editeazaReceptiePangar(miscareId, { data, cantitate, furnizor, nrFactura, dataScadenta, nrOP, articolIdNou }) {
+export async function editeazaReceptiePangar(miscareId, { data, cantitate, furnizor, nrFactura, dataScadenta, nrOP, articolIdNou, categoriiPangar }) {
   const { data: miscare, error: errM } = await supabase.from("miscari_stoc_pangar").select("*").eq("id", miscareId).single();
   if (errM) throw errM;
   if (miscare.tip !== "intrare") throw new Error("Doar mișcările de recepție pot fi editate astfel.");
@@ -956,9 +956,43 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
 
   const valoareAchizitieNoua = cantitate * Number(articolFinal.pret_achizitie);
 
+  // O recepție poate avea mai multe produse din categorii BVC diferite — recalculăm totalul din
+  // TOATE mișcările NRCD-ului (nu doar cea editată), atât pentru sincronizarea OP-ului legat (dacă
+  // era deja achitată), cât și pentru rezumatul datoriei (dacă era încă neachitată) — o singură
+  // linie editată nu poate suprascrie greșit totalul celorlalte categorii.
+  const { data: toateMiscarileNrcd, error: errToate } = await supabase
+    .from("miscari_stoc_pangar")
+    .select("*")
+    .eq("document_id", miscare.document_id)
+    .eq("tip", "intrare");
+  if (errToate) throw errToate;
+
+  const idsArticoleNrcd = [...new Set(toateMiscarileNrcd.map((m) => m.articol_id))];
+  const { data: articoleNrcd, error: errArtNrcd } = await supabase.from("articole_pangar").select("id, categorie_bvc, pret_achizitie").in("id", idsArticoleNrcd);
+  if (errArtNrcd) throw errArtNrcd;
+  const articolNrcdById = Object.fromEntries(articoleNrcd.map((a) => [a.id, a]));
+
+  // Pentru linia tocmai editată folosim direct valorile noi (cantitate, articolFinal) — în DB
+  // e deja scrisă mai sus, dar codul ei ar putea să nu fie încă în `articoleNrcd` dacă tocmai
+  // s-a mutat pe un cod care nu avea altă mișcare pe acest NRCD.
+  const sumePeContAchizitie = {}; // contId achiziție -> sumă (pentru sincronizarea liniilor OP-ului)
+  const sumePeCategorie = {}; // categorieBVC -> sumă (pentru rezumatul datoriei, dacă e neachitată)
+  let valoareAchizitieTotalaNrcd = 0;
+  for (const m of toateMiscarileNrcd) {
+    const esteLiniaEditata = m.id === miscareId;
+    const cant = esteLiniaEditata ? cantitate : Number(m.cantitate);
+    const art = esteLiniaEditata ? articolFinal : articolNrcdById[m.articol_id];
+    if (!art) continue;
+    const valoare = cant * Number(art.pret_achizitie);
+    valoareAchizitieTotalaNrcd += valoare;
+    sumePeCategorie[art.categorie_bvc] = (sumePeCategorie[art.categorie_bvc] || 0) + valoare;
+    const contId = categoriiPangar[art.categorie_bvc]?.achizitie;
+    if (!contId) continue;
+    sumePeContAchizitie[contId] = (sumePeContAchizitie[contId] || 0) + valoare;
+  }
+
   // Dacă factura era deja achitată, actualizăm și Ordinul de plată legat (identificat prin
-  // document_sursa_id) — presupunem o singură linie de plată, cazul obișnuit pentru o recepție
-  // cu un singur produs editat separat.
+  // document_sursa_id) — cu totalurile recalculate mai sus.
   const { data: platiLegate, error: errPlati } = await supabase
     .from("documente")
     .select("id")
@@ -971,14 +1005,44 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
   // pentru motivul exact — evită conflictul cu constrângerea unică pe un nr deja ocupat).
   let renumerotari = [];
   let documentIdOP = null;
+  let operatiuniNoiOP = [];
   if (platiLegate && platiLegate.length > 0) {
     documentIdOP = platiLegate[0].id;
+    const { data: opDoc, error: errOpDoc } = await supabase.from("documente").select("mod_plata").eq("id", documentIdOP).single();
+    if (errOpDoc) throw errOpDoc;
     const { error: errTertOP } = await supabase.from("documente").update({ tert: furnizor }).eq("id", documentIdOP);
     if (errTertOP) throw errTertOP;
-    await supabase
-      .from("linii_document")
-      .update({ suma: valoareAchizitieNoua, explicatie: `Plată factură ${nrFactura} (NRCD nr. ${nrcdDoc.nr}/${nrcdDoc.an})` })
-      .eq("document_id", documentIdOP);
+
+    const { data: liniiOPExistente, error: errLiniiOP } = await supabase.from("linii_document").select("*").eq("document_id", documentIdOP);
+    if (errLiniiOP) throw errLiniiOP;
+
+    const explicatieNoua = `Plată factură ${nrFactura} (NRCD nr. ${nrcdDoc.nr}/${nrcdDoc.an})`;
+    const sumeRamase = { ...sumePeContAchizitie };
+
+    for (const linie of liniiOPExistente) {
+      if (sumeRamase[linie.cont_id] !== undefined) {
+        const { error: errUpd } = await supabase
+          .from("linii_document")
+          .update({ suma: sumeRamase[linie.cont_id], explicatie: explicatieNoua })
+          .eq("id", linie.id);
+        if (errUpd) throw errUpd;
+        delete sumeRamase[linie.cont_id];
+      } else {
+        // Cont care nu mai apare deloc pe NRCD (produsul editat a fost singurul din acea
+        // categorie și a fost mutat pe alta) — linia bugetară aferentă dispare de pe OP.
+        const { error: errDel } = await supabase.from("linii_document").delete().eq("id", linie.id);
+        if (errDel) throw errDel;
+      }
+    }
+    // Conturi noi, apărute abia acum (produsul editat a fost mutat pe o categorie care nu era
+    // încă reprezentată pe OP) — se adaugă ca linii bugetare noi.
+    const conturiNoi = Object.entries(sumeRamase);
+    if (conturiNoi.length > 0) {
+      const { error: errIns } = await supabase.from("linii_document").insert(
+        conturiNoi.map(([contId, suma]) => ({ document_id: documentIdOP, cont_id: contId, suma, explicatie: explicatieNoua, mod_plata: opDoc.mod_plata }))
+      );
+      if (errIns) throw errIns;
+    }
 
     const { data: rezultatResort, error: errResort } = await supabase.rpc("actualizeaza_data_nr_document", {
       p_document_id: documentIdOP,
@@ -987,12 +1051,37 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
     });
     if (errResort) throw errResort;
     renumerotari = (rezultatResort || []).map((r) => ({ documentId: r.document_id, nrNou: r.nr_nou }));
+
+    // Recitim setul final de linii + nr/an ale OP-ului (după resincronizare) direct din bază,
+    // ca apelantul să poată înlocui curat TOATE liniile locale ale acestui OP (unele s-au
+    // putut adăuga sau șterge mai sus, deci un simplu "map" peste liniile vechi nu ar fi corect).
+    const { data: liniiFinaleOP, error: errLiniiFinale } = await supabase.from("linii_document").select("*").eq("document_id", documentIdOP);
+    if (errLiniiFinale) throw errLiniiFinale;
+    const { data: opDocFinal, error: errOpFinal } = await supabase.from("documente").select("nr, an").eq("id", documentIdOP).single();
+    if (errOpFinal) throw errOpFinal;
+
+    operatiuniNoiOP = liniiFinaleOP.map((l) => ({
+      id: l.id, tip: "plata", contId: l.cont_id, data, suma: Number(l.suma), modPlata: l.mod_plata, tert: furnizor,
+      explicatie: l.explicatie || "", nr: opDocFinal.nr, an: opDocFinal.an, ajustare106: !!l.ajustare106,
+      esteExcedentReportat: !!l.este_excedent_reportat, documentId: documentIdOP, serie: null, numarIdentificare: null,
+    }));
   }
+
+  // Dacă NRCD-ul e încă neachitat, rezumatul datoriei (total + defalcare pe categorii BVC) se
+  // recalculează la fel, din totalul TUTUROR liniilor NRCD-ului — nu doar cea editată.
+  const datorieActualizata = !documentIdOP
+    ? {
+        suma: valoareAchizitieTotalaNrcd,
+        liniiAchizitie: Object.entries(sumePeCategorie).map(([categorieBVC, suma]) => ({ categorieBVC, suma })),
+      }
+    : null;
 
   return {
     articolePatch,
     miscareActualizata: { data, cantitate, valoareTotala, valoareAchizitie: valoareAchizitieNoua, articolId: idNou || miscare.articol_id },
     documentIdOP,
+    operatiuniNoiOP,
+    datorieActualizata,
     renumerotari,
   };
 }
