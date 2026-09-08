@@ -6631,7 +6631,14 @@ function TransferForm({ conturi, operatiuni, directieInitiala = "casa-banca", on
 
   const eDepozit = directie === "deschidere-depozit" || directie === "inchidere-depozit";
   const contTransfer = eDepozit ? "5081" : "581";
-  const explicatieBaza = eDepozit ? "Constituire/lichidare depozit bancar la termen" : "Viramente interne — depunere/ridicare";
+  // Text distinct, fără echivoc, pentru fiecare din cele 4 direcții — înainte, toate variantele de
+  // pe un cont (581 sau 5081) foloseau ACELAȘI text combinat ("depunere/ridicare",
+  // "Constituire/lichidare"), deci nu se putea distinge din Explicație ce anume s-a întâmplat.
+  const explicatieBaza =
+    directie === "casa-banca" ? "Depunere numerar din Casă în cont bancar"
+    : directie === "banca-casa" ? "Ridicare numerar din cont bancar în Casă"
+    : directie === "deschidere-depozit" ? `Constituire depozit bancar la termen — sursă: ${laturaDepozit === "casa" ? "Casă" : "Bancă"}`
+    : `Lichidare depozit bancar la termen — destinație: ${laturaDepozit === "casa" ? "Casă" : "Bancă"}`;
   const explicatieTransfer = directie === "deschidere-depozit" && scadenta
     ? `${explicatieBaza} [scadent: ${scadenta}]`
     : explicatieBaza;
