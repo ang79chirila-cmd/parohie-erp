@@ -1207,6 +1207,28 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
   );
 }
 
+// Cap de tabel sortabil — clic (pe etichetă sau pe săgeți) sortează toate rândurile după acea
+// coloană; un al doilea clic pe aceeași coloană inversează direcția (asc ↔ desc). Săgeata activă
+// se colorează, cealaltă rămâne discretă.
+function AntetSortabil({ eticheta, coloana, sortColoana, sortDirectie, onSort, className }) {
+  const activ = sortColoana === coloana;
+  return (
+    <th className={className || "px-3 py-2"}>
+      <button
+        type="button"
+        onClick={() => onSort(coloana)}
+        className={`inline-flex items-center gap-1 hover:text-stone-700 select-none ${activ ? "text-stone-800" : ""}`}
+      >
+        <span>{eticheta}</span>
+        <span className="inline-flex flex-col leading-none -space-y-0.5">
+          <ChevronUp size={10} className={activ && sortDirectie === "asc" ? "text-[#1F3864]" : "text-stone-300"} />
+          <ChevronDown size={10} className={activ && sortDirectie === "desc" ? "text-[#1F3864]" : "text-stone-300"} />
+        </span>
+      </button>
+    </th>
+  );
+}
+
 function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina, totalFiltrate, placeholder }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-stone-100 flex-wrap">
@@ -7151,7 +7173,19 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // documentId expus direct pe rândul grupat). Resetată la schimbarea anului, ca să nu rămână
   // "selectate" tranzacții needevizibile după filtrare.
   const [selectieIntrari, setSelectieIntrari] = useState(new Set());
+  const [sortColoanaIntrari, setSortColoanaIntrari] = useState("data");
+  const [sortDirectieIntrari, setSortDirectieIntrari] = useState("desc");
+  function sorteazaIntrari(coloana) {
+    if (sortColoanaIntrari === coloana) setSortDirectieIntrari((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortColoanaIntrari(coloana); setSortDirectieIntrari("asc"); }
+  }
   const [selectieIesiri, setSelectieIesiri] = useState(new Set());
+  const [sortColoanaIesiri, setSortColoanaIesiri] = useState("data");
+  const [sortDirectieIesiri, setSortDirectieIesiri] = useState("desc");
+  function sorteazaIesiri(coloana) {
+    if (sortColoanaIesiri === coloana) setSortDirectieIesiri((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortColoanaIesiri(coloana); setSortDirectieIesiri("asc"); }
+  }
   const [confirmareStergereSelectieIntrari, setConfirmareStergereSelectieIntrari] = useState(false);
   const [confirmareStergereSelectieIesiri, setConfirmareStergereSelectieIesiri] = useState(false);
   const [stergereSelectieInCurs, setStergereSelectieInCurs] = useState(false);
@@ -7582,6 +7616,39 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     }
     return [...perDoc.values()].sort((a, b) => (a.data < b.data ? 1 : -1));
   }, [state.miscariStoc, anPangar]);
+
+  // Versiune sortabilă a Tabloului intrări — sortarea operează la nivel de RECEPȚIE (grup NRCD),
+  // nu de linie individuală, fiindcă NRCD/Data/Furnizor sunt comune tuturor liniilor unei recepții
+  // (rowSpan în tabel). Pentru Cod se ia codul primei linii; pentru Cantitate/Valoare, suma
+  // tuturor liniilor recepției — cea mai rezonabilă "valoare reprezentativă" pentru o recepție cu
+  // mai multe produse.
+  const receptiiIntrariSortate = useMemo(() => {
+    const cmp = (a, b) => {
+      switch (sortColoanaIntrari) {
+        case "nrNRCD": return (a.nrNRCD || 0) - (b.nrNRCD || 0);
+        case "data": return a.data < b.data ? -1 : a.data > b.data ? 1 : 0;
+        case "cod": {
+          const codA = state.articole.find((x) => x.id === a.linii[0]?.articolId)?.cod || "";
+          const codB = state.articole.find((x) => x.id === b.linii[0]?.articolId)?.cod || "";
+          return codA.localeCompare(codB);
+        }
+        case "cantitate": {
+          const sA = a.linii.reduce((s, l) => s + l.cantitate, 0);
+          const sB = b.linii.reduce((s, l) => s + l.cantitate, 0);
+          return sA - sB;
+        }
+        case "valoare": {
+          const sA = a.linii.reduce((s, l) => s + l.valoareAchizitie, 0);
+          const sB = b.linii.reduce((s, l) => s + l.valoareAchizitie, 0);
+          return sA - sB;
+        }
+        case "furnizor": return (a.furnizor || "").localeCompare(b.furnizor || "");
+        default: return 0;
+      }
+    };
+    return [...receptiiAnFiltrate].sort((a, b) => cmp(a, b) * (sortDirectieIntrari === "asc" ? 1 : -1));
+  }, [receptiiAnFiltrate, sortColoanaIntrari, sortDirectieIntrari, state.articole]);
+
   const vanzariAnFiltrate = useMemo(() => {
     const iesiri = state.miscariStoc.filter((m) => m.tip === "iesire" && m.nrChitanta && m.anChitanta === anPangar);
     const perChitanta = {};
@@ -7603,6 +7670,29 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       })
       .sort((a, b) => (a.data < b.data ? 1 : -1));
   }, [state.miscariStoc, state.articole, state.operatiuni, anPangar]);
+
+  // Versiune sortabilă a Tabloului vânzări — aceeași logică ca la Intrări: pentru Cod bază/
+  // Cantitate se ia prima linie, respectiv suma tuturor liniilor; Valoare e deja totalul
+  // chitanței; Terț necesită aceeași căutare în operatiuni ca la afișare (nu e stocat pe rând).
+  const vanzariIesiriSortate = useMemo(() => {
+    const gasesteTert = (v) => state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta)?.tert || "";
+    const cmp = (a, b) => {
+      switch (sortColoanaIesiri) {
+        case "nrChitanta": return (a.nrChitanta || 0) - (b.nrChitanta || 0);
+        case "data": return a.data < b.data ? -1 : a.data > b.data ? 1 : 0;
+        case "codBaza": return (a.linii[0]?.bazaCod || "").localeCompare(b.linii[0]?.bazaCod || "");
+        case "cantitate": {
+          const sA = a.linii.reduce((s, l) => s + l.cantitate, 0);
+          const sB = b.linii.reduce((s, l) => s + l.cantitate, 0);
+          return sA - sB;
+        }
+        case "valoare": return a.valoare - b.valoare;
+        case "tert": return gasesteTert(a).localeCompare(gasesteTert(b));
+        default: return 0;
+      }
+    };
+    return [...vanzariAnFiltrate].sort((a, b) => cmp(a, b) * (sortDirectieIesiri === "asc" ? 1 : -1));
+  }, [vanzariAnFiltrate, sortColoanaIesiri, sortDirectieIesiri, state.operatiuni]);
 
   // Grupări pe TOT istoricul (nu doar anul selectat) — sursa comună pentru Navigatoarele "Note de
   // Recepție"/"Rapoarte vânzări" ȘI pentru printarea în masă din Tablou intrări/vânzări (aceeași
@@ -8138,17 +8228,17 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                   onChange={(e) => setSelectieIntrari(e.target.checked ? new Set(receptiiAnFiltrate.map((g) => g.documentId)) : new Set())}
                 />
               </th>
-              <th className="px-3 py-2">NRCD</th>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Cod</th>
-              <th className="px-3 py-2 text-right">Cantitate</th>
-              <th className="px-3 py-2 text-right">Valoare</th>
-              <th className="px-3 py-2">Furnizor</th>
+              <AntetSortabil eticheta="NRCD" coloana="nrNRCD" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
+              <AntetSortabil eticheta="Data" coloana="data" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
+              <AntetSortabil eticheta="Cod" coloana="cod" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
+              <AntetSortabil eticheta="Cantitate" coloana="cantitate" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} className="px-3 py-2 text-right" />
+              <AntetSortabil eticheta="Valoare" coloana="valoare" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} className="px-3 py-2 text-right" />
+              <AntetSortabil eticheta="Furnizor" coloana="furnizor" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {receptiiAnFiltrate.map((grup) => {
+            {receptiiIntrariSortate.map((grup) => {
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[yearOf(grup.data)]?.inchisDefinitiv;
               const totalGrup = grup.linii.reduce((s, l) => s + l.valoareAchizitie, 0);
               return [
@@ -8169,27 +8259,29 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                       <td className="px-3 py-2 text-right tabular-nums">{m.cantitate}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmt(m.valoareAchizitie)}</td>
                       {i === 0 && <td className="px-3 py-2 text-stone-500 align-top" rowSpan={grup.linii.length}>{grup.furnizor}</td>}
-                      <td className="px-3 py-2">
-                        {anInchisDefinitiv ? (
-                          <span className="text-xs text-stone-400">Închis definitiv</span>
-                        ) : (
-                          !permisiuni.citireOnly && (
-                            <div className="flex gap-1.5 justify-end items-center">
-                              <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
-                              {confirmareStergereReceptie === grup.documentId ? (
-                                <>
-                                  <Btn variant="danger" onClick={async () => { await stergeReceptie(grup.documentId); setConfirmareStergereReceptie(null); }}>
-                                    Confirmă
-                                  </Btn>
-                                  <Btn variant="ghost" onClick={() => setConfirmareStergereReceptie(null)}>Anulează</Btn>
-                                </>
-                              ) : (
-                                <Btn variant="danger" onClick={() => setConfirmareStergereReceptie(grup.documentId)}>Șterge</Btn>
-                              )}
-                            </div>
-                          )
-                        )}
-                      </td>
+                      {i === 0 && (
+                        <td className="px-3 py-2 align-top" rowSpan={grup.linii.length}>
+                          {anInchisDefinitiv ? (
+                            <span className="text-xs text-stone-400">Închis definitiv</span>
+                          ) : (
+                            !permisiuni.citireOnly && (
+                              <div className="flex gap-1.5 justify-end items-center">
+                                <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
+                                {confirmareStergereReceptie === grup.documentId ? (
+                                  <>
+                                    <Btn variant="danger" onClick={async () => { await stergeReceptie(grup.documentId); setConfirmareStergereReceptie(null); }}>
+                                      Confirmă
+                                    </Btn>
+                                    <Btn variant="ghost" onClick={() => setConfirmareStergereReceptie(null)}>Anulează</Btn>
+                                  </>
+                                ) : (
+                                  <Btn variant="danger" onClick={() => setConfirmareStergereReceptie(grup.documentId)}>Șterge</Btn>
+                                )}
+                              </div>
+                            )
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 }),
@@ -8282,17 +8374,17 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                   onChange={(e) => setSelectieIesiri(e.target.checked ? new Set(vanzariAnFiltrate.map((v) => `${v.anChitanta}-${v.nrChitanta}`)) : new Set())}
                 />
               </th>
-              <th className="px-3 py-2">Chitanță</th>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Cod bază</th>
-              <th className="px-3 py-2 text-right">Cantitate</th>
-              <th className="px-3 py-2 text-right">Valoare</th>
-              <th className="px-3 py-2">Terț</th>
+              <AntetSortabil eticheta="Chitanță" coloana="nrChitanta" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} />
+              <AntetSortabil eticheta="Data" coloana="data" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} />
+              <AntetSortabil eticheta="Cod bază" coloana="codBaza" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} />
+              <AntetSortabil eticheta="Cantitate" coloana="cantitate" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} className="px-3 py-2 text-right" />
+              <AntetSortabil eticheta="Valoare" coloana="valoare" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} className="px-3 py-2 text-right" />
+              <AntetSortabil eticheta="Terț" coloana="tert" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} />
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {vanzariAnFiltrate.map((v) => {
+            {vanzariIesiriSortate.map((v) => {
               const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[v.anChitanta]?.inchisDefinitiv;
               const cheieSelectie = `${v.anChitanta}-${v.nrChitanta}`;
