@@ -844,8 +844,8 @@ export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata
     const cat = categoriiPangar[c.articol.categorie_bvc];
     const cost = c.cantitate * Number(c.articol.pret_achizitie);
     const propriu = c.cantitate * Number(c.articol.pret_vanzare) - cost;
-    liniiBugetare.push({ contId: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} x ${Number(c.articol.pret_vanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei`, modPlata });
-    liniiBugetare.push({ contId: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} x ${Number(c.articol.pret_vanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei (marjă)`, modPlata });
+    liniiBugetare.push({ contId: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um}`, modPlata });
+    liniiBugetare.push({ contId: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um} (marjă)`, modPlata });
   }
 
   // Creăm ÎNTÂI chitanța (stocul a fost deja verificat mai sus, doar citire) — dacă scrierea
@@ -1332,8 +1332,8 @@ export async function editeazaVanzarePangar(documentId, { cantitate, data, tert,
     const cat = categoriiPangar[c.articol.categorie_bvc];
     const cost = c.cantitate * Number(c.articol.pret_achizitie);
     const propriu = valoareTotala - cost;
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} x ${Number(c.articol.pret_vanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei`, mod_plata: modPlata });
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} x ${Number(c.articol.pret_vanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei (marjă)`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um}`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um} (marjă)`, mod_plata: modPlata });
 
     miscariNoi.push({
       id: miscareInserata.id, data, tip: "iesire", articolId: c.articol.id, cantitate: c.cantitate,
@@ -1452,8 +1452,8 @@ export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, t
     const cat = categoriiPangar[c.articol.categorie_bvc];
     const cost = c.cantitate * Number(c.articol.pret_achizitie);
     const propriu = valoareTotala - cost;
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} x ${Number(c.articol.pret_vanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei`, mod_plata: modPlata });
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} x ${Number(c.articol.pret_vanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei (marjă)`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um}`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um} (marjă)`, mod_plata: modPlata });
 
     miscariNoi.push({
       id: miscareInserata.id, data, tip: "iesire", articolId: c.articol.id, cantitate: c.cantitate,

@@ -798,8 +798,8 @@ function seedDemoState() {
     const costAchizitie = cantitate * art.pretAchizitie;
     const venitPropriu = cantitate * art.pretVanzare - costAchizitie;
     const cat = CATEGORII_PANGAR[art.categorieBVC];
-    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitTranzitoriu, data, suma: costAchizitie, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} x ${Number(art.pretVanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei`, nr, an });
-    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitPropriu, data, suma: venitPropriu, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} x ${Number(art.pretVanzare).toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} lei (marjă)`, nr, an });
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitTranzitoriu, data, suma: costAchizitie, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} ${art.um}`, nr, an });
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitPropriu, data, suma: venitPropriu, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} ${art.um} (marjă)`, nr, an });
     miscariStoc.push({ id: uid(), data, tip: "iesire", articolId: art.id, cantitate, valoareUnitara: art.pretVanzare, valoareTotala: cantitate * art.pretVanzare });
   };
 
@@ -946,13 +946,62 @@ function Btn({ children, onClick, variant = "primary", type = "button", disabled
 // Element de meniu pentru bara principală (navy, sus) — buton cu etichetă + iconiță, desfășoară
 // o listă albă la clic. Vizual distinct de MenuDropdown (alb, folosit în interiorul paginilor) —
 // aici fundalul e închis, deci starea inactivă/hover trebuie să rămână lizibilă pe navy.
+// Un singur nivel de flyout (listă de itemi, poziționată la coordonatele date) — se re-randează
+// pe sine recursiv pentru orice item cu `.sub`, ca să suporte oricâte niveluri de submeniu
+// imbricat (nu doar 2, ca varianta inițială — necesar pentru meniuri pe 3+ niveluri, ex.
+// Registru Jurnal → Intrări → Chitanță → Chitanță nouă).
+function FlyoutMenu({ items, pozitie, onCloseAll }) {
+  const [subDeschis, setSubDeschis] = useState(null);
+  const [subPozitie, setSubPozitie] = useState(null);
+  const subRefs = useRef({});
+
+  function deschideSub(i) {
+    const r = subRefs.current[i].getBoundingClientRect();
+    setSubPozitie({ top: r.top, left: r.right + 4 });
+    setSubDeschis(i);
+  }
+
+  return (
+    <>
+      <div
+        className="fixed bg-white border border-stone-200 rounded-md shadow-lg z-[101] py-1 min-w-[220px]"
+        style={{ top: pozitie.top, left: pozitie.left }}
+      >
+        {items.map((it, i) =>
+          it.sub ? (
+            <button
+              key={i}
+              ref={(el) => (subRefs.current[i] = el)}
+              onClick={(e) => { e.stopPropagation(); subDeschis === i ? setSubDeschis(null) : deschideSub(i); }}
+              className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50 ${subDeschis === i ? "bg-stone-50 text-stone-900" : "text-stone-700"}`}
+            >
+              <span className="flex items-center gap-2">
+                {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
+              </span>
+              <ChevronDown size={12} className="-rotate-90 text-stone-400" />
+            </button>
+          ) : (
+            <button
+              key={i}
+              onClick={(e) => { e.stopPropagation(); it.onClick(); onCloseAll(); }}
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+            >
+              {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
+            </button>
+          )
+        )}
+      </div>
+      {subDeschis !== null && subPozitie && items[subDeschis].sub && (
+        <FlyoutMenu items={items[subDeschis].sub} pozitie={subPozitie} onCloseAll={onCloseAll} />
+      )}
+    </>
+  );
+}
+
 function MenuBarItem({ label, icon: Icon, items, activ }) {
   const [open, setOpen] = useState(false);
   const [pozitie, setPozitie] = useState(null);
-  const [subDeschis, setSubDeschis] = useState(null); // index-ul itemului al cărui submeniu e deschis
-  const [subPozitie, setSubPozitie] = useState(null);
   const butonRef = useRef(null);
-  const subRefs = useRef({});
 
   function deschide() {
     const r = butonRef.current.getBoundingClientRect();
@@ -962,13 +1011,6 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
 
   function inchideTot() {
     setOpen(false);
-    setSubDeschis(null);
-  }
-
-  function deschideSub(i) {
-    const r = subRefs.current[i].getBoundingClientRect();
-    setSubPozitie({ top: r.top, left: r.right + 4 });
-    setSubDeschis(i);
   }
 
   return (
@@ -987,50 +1029,7 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
       {open && pozitie && createPortal(
         <>
           <div className="fixed inset-0 z-[100]" onClick={inchideTot} />
-          <div
-            className="fixed bg-white border border-stone-200 rounded-md shadow-lg z-[101] py-1 min-w-[240px]"
-            style={{ top: pozitie.top, left: pozitie.left }}
-          >
-            {items.map((it, i) =>
-              it.sub ? (
-                <button
-                  key={i}
-                  ref={(el) => (subRefs.current[i] = el)}
-                  onClick={(e) => { e.stopPropagation(); subDeschis === i ? setSubDeschis(null) : deschideSub(i); }}
-                  className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50 ${subDeschis === i ? "bg-stone-50 text-stone-900" : "text-stone-700"}`}
-                >
-                  <span className="flex items-center gap-2">
-                    {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
-                  </span>
-                  <ChevronDown size={12} className="-rotate-90 text-stone-400" />
-                </button>
-              ) : (
-                <button
-                  key={i}
-                  onClick={() => { it.onClick(); inchideTot(); }}
-                  className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
-                >
-                  {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
-                </button>
-              )
-            )}
-          </div>
-          {subDeschis !== null && subPozitie && items[subDeschis].sub && (
-            <div
-              className="fixed bg-white border border-stone-200 rounded-md shadow-lg z-[102] py-1 min-w-[140px]"
-              style={{ top: subPozitie.top, left: subPozitie.left }}
-            >
-              {items[subDeschis].sub.map((sit, j) => (
-                <button
-                  key={j}
-                  onClick={() => { sit.onClick(); inchideTot(); }}
-                  className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
-                >
-                  {sit.icon && <sit.icon size={14} className="text-stone-500" />} {sit.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <FlyoutMenu items={items} pozitie={pozitie} onCloseAll={inchideTot} />
         </>,
         document.body
       )}
@@ -3855,14 +3854,42 @@ export default function ParohieERP() {
       id: "operatiuni", label: "Registru Jurnal", icon: BookOpen,
       subTabs: ["operatiuni", "conturi"],
       items: [
-        { label: "Vezi registrul", icon: BookOpen, onClick: () => setTab("operatiuni") },
-        ...(!permisiuni.citireOnly ? [{ label: "Chitanță nouă", icon: ArrowDownCircle, onClick: () => navigheazaCuActiune("operatiuni", "chitanta") }] : []),
-        ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP ? [{ label: "Ordin de plată nou", icon: ArrowUpCircle, onClick: () => navigheazaCuActiune("operatiuni", "op") }] : []),
-        ...(!permisiuni.citireOnly ? [{ label: "Transfer casă/bancă", icon: ArrowLeftRight, onClick: () => navigheazaCuActiune("operatiuni", "transfer") }] : []),
-        { label: "Chitanțe emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "chitanteEmise") },
-        { label: "Ordine de plată emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "opEmise") },
-        { label: "Registrul viramentelor", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "registrulViramente") },
-        ...(!permisiuni.citireOnly ? [{ label: "Editare/Ștergere transferuri interne", icon: Pencil, onClick: () => navigheazaCuActiune("operatiuni", "editareViramente") }] : []),
+        { label: "Vezi Jurnalul", icon: BookOpen, onClick: () => setTab("operatiuni") },
+        {
+          label: "Intrări", icon: ArrowDownCircle,
+          sub: [
+            {
+              label: "Chitanță", icon: FileText,
+              sub: [
+                ...(!permisiuni.citireOnly ? [{ label: "Chitanță nouă", icon: Plus, onClick: () => navigheazaCuActiune("operatiuni", "chitanta") }] : []),
+                { label: "Chitanțe emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "chitanteEmise") },
+              ],
+            },
+          ],
+        },
+        {
+          label: "Ieșiri", icon: ArrowUpCircle,
+          sub: [
+            {
+              label: "Ordin de plată", icon: FileText,
+              sub: [
+                ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP ? [{ label: "Ordin de plată nou", icon: Plus, onClick: () => navigheazaCuActiune("operatiuni", "op") }] : []),
+                { label: "Ordine de plată emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "opEmise") },
+              ],
+            },
+          ],
+        },
+        {
+          label: "Transferuri interne", icon: ArrowLeftRight,
+          sub: [
+            ...(!permisiuni.citireOnly ? [{ label: "Transfer Casă → Bancă", icon: ArrowDownCircle, onClick: () => navigheazaCuActiune("operatiuni", "transferCasaBanca") }] : []),
+            ...(!permisiuni.citireOnly ? [{ label: "Transfer Bancă → Casă", icon: ArrowUpCircle, onClick: () => navigheazaCuActiune("operatiuni", "transferBancaCasa") }] : []),
+            ...(!permisiuni.citireOnly ? [{ label: "Constituire Depozit Bancar", icon: Landmark, onClick: () => navigheazaCuActiune("operatiuni", "constituireDepozit") }] : []),
+            ...(!permisiuni.citireOnly ? [{ label: "Închidere Depozit Bancar", icon: Landmark, onClick: () => navigheazaCuActiune("operatiuni", "inchidereDepozit") }] : []),
+            { label: "Registrul Transferurilor interne", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "registrulViramente") },
+            ...(!permisiuni.citireOnly ? [{ label: "Editare/Ștergere transferuri interne", icon: Pencil, onClick: () => navigheazaCuActiune("operatiuni", "editareViramente") }] : []),
+          ],
+        },
         { label: "Reconciliere bancară", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("operatiuni", "reconciliere") },
       ],
     },
@@ -5117,6 +5144,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const [showChitanta, setShowChitanta] = useState(false);
   const [showOP, setShowOP] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [directieTransferInitiala, setDirectieTransferInitiala] = useState("casa-banca");
   const [showEditareViramente, setShowEditareViramente] = useState(false);
   const [editareViramentFor, setEditareViramentFor] = useState(null); // perechea în curs de editare | null
   const [showReconciliere, setShowReconciliere] = useState(false);
@@ -5128,7 +5156,11 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     if (!actiuneInitiala) return;
     if (actiuneInitiala === "chitanta") setShowChitanta(true);
     else if (actiuneInitiala === "op") setShowOP(true);
-    else if (actiuneInitiala === "transfer") setShowTransfer(true);
+    else if (actiuneInitiala === "transfer") { setDirectieTransferInitiala("casa-banca"); setShowTransfer(true); }
+    else if (actiuneInitiala === "transferCasaBanca") { setDirectieTransferInitiala("casa-banca"); setShowTransfer(true); }
+    else if (actiuneInitiala === "transferBancaCasa") { setDirectieTransferInitiala("banca-casa"); setShowTransfer(true); }
+    else if (actiuneInitiala === "constituireDepozit") { setDirectieTransferInitiala("deschidere-depozit"); setShowTransfer(true); }
+    else if (actiuneInitiala === "inchidereDepozit") { setDirectieTransferInitiala("inchidere-depozit"); setShowTransfer(true); }
     else if (actiuneInitiala === "editareViramente") setShowEditareViramente(true);
     else if (actiuneInitiala === "chitanteEmise") setBrowseTip("incasare");
     else if (actiuneInitiala === "opEmise") setBrowseTip("plata");
@@ -5684,6 +5716,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         <TransferForm
           conturi={state.conturi}
           operatiuni={state.operatiuni}
+          directieInitiala={directieTransferInitiala}
           onClose={() => setShowTransfer(false)}
           onSave={async (ops) => {
             await salveazaTransfer(ops);
@@ -6587,8 +6620,9 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   );
 }
 
-function TransferForm({ conturi, operatiuni, onClose, onSave }) {
-  const [directie, setDirectie] = useState("casa-banca");
+function TransferForm({ conturi, operatiuni, directieInitiala = "casa-banca", onClose, onSave }) {
+  const [directie, setDirectie] = useState(directieInitiala);
+  const [laturaDepozit, setLaturaDepozit] = useState("banca"); // "banca" | "casa" — sursa (constituire) / destinația (închidere)
   const [data, setData] = useState(todayISO());
   const [suma, setSuma] = useState("");
   const [scadenta, setScadenta] = useState("");
@@ -6629,10 +6663,12 @@ function TransferForm({ conturi, operatiuni, onClose, onSave }) {
       }
     }
     setAvertismentDuplicat(null);
+    // Pentru depozit, latura Bancă/Casă e aleasă explicit mai jos (sursa la constituire,
+    // destinația la închidere) — nu mai e fixată implicit pe Bancă.
     const iesModPlata = directie === "casa-banca" ? "numerar" : directie === "banca-casa" ? "transfer"
-      : directie === "deschidere-depozit" ? "transfer" : "depozit";
+      : directie === "deschidere-depozit" ? (laturaDepozit === "casa" ? "numerar" : "transfer") : "depozit";
     const intModPlata = directie === "casa-banca" ? "transfer" : directie === "banca-casa" ? "numerar"
-      : directie === "deschidere-depozit" ? "depozit" : "transfer";
+      : directie === "deschidere-depozit" ? "depozit" : (laturaDepozit === "casa" ? "numerar" : "transfer");
     onSave([
       { tip: "plata", contId: contTransfer, data, suma: sumaNum, modPlata: iesModPlata, tert: "", explicatie: explicatieTransfer },
       { tip: "incasare", contId: contTransfer, data, suma: sumaNum, modPlata: intModPlata, tert: "", explicatie: explicatieTransfer },
@@ -6649,16 +6685,32 @@ function TransferForm({ conturi, operatiuni, onClose, onSave }) {
           <select className={inputCls} value={directie} onChange={(e) => setDirectie(e.target.value)}>
             <option value="casa-banca">Depunere: din Casă → în Bancă</option>
             <option value="banca-casa">Ridicare: din Bancă → în Casă</option>
-            <option value="deschidere-depozit">Deschidere depozit bancar: din Bancă → în Depozit</option>
-            <option value="inchidere-depozit">Închidere depozit bancar: din Depozit → în Bancă</option>
+            <option value="deschidere-depozit">Deschidere depozit bancar</option>
+            <option value="inchidere-depozit">Închidere depozit bancar</option>
           </select>
         </Field>
+        {directie === "deschidere-depozit" && (
+          <Field label="Sursa (de unde se constituie depozitul)">
+            <select className={inputCls} value={laturaDepozit} onChange={(e) => setLaturaDepozit(e.target.value)}>
+              <option value="banca">Bancă</option>
+              <option value="casa">Casă</option>
+            </select>
+          </Field>
+        )}
         {directie === "inchidere-depozit" && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-            Aici se mută exclusiv principalul înapoi în Bancă. Dobânda acumulată (netă, deja impozitată la sursă) se
-            înregistrează separat, printr-o Chitanță obișnuită pe articolul bugetar 766 (Venituri financiare —
-            Dobânzi bancare), cu sursa Bancă.
-          </p>
+          <>
+            <Field label="Destinația (unde ajunge principalul la închidere)">
+              <select className={inputCls} value={laturaDepozit} onChange={(e) => setLaturaDepozit(e.target.value)}>
+                <option value="banca">Bancă</option>
+                <option value="casa">Casă</option>
+              </select>
+            </Field>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+              Aici se mută exclusiv principalul înapoi în {laturaDepozit === "casa" ? "Casă" : "Bancă"}. Dobânda acumulată
+              (netă, deja impozitată la sursă) se înregistrează separat, printr-o Chitanță obișnuită pe articolul
+              bugetar 766 (Venituri financiare — Dobânzi bancare), cu sursa {laturaDepozit === "casa" ? "Casă" : "Bancă"}.
+            </p>
+          </>
         )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Data">
