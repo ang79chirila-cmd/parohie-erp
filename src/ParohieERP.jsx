@@ -1820,6 +1820,23 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     return "";
   });
 
+  // Lățime IDENTICĂ pentru coloanele Încasare/Plată. "Semănarea" de mai sus (randAntetReport/
+  // randSubsolTotal cu totalul general) rezervă deja lățimea corectă PER COLOANĂ — dar totalul
+  // de încasări și cel de plăți sunt sume diferite, cu număr diferit de cifre, deci AutoTable tot
+  // le calculează independent, ușor diferit. Rezultat vizibil: un titlu de coloană ("Încasare
+  // (lei)") se rupe pe 2 rânduri, celălalt ("Plată (lei)") nu — complet accidental, fără nicio
+  // legătură cu conținutul lor efectiv. Măsurăm explicit cea mai lată valoare posibilă din
+  // AMBELE coloane la un loc (etichete + cele două totaluri generale) și dăm exact aceeași
+  // lățime amândurora, ca să se comporte identic mereu, indiferent cât de diferite sunt sumele.
+  if (idxIncasare !== -1 && idxPlata !== -1) {
+    doc.setFont("NotoSans", "bold");
+    doc.setFontSize(9);
+    const candidatiLatime = [coloanePdf[idxIncasare].label, coloanePdf[idxPlata].label, fmt(totalGeneralIncasari), fmt(totalGeneralPlati)];
+    const latimeColoanaSume = Math.max(...candidatiLatime.map((t) => doc.getTextWidth(String(t)))) + 3; // + cellPadding (1.5mm × 2 laturi)
+    columnStyles[idxIncasare] = { ...(columnStyles[idxIncasare] || {}), cellWidth: latimeColoanaSume };
+    columnStyles[idxPlata] = { ...(columnStyles[idxPlata] || {}), cellWidth: latimeColoanaSume };
+  }
+
   autoTable(doc, {
     startY: 8,
     margin: { top: 8, bottom: 8 },
