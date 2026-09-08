@@ -429,7 +429,7 @@ export async function actualizeazaDocument(documentId, { data, tert, nr }, linii
   // scriind și cascadând în ACEEAȘI tranzacție (constrângerea, DEFERRABLE, se verifică abia la
   // commit, când secvența e deja unică).
   let renumerotari = [];
-  if (docActual.tip === "chitanta" || docActual.tip === "ordin_plata") {
+  if (docActual.tip === "chitanta" || docActual.tip === "ordin_plata" || docActual.tip === "virament_plata" || docActual.tip === "virament_incasare") {
     const { data: rezultatResort, error: errResort } = await supabase.rpc("actualizeaza_data_nr_document", {
       p_document_id: documentId,
       p_data_noua: data,

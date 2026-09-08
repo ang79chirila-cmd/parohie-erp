@@ -3862,6 +3862,7 @@ export default function ParohieERP() {
         { label: "Chitanțe emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "chitanteEmise") },
         { label: "Ordine de plată emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "opEmise") },
         { label: "Registrul viramentelor", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "registrulViramente") },
+        ...(!permisiuni.citireOnly ? [{ label: "Editare/Ștergere transferuri interne", icon: Pencil, onClick: () => navigheazaCuActiune("operatiuni", "editareViramente") }] : []),
         { label: "Reconciliere bancară", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("operatiuni", "reconciliere") },
       ],
     },
@@ -5116,6 +5117,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const [showChitanta, setShowChitanta] = useState(false);
   const [showOP, setShowOP] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showEditareViramente, setShowEditareViramente] = useState(false);
+  const [editareViramentFor, setEditareViramentFor] = useState(null); // perechea în curs de editare | null
   const [showReconciliere, setShowReconciliere] = useState(false);
   const [browseTip, setBrowseTip] = useState(null); // null | "incasare" | "plata"
 
@@ -5126,6 +5129,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     if (actiuneInitiala === "chitanta") setShowChitanta(true);
     else if (actiuneInitiala === "op") setShowOP(true);
     else if (actiuneInitiala === "transfer") setShowTransfer(true);
+    else if (actiuneInitiala === "editareViramente") setShowEditareViramente(true);
     else if (actiuneInitiala === "chitanteEmise") setBrowseTip("incasare");
     else if (actiuneInitiala === "opEmise") setBrowseTip("plata");
     else if (actiuneInitiala === "reconciliere") setShowReconciliere(true);
@@ -5239,6 +5243,55 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       ...s,
       operatiuni: s.operatiuni.filter((o) => o.id !== op.id),
       jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere virament intern — ${fmt(op.suma)} lei (${fmtDataJurnal(op.data)})`),
+    }));
+  }
+
+  // Editare/ștergere a unui transfer intern ÎNTREG (perechea plată+încasare creată împreună de
+  // salveazaTransfer) — folosite din fereastra dedicată "Editare/Ștergere transferuri interne",
+  // separată complet de Navigatorul de Chitanțe/OP (care exclude explicit viramentele, ca să nu
+  // se mai amestece grupări de pe secvențe de numerotare diferite — vezi comentariul din
+  // DocumentBrowserModal).
+  async function editeazaTransfer(perechea, opts) {
+    const { plata, incasare } = perechea;
+    const rezultate = [];
+    if (plata) {
+      const r = await actualizeazaDocument(
+        plata.documentId, { data: opts.data, tert: plata.tert, nr: undefined },
+        [{ id: plata.id, contId: plata.contId, suma: opts.suma, explicatie: opts.explicatie, modPlata: opts.modPlataPlata }]
+      );
+      rezultate.push({ ...r, opVechi: plata });
+    }
+    if (incasare) {
+      const r = await actualizeazaDocument(
+        incasare.documentId, { data: opts.data, tert: incasare.tert, nr: undefined },
+        [{ id: incasare.id, contId: incasare.contId, suma: opts.suma, explicatie: opts.explicatie, modPlata: opts.modPlataIncasare }]
+      );
+      rezultate.push({ ...r, opVechi: incasare });
+    }
+    setState((s) => {
+      let sPatched = s;
+      for (const r of rezultate) sPatched = aplicaRenumerotari(sPatched, r.renumerotari);
+      return {
+        ...sPatched,
+        operatiuni: sPatched.operatiuni.map((o) => {
+          if (plata && o.id === plata.id) return { ...o, data: opts.data, suma: opts.suma, explicatie: opts.explicatie, modPlata: opts.modPlataPlata };
+          if (incasare && o.id === incasare.id) return { ...o, data: opts.data, suma: opts.suma, explicatie: opts.explicatie, modPlata: opts.modPlataIncasare };
+          return o;
+        }),
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare transfer intern — ${fmt(opts.suma)} lei (${fmtDataJurnal(opts.data)})`),
+      };
+    });
+  }
+
+  async function stergePerecheVirament(perechea) {
+    const { plata, incasare } = perechea;
+    if (plata) await stergeDocument(plata.documentId);
+    if (incasare) await stergeDocument(incasare.documentId);
+    const idsSterse = new Set([plata?.id, incasare?.id].filter(Boolean));
+    setState((s) => ({
+      ...s,
+      operatiuni: s.operatiuni.filter((o) => !idsSterse.has(o.id)),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere transfer intern — ${fmt((plata || incasare).suma)} lei (${fmtDataJurnal((plata || incasare).data)})`),
     }));
   }
 
@@ -5373,6 +5426,40 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   // Bancă; 5081 — Deschidere/Închidere depozit bancar), strict limitat la anul curent selectat
   // (același an ca al Jurnalului afișat) — reutilizează soldurile deja calculate în `randuri`
   // (context complet, pe toate operațiunile anului, nu doar pe subsetul de viramente).
+  // Perechile de transfer intern (plată+încasare create împreună de salveazaTransfer) — pe TOT
+  // istoricul (nu doar anul selectat în Jurnal), pentru fereastra dedicată de editare/ștergere.
+  // Nu există o legătură explicită în bază între cele două documente ale unei perechi (create ca
+  // două salveazaDocument separate, needependente) — le asociem după (dată, cont, sumă), care
+  // identifică practic sigur o pereche reală (aceeași tranzacție fizică, aceleași date pe ambele
+  // laturi). În cazul rar al mai multor transferuri identice în aceeași zi, perechea se face în
+  // ordinea în care apar — suficient de bun pentru o listă de editare, fără urmări dacă output-ul
+  // nu e 100% garantat (utilizatorul vede clar ce editează, poate anula).
+  const perechiViramente = useMemo(() => {
+    const platiViramente = state.operatiuni.filter((op) => op.tip === "plata" && derived.contById[op.contId]?.clasa === "viramente");
+    const incasariViramente = state.operatiuni.filter((op) => op.tip === "incasare" && derived.contById[op.contId]?.clasa === "viramente");
+    const bucketIncasari = new Map();
+    incasariViramente.forEach((op) => {
+      const cheie = `${op.data}-${op.contId}-${op.suma}`;
+      if (!bucketIncasari.has(cheie)) bucketIncasari.set(cheie, []);
+      bucketIncasari.get(cheie).push(op);
+    });
+    const incasariFolosite = new Set();
+    const perechi = platiViramente.map((opPlata) => {
+      const cheie = `${opPlata.data}-${opPlata.contId}-${opPlata.suma}`;
+      const candidati = bucketIncasari.get(cheie) || [];
+      const opIncasare = candidati.find((c) => !incasariFolosite.has(c.id));
+      if (opIncasare) incasariFolosite.add(opIncasare.id);
+      return { plata: opPlata, incasare: opIncasare || null, cont: derived.contById[opPlata.contId] };
+    });
+    incasariViramente.forEach((op) => {
+      if (!incasariFolosite.has(op.id)) perechi.push({ plata: null, incasare: op, cont: derived.contById[op.contId] });
+    });
+    return perechi.sort((a, b) => {
+      const da = (a.plata || a.incasare).data, db = (b.plata || b.incasare).data;
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
+  }, [state.operatiuni, derived.contById]);
+
   function genereazaRegistrulViramente() {
     const randuriViramente = randuri.filter((r) => r.cont?.clasa === "viramente");
     const coloane = [
@@ -5607,6 +5694,23 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
 
       {showReconciliere && (
         <ReconciliereBancaraForm operatiuni={state.operatiuni} onClose={() => setShowReconciliere(false)} />
+      )}
+
+      {showEditareViramente && (
+        <EditareViramenteModal
+          perechi={perechiViramente}
+          permisiuni={permisiuni}
+          onModifica={(p) => setEditareViramentFor(p)}
+          onSterge={async (p) => { await stergePerecheVirament(p); }}
+          onClose={() => setShowEditareViramente(false)}
+        />
+      )}
+      {editareViramentFor && (
+        <PerecheViramentEditForm
+          perechea={editareViramentFor}
+          onClose={() => setEditareViramentFor(null)}
+          onSave={async (opts) => { await editeazaTransfer(editareViramentFor, opts); setEditareViramentFor(null); }}
+        />
       )}
 
       {browseTip && (
@@ -6581,6 +6685,128 @@ function TransferForm({ conturi, operatiuni, onClose, onSave }) {
           ) : (
             <Btn variant="gold" onClick={() => submit(false)}>Salvează transferul</Btn>
           )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function PerecheViramentEditForm({ perechea, onClose, onSave }) {
+  const opReferinta = perechea.plata || perechea.incasare;
+  const [data, setData] = useState(opReferinta.data);
+  const [suma, setSuma] = useState(String(opReferinta.suma));
+  const [explicatie, setExplicatie] = useState(opReferinta.explicatie || "");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    const sumaNum = Number(suma);
+    if (!data) { setError("Data este obligatorie."); return; }
+    if (!suma || isNaN(sumaNum) || sumaNum <= 0) { setError("Introduceți o sumă validă, mai mare ca 0."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({
+        data, suma: sumaNum, explicatie: explicatie.trim(),
+        modPlataPlata: perechea.plata?.modPlata, modPlataIncasare: perechea.incasare?.modPlata,
+      });
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Modifică transferul intern — cont ${opReferinta.contId}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        {(!perechea.plata || !perechea.incasare) && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Această tranzacție nu are pereche găsită (doar {perechea.plata ? "latura de plată" : "latura de încasare"}) —
+            se editează doar latura existentă.
+          </p>
+        )}
+        <Field label="Data">
+          <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+          {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+        </Field>
+        <Field label="Sumă (lei)">
+          <input type="number" step="0.01" className={inputCls} value={suma} onChange={(e) => setSuma(e.target.value)} />
+        </Field>
+        <Field label="Explicație">
+          <input className={inputCls} value={explicatie} onChange={(e) => setExplicatie(e.target.value)} />
+        </Field>
+        <p className="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-md p-2">
+          Contul ({opReferinta.contId}) și direcția (Casă/Bancă/Depozit) rămân neschimbate — dacă ai greșit direcția,
+          șterge acest transfer și creează unul nou, corect.
+        </p>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onClose }) {
+  const [confirmareStergere, setConfirmareStergere] = useState(null); // index din perechi | null
+
+  return (
+    <Modal title="Editare/ștergere transferuri interne (581/5081)" onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Toate transferurile interne (Casă ↔ Bancă, Deschidere/Închidere depozit) — separat de Chitanțe/Ordine de
+          plată, fiindcă au propria secvență de numerotare. Modificarea/ștergerea afectează ambele laturi (plată +
+          încasare) ale transferului, împreună.
+        </p>
+        <div className="overflow-x-auto max-h-[60vh]">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200 sticky top-0 bg-white">
+                <th className="px-2 py-2">Data</th>
+                <th className="px-2 py-2">Cont</th>
+                <th className="px-2 py-2">Explicație</th>
+                <th className="px-2 py-2 text-right">Sumă</th>
+                <th className="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {perechi.map((p, i) => {
+                const op = p.plata || p.incasare;
+                return (
+                  <tr key={i} className="border-b border-stone-100 hover:bg-stone-50">
+                    <td className="px-2 py-2 tabular-nums">{fmtDataJurnal(op.data)}</td>
+                    <td className="px-2 py-2 font-mono text-xs">{op.contId} <span className="text-stone-400">({p.cont?.denumire})</span></td>
+                    <td className="px-2 py-2 text-stone-500 max-w-[240px] truncate" title={op.explicatie}>{op.explicatie}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{fmt(op.suma)}</td>
+                    <td className="px-2 py-2">
+                      {!permisiuni.citireOnly && (
+                        <div className="flex gap-1.5 justify-end">
+                          <Btn variant="gold" onClick={() => onModifica(p)}>Modifică</Btn>
+                          {confirmareStergere === i ? (
+                            <>
+                              <Btn variant="danger" onClick={async () => { await onSterge(p); setConfirmareStergere(null); }}>Confirmă</Btn>
+                              <Btn variant="ghost" onClick={() => setConfirmareStergere(null)}>Anulează</Btn>
+                            </>
+                          ) : (
+                            <Btn variant="danger" onClick={() => setConfirmareStergere(i)}>Șterge</Btn>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {perechi.length === 0 && (
+                <tr><td colSpan={5} className="px-2 py-4 text-center text-stone-400">Niciun transfer intern încă.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex justify-end border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose}>Închide</Btn>
         </div>
       </div>
     </Modal>
