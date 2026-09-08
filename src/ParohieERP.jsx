@@ -1423,9 +1423,9 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       .continut { padding: 0 24px; }
       table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; }
       table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
-      table.raport thead.antet-repetat th { background: #1F3864; color: white; font-weight: normal; padding: 6px 8px; }
+      table.raport thead.antet-repetat th { background: #8A2B29; color: white; font-weight: normal; padding: 6px 8px; }
       table.raport thead.antet-repetat { display: table-header-group; }
-      table.raport tbody.date-header th { background: #1F3864; color: white; }
+      table.raport tbody.date-header th { background: #8A2B29; color: white; }
       table.raport tfoot { display: table-footer-group; }
       table.raport tfoot td { border: none; padding-top: 10px; font-size: 12pt; color: #78716c; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; }
@@ -1824,7 +1824,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     startY: 8,
     margin: { top: 8, bottom: 8 },
     styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
-    headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [31, 56, 100], textColor: 255 },
+    headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
     columnStyles,
     head: [randAntetReport, coloanePdf.map((c) => c.label)],
@@ -1969,14 +1969,37 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     );
   }
 
-  // Preot Paroh + Data — plasate imediat sub rândul de TOTAL general (nu fixate jos de pagină,
-  // unde s-ar suprapune vizual cu numerotarea "Pagina X din Y" desenată mai sus). Poziția reală
-  // de sub tabel, pe ultima pagină, vine din jsPDF-autotable (`doc.lastAutoTable.finalY`) — deja
-  // pe pagina corectă, fiindcă bucla de numerotare de mai sus a lăsat cursorul pe ultima pagină.
+  // Preot Paroh + Data + sigla partenerilor — tratate ca UN SINGUR bloc, plasat imediat sub
+  // rândul de TOTAL general (nu fixat jos de pagină, unde s-ar suprapune vizual cu numerotarea
+  // "Pagina X din Y" desenată mai sus). Poziția reală de sub tabel, pe ultima pagină, vine din
+  // jsPDF-autotable (`doc.lastAutoTable.finalY`) — deja pe pagina corectă, fiindcă bucla de
+  // numerotare de mai sus a lăsat cursorul pe ultima pagină.
+  //
+  // Dacă tabelul se termină foarte jos pe ultima pagină (posibil, cu marginea de 8mm folosită
+  // mai sus la autoTable) și n-ar mai încăpea tot blocul (text + siglă) fără să iasă de pe
+  // pagină, întregul bloc trece curat pe o pagină nouă, goală — niciodată tăiat/suprapus.
   doc.setFontSize(8);
-  const yDupaTabel = doc.lastAutoTable.finalY + 8;
+  const INALTIME_BLOC_FINAL = 10 /* linia Preot Paroh/Data */ + 10 /* spațiu până la siglă */ + 24 /* siglă + margine jos */;
+  let yDupaTabel = doc.lastAutoTable.finalY + 8;
+  if (yDupaTabel + INALTIME_BLOC_FINAL > doc.internal.pageSize.getHeight()) {
+    doc.addPage();
+    yDupaTabel = 20;
+  }
   doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), 14, yDupaTabel);
   doc.text(uni(`Data: ${azi}`), doc.internal.pageSize.getWidth() - 40, yDupaTabel);
+
+  // Sigla partenerilor — ancorată de josul paginii curente (nu la o poziție fixă undeva la
+  // mijlocul paginii), sub linia Preot Paroh/Data, dar mereu deasupra numerotării paginii
+  // (desenată mai sus, la pageHeight - 6). Verificarea de mai sus a garantat deja că încape.
+  {
+    const latimePaginaTotal = doc.internal.pageSize.getWidth();
+    const inaltimePagina = doc.internal.pageSize.getHeight();
+    const latimeLogo = Math.min(90, latimePaginaTotal - 2 * MARGINE);
+    const inaltimeLogo = latimeLogo * (101 / 1200); // păstrează raportul real al imaginii (1200×101)
+    const xLogo = (latimePaginaTotal - latimeLogo) / 2;
+    const yLogo = Math.max(yDupaTabel + 10, inaltimePagina - 22 - inaltimeLogo);
+    doc.addImage(LOGOURI_PARTENERI_BASE64, "PNG", xLogo, yLogo, latimeLogo, inaltimeLogo);
+  }
 
   // Deschidem PDF-ul într-un tab nou (vizualizatorul PDF nativ al browserului), nu descărcare
   // directă — la fel ca restul rapoartelor, care deschid o fereastră/tab, lăsând userul să aleagă
@@ -2073,7 +2096,7 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
       .grup-articol h3 { color: #1F3864; font-size: 13px; margin: 0 0 4px; }
       table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; }
       table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
-      table.raport thead th { background: #1F3864; color: white; font-weight: normal; padding: 6px 8px; }
+      table.raport thead th { background: #8A2B29; color: white; font-weight: normal; padding: 6px 8px; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; margin-top: 10px; }
       .nume-parohie-arhaic-alb { font-family: 'Arhaic Romanesc', Georgia, serif; color: white; }
       .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 20px; letter-spacing: 0.02em; }
@@ -2173,7 +2196,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
       .pagina-doc:last-child { page-break-after: auto; }
       table.doc { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 10px; }
       table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
-      table.doc th { background: #1F3864; color: white; font-weight: normal; }
+      table.doc th { background: #8A2B29; color: white; font-weight: normal; }
       .total-row td { font-weight: bold; background: #f5f5f4; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
       .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 14px; color: #1F3864; }
@@ -2299,7 +2322,7 @@ function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
       h2 { color: #1F3864; font-size: 18px; border-bottom: 2px solid #1F3864; padding-bottom: 4px; margin-top: 24px; }
       table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 8px; }
       table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
-      table.raport th { background: #1F3864; color: white; font-weight: normal; }
+      table.raport th { background: #8A2B29; color: white; font-weight: normal; }
       .kpi { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
       .kpi div { border: 1px solid #d6d3d1; border-radius: 4px; padding: 8px 14px; flex: 1; min-width: 140px; }
       .kpi .label { font-size: 12pt; color: #78716c; text-transform: uppercase; }
@@ -2445,7 +2468,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
       .pagina-doc:last-child { page-break-after: auto; }
       table.doc { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 10px; }
       table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
-      table.doc th { background: #1F3864; color: white; font-weight: normal; }
+      table.doc th { background: #8A2B29; color: white; font-weight: normal; }
       .total-row td { font-weight: bold; background: #f5f5f4; }
       .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
       .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 14px; color: #1F3864; }
@@ -3947,7 +3970,7 @@ export default function ParohieERP() {
   return (
     <div className="h-screen bg-[#FAF8F3] text-stone-800 flex flex-col font-sans overflow-hidden">
       {/* Bară principală de navigare — două rânduri: sus identitatea parohiei + cont, jos navigarea */}
-      <header className="bg-[#1F3864] text-white flex flex-col shrink-0 border-b border-white/10">
+      <header className="bg-[#8A2B29] text-white flex flex-col shrink-0 border-b border-white/10">
         <div className="flex items-center gap-1 px-6 h-11 border-b border-white/10">
           <div className="font-arhaic text-base leading-snug text-[#F0E4C8] shrink-0">
             {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
@@ -5958,6 +5981,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
   const [modPlataImplicit, setModPlataImplicit] = useState("numerar"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
   const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "numerar" }]);
+  const [anulata, setAnulata] = useState(false);
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
@@ -5979,7 +6003,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
   // butonul dedicat "Transfer casă/bancă", care generează ambele părți simetrice, sincron.
   // Selectarea lui manuală aici ar putea genera o singură parte a transferului, dezechilibrat.
   const conturiFiltrate = conturi.filter((c) => c.clasa !== "cheltuiala" && c.clasa !== "viramente");
-  const totalGeneral = linii.reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
+  const totalGeneral = anulata ? 0 : linii.reduce((sum, l) => sum + (Number(l.suma) || 0), 0);
 
   function actualizeazaLinie(id, patch) {
     setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -6006,6 +6030,12 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
       setError(`Exercițiul financiar ${an} este închis. Corectarea unei erori din acest an se face exclusiv prin ajustare pe contul 106, în anul curent.`);
       return false;
     }
+    // O chitanță ANULATĂ e scutită de regulile normale (articol bugetar + sumă > 0) — condițiile
+    // ei sunt fixe, needitabile, impuse mai jos în submit(): fără cont, sumă 0.
+    if (anulata) {
+      setError("");
+      return true;
+    }
     if (linii.some((l) => !l.contId)) {
       setError("Fiecare linie trebuie să aibă un articol bugetar selectat.");
       return false;
@@ -6027,8 +6057,12 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
     setSalvand(true);
     try {
       await onSave({
-        data, tert: tert.trim(), modPlata: modPlataImplicit,
-        linii: linii.map((l) => ({ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie.trim(), modPlata: l.modPlata })),
+        data,
+        tert: anulata ? "ANULATĂ" : tert.trim(),
+        modPlata: modPlataImplicit,
+        linii: anulata
+          ? [{ contId: null, suma: 0, explicatie: "ANULATĂ", modPlata: modPlataImplicit }]
+          : linii.map((l) => ({ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie.trim(), modPlata: l.modPlata })),
         serie: serie.trim(), numarIdentificare: numarIdentificare ? Number(numarIdentificare) : null,
       });
     } catch (e) {
@@ -6088,13 +6122,32 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
           </div>
         )}
 
-        <SelectorPartener
-          id="chitanta" label="Denumire partener (donator/terț, opțional — poate rămâne anonim)"
-          value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
-          sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
-          operatiuni={operatiuni}
-        />
+        <label className="flex items-center gap-2 text-sm text-stone-600 border border-stone-200 rounded-md px-3 py-2 bg-stone-50 cursor-pointer w-fit">
+          <input type="checkbox" checked={anulata} onChange={(e) => setAnulata(e.target.checked)} />
+          Chitanță ANULATĂ — își păstrează numărul în secvență (nu se sare la următoarea), dar
+          se înregistrează cu sumă 0, fără articol bugetar, „ANULATĂ" la partener și explicație.
+        </label>
 
+        {anulata ? (
+          <Field label="Denumire partener">
+            <input className={inputCls} value="ANULATĂ" disabled />
+          </Field>
+        ) : (
+          <SelectorPartener
+            id="chitanta" label="Denumire partener (donator/terț, opțional — poate rămâne anonim)"
+            value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
+            sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
+            operatiuni={operatiuni}
+          />
+        )}
+
+        {anulata ? (
+          <Card className="p-3 bg-amber-50 border-amber-300 flex items-center gap-2 text-sm text-amber-800">
+            <AlertTriangle size={14} className="shrink-0" />
+            Se va înregistra ca document nr. {previewNr}/{an}, sumă 0,00 lei, fără articol bugetar —
+            partenerul și explicația sunt fixate pe „ANULATĂ", needitabile.
+          </Card>
+        ) : (
         <div className="flex flex-col gap-2">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Defalcare pe articole bugetare</div>
           {linii.map((l, i) => (
@@ -6139,6 +6192,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
             <Plus size={14} /> Adaugă articol bugetar
           </Btn>
         </div>
+        )}
 
         <Card className="p-3 bg-stone-50 flex items-center justify-between">
           <span className="text-sm font-medium text-stone-600">Total chitanță</span>

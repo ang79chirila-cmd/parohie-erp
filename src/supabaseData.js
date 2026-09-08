@@ -232,10 +232,14 @@ export async function salveazaDocument(
   parohieId,
   { tip, data, tert, modPlata, furnizor, nrFactura, dataScadenta, status, motiv, beneficiar, documentSursaId, linii, serie, numarIdentificare, categorieNumerotare }
 ) {
+  // O linie e validă în cele două cazuri: sumă reală (>0, cu articol bugetar obligatoriu — cazul
+  // normal) SAU sumă exact 0 și fără cont bugetar (cazul unic acceptat: chitanță ANULATĂ — vezi
+  // ChitantaForm, care e singurul loc din UI ce construiește o astfel de linie). Nicio altă
+  // combinație (ex. sumă 0 CU cont, sau sumă negativă) nu trece mai departe.
   const liniiValide = (linii || [])
-    .filter((l) => Number(l.suma) > 0)
+    .filter((l) => Number(l.suma) > 0 || (Number(l.suma) === 0 && !l.contId))
     .map((l) => ({
-      contId: String(l.contId),
+      contId: l.contId ? String(l.contId) : null,
       suma: l.suma,
       explicatie: l.explicatie || null,
       modPlata: l.modPlata || modPlata || null,
