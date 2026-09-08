@@ -7904,6 +7904,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       </header>
 
       <Card className="p-4">
+        <div className="text-xs uppercase tracking-wide text-stone-400 mb-3">
+          Cât valorează, la prețul de vânzare, produsele de pangar aflate acum pe stoc — pe fiecare categorie
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {Object.entries(totaluriCategoriiPangar).map(([nume, valoare]) => (
             <div key={nume} className={`rounded-lg border p-3 ${nume === "TOTAL General" ? "border-[#1F3864] bg-[#1F3864]/5" : "border-stone-200 bg-white"}`}>
