@@ -3443,7 +3443,20 @@ export default function ParohieERP() {
           exercitiiFinanciare: dateLocaleSupabase.exercitiiFinanciare || s.exercitiiFinanciare,
           jurnalAudit: dateLocaleSupabase.jurnalAudit || s.jurnalAudit,
           tarifeCimitir: dateLocaleSupabase.tarifeCimitir || s.tarifeCimitir,
-          conturi: dateLocaleSupabase.conturi || s.conturi,
+          // "conturi" e o listă hibridă: nomenclatorul standard din cod (seedAccounts) + orice
+          // conturi adăugate/editate manual de utilizator, salvate în date_locale_parohie. O
+          // suprascriere directă (dateLocaleSupabase.conturi || s.conturi) ar "îngheța" pentru
+          // totdeauna orice parohie la instantaneul salvat prima dată — un cont nou introdus mai
+          // târziu în seedAccounts (ex. 5081) nu ar mai ajunge NICIODATĂ la parohiile care aveau
+          // deja ceva salvat, indiferent câte actualizări de cod ar urma. Combinăm: păstrăm tot
+          // ce e salvat (personalizările utilizatorului rămân), și adăugăm doar conturile din
+          // seedAccounts() care lipsesc din instantaneul salvat, după id.
+          conturi: (() => {
+            const persistat = dateLocaleSupabase.conturi || s.conturi;
+            const idsPersistate = new Set(persistat.map((c) => c.id));
+            const lipsa = seedAccounts().filter((c) => !idsPersistate.has(c.id));
+            return lipsa.length > 0 ? [...persistat, ...lipsa] : persistat;
+          })(),
           contoare: dateLocaleSupabase.contoare || s.contoare,
           articoleConsumIntern: dateLocaleSupabase.articoleConsumIntern || s.articoleConsumIntern,
           miscariConsumIntern: dateLocaleSupabase.miscariConsumIntern || s.miscariConsumIntern,
@@ -13113,12 +13126,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   // numeric cu cel al chitanțelor/OP-urilor reale — le excludem aici, ca să nu se amestece grupări
   // nelegate între ele. Ele au un raport dedicat (Registrul viramentelor), nu apar în acest navigator.
   const documente = useMemo(
-    () => {
-      console.log("DEBUG contById keys:", Object.keys(contById || {}).length, "are 5081?", contById?.["5081"], "are 581?", contById?.["581"]);
-      const filtrate = operatiuni.filter((op) => contById[op.contId]?.clasa !== "viramente");
-      console.log("DEBUG total operatiuni:", operatiuni.length, "dupa filtrare viramente:", filtrate.length, "excluse:", operatiuni.length - filtrate.length);
-      return grupeazaDocumente(filtrate, tip);
-    },
+    () => grupeazaDocumente(operatiuni.filter((op) => contById[op.contId]?.clasa !== "viramente"), tip),
     [operatiuni, tip, contById]
   );
   const [index, setIndex] = useState(() => {
