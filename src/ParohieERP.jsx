@@ -1162,6 +1162,13 @@ function useTabelFiltrat(items, searchFields, pageSize = 15) {
 // niciodată în `config` (rămân antete simple, fără filtrare/sortare).
 function useFiltrareColoane(rows, config) {
   const [filtre, setFiltre] = useState({});
+  const [sortColoana, setSortColoana] = useState(null);
+  const [sortDirectie, setSortDirectie] = useState("asc");
+
+  function onSort(cheie) {
+    if (sortColoana === cheie) setSortDirectie((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortColoana(cheie); setSortDirectie("asc"); }
+  }
 
   const procesate = useMemo(() => {
     let r = rows;
@@ -1170,8 +1177,18 @@ function useFiltrareColoane(rows, config) {
       const q = String(valoare).toLowerCase();
       r = r.filter((row) => String(config[cheie].get(row) ?? "").toLowerCase().includes(q));
     }
+    if (sortColoana && config[sortColoana]) {
+      const getter = config[sortColoana].get;
+      r = [...r].sort((a, b) => {
+        const va = getter(a), vb = getter(b);
+        const cmp = typeof va === "number" && typeof vb === "number"
+          ? va - vb
+          : String(va ?? "").localeCompare(String(vb ?? ""), undefined, { numeric: true, sensitivity: "base" });
+        return cmp * (sortDirectie === "asc" ? 1 : -1);
+      });
+    }
     return r;
-  }, [rows, filtre, config]);
+  }, [rows, filtre, config, sortColoana, sortDirectie]);
 
   function sugestiiPentru(cheie) {
     if (!config[cheie]) return [];
@@ -1181,17 +1198,34 @@ function useFiltrareColoane(rows, config) {
     return [...valori].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
   }
 
-  return { filtre, setFiltre, procesate, sugestiiPentru };
+  return { filtre, setFiltre, procesate, sugestiiPentru, sortColoana, sortDirectie, onSort };
 }
 
-// Antet de tabel filtrabil — etichetă statică (fără sortare) + câmp de text cu sugestii, sub
-// etichetă. Se folosește doar pentru coloanele prezente în `config`; restul rămân <th> simple.
-function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, className }) {
+// Antet de tabel filtrabil — etichetă (opțional sortabilă, prin `onSort`/`sortColoana`/
+// `sortDirectie`) + câmp de text cu sugestii, sub etichetă. Se folosește doar pentru coloanele
+// prezente în `config`; restul rămân <th> simple. Fără `onSort`, eticheta rămâne statică (exact
+// comportamentul de dinainte — retrocompatibil cu toate tabelele care nu au nevoie de sortare).
+function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, className, sortColoana, sortDirectie, onSort }) {
   const listaId = `sugestii-col-${cheie}`;
+  const activ = sortColoana === cheie;
   return (
     <th className={className || "px-2 py-2 align-bottom"}>
       <div className="flex flex-col gap-1">
-        <span className="font-medium">{eticheta}</span>
+        {onSort ? (
+          <button
+            type="button"
+            onClick={() => onSort(cheie)}
+            className={`inline-flex items-center gap-1 text-left hover:text-stone-700 select-none font-medium ${activ ? "text-stone-800" : ""}`}
+          >
+            <span>{eticheta}</span>
+            <span className="inline-flex flex-col leading-none -space-y-0.5">
+              <ChevronUp size={10} className={activ && sortDirectie === "asc" ? "text-[#1F3864]" : "text-stone-300"} />
+              <ChevronDown size={10} className={activ && sortDirectie === "desc" ? "text-[#1F3864]" : "text-stone-300"} />
+            </span>
+          </button>
+        ) : (
+          <span className="font-medium">{eticheta}</span>
+        )}
         <input
           list={listaId}
           value={filtre[cheie] || ""}
@@ -7581,12 +7615,32 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     coduri: { get: (g) => g.coduri.length },
     stare: { get: (g) => g.stareLabel },
   }), []);
-  const { filtre: filtrePangar, setFiltre: setFiltrePangar, procesate: grupuriProcesate, sugestiiPentru: sugestiiPangar } =
+  const { filtre: filtrePangar, setFiltre: setFiltrePangar, procesate: grupuriProcesate, sugestiiPentru: sugestiiPangar, sortColoana: sortColoanaStocuri, sortDirectie: sortDirectieStocuri, onSort: onSortStocuri } =
     useFiltrareColoane(grupuri, configColoanePangar);
 
   const articoleSortate = useMemo(() => [...state.articole].sort(comparaCategorieSiDenumire), [state.articole]);
+  const [sortColoanaNomenclator, setSortColoanaNomenclator] = useState(null);
+  const [sortDirectieNomenclator, setSortDirectieNomenclator] = useState("asc");
+  function sorteazaNomenclator(coloana) {
+    if (sortColoanaNomenclator === coloana) setSortDirectieNomenclator((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortColoanaNomenclator(coloana); setSortDirectieNomenclator("asc"); }
+  }
+  // Fără nicio sortare aleasă, rămâne ordinea implicită (categorie + denumire) — la fel ca înainte.
+  const articoleNomenclatorSortate = useMemo(() => {
+    if (!sortColoanaNomenclator) return articoleSortate;
+    const getter = {
+      denumire: (a) => a.denumire, cod: (a) => a.cod,
+      pretAchizitie: (a) => a.pretAchizitie, pretVanzare: (a) => a.pretVanzare,
+      marja: (a) => a.pretVanzare - a.pretAchizitie,
+    }[sortColoanaNomenclator];
+    return [...articoleSortate].sort((a, b) => {
+      const va = getter(a), vb = getter(b);
+      const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va ?? "").localeCompare(String(vb ?? ""), undefined, { numeric: true, sensitivity: "base" });
+      return cmp * (sortDirectieNomenclator === "asc" ? 1 : -1);
+    });
+  }, [articoleSortate, sortColoanaNomenclator, sortDirectieNomenclator]);
   const { cautare: cautareCod, setCautare: setCautareCod, pagina: paginaCod, setPagina: setPaginaCod, totalPagini: totalPaginiCod, afisate: coduriAfisate, totalFiltrate: totalCoduriFiltrate } =
-    useTabelFiltrat(articoleSortate, ["cod", "denumire", "bazaCod"], 15);
+    useTabelFiltrat(articoleNomenclatorSortate, ["cod", "denumire", "bazaCod"], 15);
 
   // Selector de an (exercițiu) pentru Recepții recente / Vânzări recente — implicit anul curent.
   const anCurentPangar = new Date().getFullYear();
@@ -8098,11 +8152,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                    <AntetFiltrabil cheie="produs" eticheta="Produs" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("produs")} />
-                    <AntetFiltrabil cheie="stoc" eticheta="Cantitate stoc" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stoc")} className="px-3 py-2 align-bottom text-right" />
-                    <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la preț vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-2 align-bottom text-right" />
-                    <AntetFiltrabil cheie="coduri" eticheta="Coduri active" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("coduri")} />
-                    <AntetFiltrabil cheie="stare" eticheta="Stare" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stare")} />
+                    <AntetFiltrabil cheie="produs" eticheta="Produs" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("produs")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
+                    <AntetFiltrabil cheie="stoc" eticheta="Cantitate stoc" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stoc")} className="px-3 py-2 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
+                    <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la preț vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-2 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
+                    <AntetFiltrabil cheie="coduri" eticheta="Coduri active" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("coduri")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
+                    <AntetFiltrabil cheie="stare" eticheta="Stare" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stare")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
@@ -8150,11 +8204,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-2">Denumire produs</th>
-                <th className="px-3 py-2">Cod (nomenclator)</th>
-                <th className="px-3 py-2 text-right">Cost unitar</th>
-                <th className="px-3 py-2 text-right">Preț unitar de vânzare</th>
-                <th className="px-3 py-2 text-right">Marjă unitară</th>
+                <AntetSortabil eticheta="Denumire produs" coloana="denumire" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} />
+                <AntetSortabil eticheta="Cod (nomenclator)" coloana="cod" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} />
+                <AntetSortabil eticheta="Cost unitar" coloana="pretAchizitie" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} className="px-3 py-2 text-right" />
+                <AntetSortabil eticheta="Preț unitar de vânzare" coloana="pretVanzare" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} className="px-3 py-2 text-right" />
+                <AntetSortabil eticheta="Marjă unitară" coloana="marja" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} className="px-3 py-2 text-right" />
               </tr>
             </thead>
             <tbody>
