@@ -10,7 +10,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
@@ -671,6 +671,9 @@ function emptyState() {
     bonuriConsum: [], // { id, nr, an, data, motiv, beneficiar, linii: [{articolId, cantitate, valoare}], opId }
     bunuriPatrimoniu: [], // { id, denumire, categorie, dataAchizitie, sursa, valoare, stare, locatie, note, referintaFoto, opId, casare }
     inventarieriPatrimoniu: [], // { id, nrPV, an, data, membri: [nume...], observatii }
+    mandateOrganisme: [], // { id, tipOrganism: "adunare"|"consiliu"|"comitet", dataInceput, dataSfarsit }
+    membriOrganisme: [], // { id, mandatId, nume, adresa, telefon, email }
+    proceseVerbaleOrganisme: [], // { id, mandatId, data, ordineZi, decizii } — doar Adunare/Consiliu
     locuriInhumare: [], // { id, codParcela, suprafata, stare: "disponibil"|"concesionat"|"ocupat" }
     concesiuni: [], // { id, locId, concesionar, tipDurata: "7"|"25"|"vecie", tarif, dataInceput, dataExpirare, istoric: [...], expirataDefinitiv }
     persoaneInhumate: [], // { id, locId, nume, dataDeces, dataInhumare, esteConcesionarul }
@@ -1037,23 +1040,479 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
   );
 }
 
-// Placeholder pentru "Organisme parohiale" — modul nou, needezvoltat încă. Rezervă locul în
-// navigare, dar conținutul (Adunare parohială, Consiliu, Comitet — membri, mandate, procese-
-// verbale) e o lucrare separată, neediscutată în detaliu.
-function OrganismeParohialeTab() {
+const TIP_ORGANISM_LABEL = { adunare: "Adunarea parohială", consiliu: "Consiliul parohial", comitet: "Comitetul parohial" };
+
+// Model de text pentru procesul-verbal de constituire (ședința electorală) — folosit doar ca
+// punct de pornire, pre-completat la cerere într-un proces-verbal nou; rămâne complet editabil.
+const MODEL_PV_CONSTITUIRE = `PROCES-VERBAL,
+
+Astăzi, [dată], după ce s-au îndeplinit toate cele prevăzute în Regulamentul pentru funcționarea organelor deliberative și executive din Patriarhia Română (R.O.D.), privitor la convocarea Adunării Parohiale electorale, adică: anunțarea acestei Adunări în termen legal și slujirea Sfintei Liturghii cu chemarea Sfântului Duh, membrii prezenți ai Adunării s-au întrunit în biserica parohială cu hramul [hram], unde Președintele Adunării, preotul paroh [nume], la ora [oră], a deschis lucrările Adunării Parohiale electorale, dând citire Deciziei Chiriarhale nr. [nr]/[an], despre alegerea membrilor Consiliului și Comitetului Parohial pentru o perioadă de 4 ani ([an început]-[an sfârșit]).
+
+Constatându-se că s-a întrunit prezența regulamentară, Adunarea Parohială electorală s-a constituit, alegând, la propunerea președintelui, doi bărbați de încredere, în persoana dlui [nume] și a dlui [nume], iar ca secretar pe dl [nume].
+
+La ora [oră] a început votarea membrilor Consiliului Parohial și a membrilor Comitetului Parohial, respectându-se prevederile R.O.D.
+
+După terminarea votării, s-a procedat la calcularea rezultatelor, care s-au prezentat Adunării.
+
+După toate acestea, s-a întocmit prezentul proces-verbal, căruia, după ce a fost citit în fața alegătorilor prezenți și semnat de cei în drept, i s-a aplicat sigiliul parohiei.
+
+PREȘEDINTE, [nume preot paroh]
+
+Bărbați de încredere:
+1) Dl. [nume]
+2) Dl. [nume]`;
+
+function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
+  const [organismActiv, setOrganismActiv] = useState("adunare");
+  const [mandatSelectatId, setMandatSelectatId] = useState(null);
+  const [showMandatNou, setShowMandatNou] = useState(false);
+  const [editareMembru, setEditareMembru] = useState(undefined); // undefined = închis, null = nou, obiect = editare
+  const [editarePV, setEditarePV] = useState(undefined);
+  const [confirmareStergere, setConfirmareStergere] = useState(null); // { tip: "mandat"|"membru"|"pv", id }
+  const [notice, setNotice] = useState(null);
+
+  // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la
+  // Jurnal/Pangar/Consum intern/Corespondență/Cimitir.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    if (actiuneInitiala === "adunare") { setOrganismActiv("adunare"); setMandatSelectatId(null); }
+    else if (actiuneInitiala === "consiliu") { setOrganismActiv("consiliu"); setMandatSelectatId(null); }
+    else if (actiuneInitiala === "comitet") { setOrganismActiv("comitet"); setMandatSelectatId(null); }
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
+
+  const mandateOrganismActiv = useMemo(
+    () => state.mandateOrganisme.filter((m) => m.tipOrganism === organismActiv).sort((a, b) => (a.dataInceput < b.dataInceput ? 1 : -1)),
+    [state.mandateOrganisme, organismActiv]
+  );
+  const mandatSelectat = mandateOrganismActiv.find((m) => m.id === mandatSelectatId) || null;
+  const membriMandat = useMemo(
+    () => state.membriOrganisme.filter((m) => m.mandatId === mandatSelectatId).sort((a, b) => a.nume.localeCompare(b.nume, "ro")),
+    [state.membriOrganisme, mandatSelectatId]
+  );
+  const pvMandat = useMemo(
+    () => state.proceseVerbaleOrganisme.filter((p) => p.mandatId === mandatSelectatId).sort((a, b) => (a.data < b.data ? 1 : -1)),
+    [state.proceseVerbaleOrganisme, mandatSelectatId]
+  );
+
+  async function salveazaMandatNou({ dataInceput, dataSfarsit }) {
+    try {
+      const rezultat = await creeazaMandatOrganism(parohieId, { tipOrganism: organismActiv, dataInceput, dataSfarsit });
+      setState((s) => ({ ...s, mandateOrganisme: [...s.mandateOrganisme, rezultat] }));
+      setShowMandatNou(false);
+    } catch (e) {
+      setNotice(e.message || "Eroare la salvarea mandatului. Încearcă din nou.");
+    }
+  }
+
+  async function stergeMandat(id) {
+    try {
+      await stergeMandatOrganism(id);
+      setState((s) => ({
+        ...s,
+        mandateOrganisme: s.mandateOrganisme.filter((m) => m.id !== id),
+        membriOrganisme: s.membriOrganisme.filter((m) => m.mandatId !== id),
+        proceseVerbaleOrganisme: s.proceseVerbaleOrganisme.filter((p) => p.mandatId !== id),
+      }));
+      if (mandatSelectatId === id) setMandatSelectatId(null);
+    } catch (e) {
+      setNotice(e.message || "Eroare la ștergerea mandatului. Încearcă din nou.");
+    } finally {
+      setConfirmareStergere(null);
+    }
+  }
+
+  async function salveazaMembru(payload) {
+    if (editareMembru?.id) {
+      await actualizeazaMembruOrganism(editareMembru.id, payload);
+      setState((s) => ({ ...s, membriOrganisme: s.membriOrganisme.map((m) => (m.id === editareMembru.id ? { ...m, ...payload } : m)) }));
+    } else {
+      const rezultat = await adaugaMembruOrganism(parohieId, { mandatId: mandatSelectatId, ...payload });
+      setState((s) => ({ ...s, membriOrganisme: [...s.membriOrganisme, rezultat] }));
+    }
+    setEditareMembru(undefined);
+  }
+
+  async function stergeMembru(id) {
+    try {
+      await stergeMembruOrganism(id);
+      setState((s) => ({ ...s, membriOrganisme: s.membriOrganisme.filter((m) => m.id !== id) }));
+    } catch (e) {
+      setNotice(e.message || "Eroare la ștergerea membrului. Încearcă din nou.");
+    } finally {
+      setConfirmareStergere(null);
+    }
+  }
+
+  async function salveazaPV(payload) {
+    if (editarePV?.id) {
+      await actualizeazaProcesVerbalOrganism(editarePV.id, payload);
+      setState((s) => ({ ...s, proceseVerbaleOrganisme: s.proceseVerbaleOrganisme.map((p) => (p.id === editarePV.id ? { ...p, ...payload } : p)) }));
+    } else {
+      const rezultat = await adaugaProcesVerbalOrganism(parohieId, { mandatId: mandatSelectatId, ...payload });
+      setState((s) => ({ ...s, proceseVerbaleOrganisme: [...s.proceseVerbaleOrganisme, rezultat] }));
+    }
+    setEditarePV(undefined);
+  }
+
+  async function stergePV(id) {
+    try {
+      await stergeProcesVerbalOrganism(id);
+      setState((s) => ({ ...s, proceseVerbaleOrganisme: s.proceseVerbaleOrganisme.filter((p) => p.id !== id) }));
+    } catch (e) {
+      setNotice(e.message || "Eroare la ștergerea procesului-verbal. Încearcă din nou.");
+    } finally {
+      setConfirmareStergere(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <header>
         <h1 className="font-serif text-2xl text-[#1F3864]">Organisme parohiale</h1>
         <p className="text-sm text-stone-500">
-          Modul nou — rezervat în navigare. Conținutul (Adunarea parohială, Consiliul parohial, Comitetul parohial:
-          componență, mandate, procese-verbale de ședință) urmează să fie construit separat.
+          Adunarea parohială, Consiliul parohial și Comitetul parohial — mandate, componență și, la primele două,
+          registru de procese-verbale de ședință.
         </p>
       </header>
-      <Card className="p-6 text-center text-stone-400">
-        Încă neconstruit.
-      </Card>
+
+      {notice && (
+        <Card className="p-3 bg-amber-50 border-amber-200 flex items-center justify-between">
+          <span className="text-sm text-amber-800 flex items-center gap-2"><AlertTriangle size={14} /> {notice}</span>
+          <button onClick={() => setNotice(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+        </Card>
+      )}
+
+      <div className="flex gap-2 flex-wrap">
+        {["adunare", "consiliu", "comitet"].map((t) => (
+          <Btn key={t} variant={organismActiv === t ? "primary" : "ghost"} onClick={() => { setOrganismActiv(t); setMandatSelectatId(null); }}>
+            {TIP_ORGANISM_LABEL[t]}
+          </Btn>
+        ))}
+      </div>
+
+      {!mandatSelectat ? (
+        <Card className="overflow-x-auto">
+          <div className="flex items-center justify-between px-3 pt-3">
+            <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Mandate — {TIP_ORGANISM_LABEL[organismActiv]}</div>
+            {!permisiuni.citireOnly && (
+              <Btn variant="primary" onClick={() => setShowMandatNou(true)}><Plus size={14} /> Mandat nou</Btn>
+            )}
+          </div>
+          <table className="w-full text-sm mt-2">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                <th className="px-3 py-2">Perioadă</th>
+                <th className="px-3 py-2 text-right">Membri</th>
+                {organismActiv !== "comitet" && <th className="px-3 py-2 text-right">Procese-verbale</th>}
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {mandateOrganismActiv.map((m) => {
+                const nrMembri = state.membriOrganisme.filter((x) => x.mandatId === m.id).length;
+                const nrPV = state.proceseVerbaleOrganisme.filter((x) => x.mandatId === m.id).length;
+                return (
+                  <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                    <td className="px-3 py-2 font-medium">{fmtDataJurnal(m.dataInceput)} — {fmtDataJurnal(m.dataSfarsit)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{nrMembri}</td>
+                    {organismActiv !== "comitet" && <td className="px-3 py-2 text-right tabular-nums">{nrPV}</td>}
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1.5 justify-end">
+                        <Btn variant="gold" onClick={() => setMandatSelectatId(m.id)}>Deschide</Btn>
+                        {!permisiuni.citireOnly && (
+                          confirmareStergere?.tip === "mandat" && confirmareStergere.id === m.id ? (
+                            <>
+                              <Btn variant="danger" onClick={() => stergeMandat(m.id)}>Confirmă</Btn>
+                              <Btn variant="ghost" onClick={() => setConfirmareStergere(null)}>Anulează</Btn>
+                            </>
+                          ) : (
+                            <Btn variant="danger" onClick={() => setConfirmareStergere({ tip: "mandat", id: m.id })}>Șterge</Btn>
+                          )
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {mandateOrganismActiv.length === 0 && (
+                <tr><td colSpan={organismActiv !== "comitet" ? 4 : 3} className="px-3 py-6 text-center text-stone-400">Niciun mandat încă.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
+      ) : (
+        <>
+          <div>
+            <Btn variant="ghost" onClick={() => setMandatSelectatId(null)}>← Înapoi la mandate</Btn>
+          </div>
+          <Card className="p-4">
+            <h2 className="font-serif text-lg text-[#1F3864]">
+              {TIP_ORGANISM_LABEL[organismActiv]} — mandat {fmtDataJurnal(mandatSelectat.dataInceput)} — {fmtDataJurnal(mandatSelectat.dataSfarsit)}
+            </h2>
+          </Card>
+
+          <Card className="overflow-x-auto">
+            <div className="flex items-center justify-between px-3 pt-3">
+              <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Componență</div>
+              {!permisiuni.citireOnly && (
+                <Btn variant="primary" onClick={() => setEditareMembru(null)}><Plus size={14} /> Membru nou</Btn>
+              )}
+            </div>
+            <table className="w-full text-sm mt-2">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                  <th className="px-3 py-2">Nume și prenume</th>
+                  <th className="px-3 py-2">Adresă</th>
+                  <th className="px-3 py-2">Telefon</th>
+                  <th className="px-3 py-2">E-mail</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {membriMandat.map((m) => (
+                  <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                    <td className="px-3 py-2 font-medium">{m.nume}</td>
+                    <td className="px-3 py-2 text-stone-500">{m.adresa || "—"}</td>
+                    <td className="px-3 py-2 text-stone-500">{m.telefon || "—"}</td>
+                    <td className="px-3 py-2 text-stone-500">{m.email || "—"}</td>
+                    <td className="px-3 py-2">
+                      {!permisiuni.citireOnly && (
+                        <div className="flex gap-1.5 justify-end">
+                          <Btn variant="gold" onClick={() => setEditareMembru(m)}>Modifică</Btn>
+                          {confirmareStergere?.tip === "membru" && confirmareStergere.id === m.id ? (
+                            <>
+                              <Btn variant="danger" onClick={() => stergeMembru(m.id)}>Confirmă</Btn>
+                              <Btn variant="ghost" onClick={() => setConfirmareStergere(null)}>Anulează</Btn>
+                            </>
+                          ) : (
+                            <Btn variant="danger" onClick={() => setConfirmareStergere({ tip: "membru", id: m.id })}>Șterge</Btn>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {membriMandat.length === 0 && (
+                  <tr><td colSpan={5} className="px-3 py-6 text-center text-stone-400">Niciun membru încă.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </Card>
+
+          {organismActiv !== "comitet" && (
+            <Card className="overflow-x-auto">
+              <div className="flex items-center justify-between px-3 pt-3">
+                <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Registru procese-verbale de ședință</div>
+                {!permisiuni.citireOnly && (
+                  <Btn variant="primary" onClick={() => setEditarePV(null)}><Plus size={14} /> Proces-verbal nou</Btn>
+                )}
+              </div>
+              <table className="w-full text-sm mt-2">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                    <th className="px-3 py-2">Data</th>
+                    <th className="px-3 py-2">Ordine de zi</th>
+                    <th className="px-3 py-2">Decizii</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pvMandat.map((p) => (
+                    <tr key={p.id} className="border-b border-stone-100 hover:bg-stone-50 align-top">
+                      <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.data)}</td>
+                      <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={p.ordineZi}>{p.ordineZi || "—"}</td>
+                      <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={p.decizii}>{p.decizii || "—"}</td>
+                      <td className="px-3 py-2">
+                        {!permisiuni.citireOnly && (
+                          <div className="flex gap-1.5 justify-end">
+                            <Btn variant="gold" onClick={() => setEditarePV(p)}>Modifică</Btn>
+                            {confirmareStergere?.tip === "pv" && confirmareStergere.id === p.id ? (
+                              <>
+                                <Btn variant="danger" onClick={() => stergePV(p.id)}>Confirmă</Btn>
+                                <Btn variant="ghost" onClick={() => setConfirmareStergere(null)}>Anulează</Btn>
+                              </>
+                            ) : (
+                              <Btn variant="danger" onClick={() => setConfirmareStergere({ tip: "pv", id: p.id })}>Șterge</Btn>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {pvMandat.length === 0 && (
+                    <tr><td colSpan={4} className="px-3 py-6 text-center text-stone-400">Niciun proces-verbal încă.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </Card>
+          )}
+        </>
+      )}
+
+      {showMandatNou && (
+        <MandatOrganismForm
+          organismActiv={organismActiv}
+          mandateExistente={mandateOrganismActiv}
+          onClose={() => setShowMandatNou(false)}
+          onSave={salveazaMandatNou}
+        />
+      )}
+      {editareMembru !== undefined && (
+        <MembruOrganismForm membru={editareMembru} onClose={() => setEditareMembru(undefined)} onSave={salveazaMembru} />
+      )}
+      {editarePV !== undefined && (
+        <ProcesVerbalOrganismForm procesVerbal={editarePV} onClose={() => setEditarePV(undefined)} onSave={salveazaPV} />
+      )}
     </div>
+  );
+}
+
+function MandatOrganismForm({ organismActiv, mandateExistente, onClose, onSave }) {
+  const ultimulMandat = mandateExistente[0]; // deja sortate descrescător după dataInceput
+  const [dataInceput, setDataInceput] = useState(ultimulMandat ? ultimulMandat.dataSfarsit : todayISO());
+  const [dataSfarsit, setDataSfarsit] = useState(() => {
+    if (!ultimulMandat) return "";
+    const d = new Date(ultimulMandat.dataSfarsit);
+    d.setFullYear(d.getFullYear() + 4);
+    return d.toISOString().slice(0, 10);
+  });
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!dataInceput || !dataSfarsit) { setError("Ambele date sunt obligatorii."); return; }
+    if (dataSfarsit <= dataInceput) { setError("Data de sfârșit trebuie să fie după data de început."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ dataInceput, dataSfarsit });
+    } catch (e) {
+      setError(e.message || "Eroare la salvare. Încearcă din nou.");
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={`Mandat nou — ${TIP_ORGANISM_LABEL[organismActiv]}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Data de început">
+            <input type="date" className={inputCls} value={dataInceput} onChange={(e) => setDataInceput(e.target.value)} />
+          </Field>
+          <Field label="Data de sfârșit">
+            <input type="date" className={inputCls} value={dataSfarsit} onChange={(e) => setDataSfarsit(e.target.value)} />
+          </Field>
+        </div>
+        <p className="text-xs text-stone-500">
+          Datele se introduc manual — durata mandatului poate varia (ex. un prim mandat diferit de 4 ani).
+        </p>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MembruOrganismForm({ membru, onClose, onSave }) {
+  const [nume, setNume] = useState(membru?.nume || "");
+  const [adresa, setAdresa] = useState(membru?.adresa || "");
+  const [telefon, setTelefon] = useState(membru?.telefon || "");
+  const [email, setEmail] = useState(membru?.email || "");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  async function submit() {
+    if (!nume.trim()) { setError("Numele este obligatoriu."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ nume: nume.trim(), adresa: adresa.trim(), telefon: telefon.trim(), email: email.trim() });
+    } catch (e) {
+      setError(e.message || "Eroare la salvare. Încearcă din nou.");
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={membru ? "Modifică membru" : "Membru nou"} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <Field label="Nume și prenume">
+          <input className={inputCls} value={nume} onChange={(e) => setNume(e.target.value)} />
+        </Field>
+        <Field label="Adresă">
+          <input className={inputCls} value={adresa} onChange={(e) => setAdresa(e.target.value)} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Telefon">
+            <input className={inputCls} value={telefon} onChange={(e) => setTelefon(e.target.value)} />
+          </Field>
+          <Field label="E-mail">
+            <input type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Field>
+        </div>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ProcesVerbalOrganismForm({ procesVerbal, onClose, onSave }) {
+  const [data, setData] = useState(procesVerbal?.data || todayISO());
+  const [ordineZi, setOrdineZi] = useState(procesVerbal?.ordineZi || "");
+  const [decizii, setDecizii] = useState(procesVerbal?.decizii || "");
+  const [error, setError] = useState("");
+  const [salvand, setSalvand] = useState(false);
+
+  function foloseseModelConstituire() {
+    setDecizii(MODEL_PV_CONSTITUIRE);
+    if (!ordineZi.trim()) setOrdineZi("Constituirea organismului parohial — alegerea membrilor Consiliului/Comitetului parohial.");
+  }
+
+  async function submit() {
+    if (!data) { setError("Data este obligatorie."); return; }
+    setError("");
+    setSalvand(true);
+    try {
+      await onSave({ data, ordineZi: ordineZi.trim(), decizii: decizii.trim() });
+    } catch (e) {
+      setError(e.message || "Eroare la salvare. Încearcă din nou.");
+      setSalvand(false);
+    }
+  }
+
+  return (
+    <Modal title={procesVerbal ? "Modifică proces-verbal" : "Proces-verbal nou"} onClose={onClose} wide>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-end gap-3 justify-between flex-wrap">
+          <Field label="Data ședinței">
+            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+          </Field>
+          {!procesVerbal && (
+            <Btn variant="ghost" onClick={foloseseModelConstituire}>Folosește modelul de constituire</Btn>
+          )}
+        </div>
+        <Field label="Ordine de zi">
+          <textarea className={inputCls} rows={2} value={ordineZi} onChange={(e) => setOrdineZi(e.target.value)} />
+        </Field>
+        <Field label="Decizii">
+          <textarea className={inputCls} rows={10} value={decizii} onChange={(e) => setDecizii(e.target.value)} />
+        </Field>
+        {error && <span className="text-rose-600 text-xs">{error}</span>}
+        <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
+          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -3436,7 +3895,7 @@ export default function ParohieERP() {
     if (!loaded || !contActiv?.parohieId) return;
     (async () => {
       try {
-        const [prevederiSupabase, operatiuniSupabase, articolePangarSupabase, miscariStocPangarSupabase, datoriiFurnizoriSupabase, partenerSupabase, locuriSupabase, concesiuniSupabase, persoaneSupabase, bunuriPatrimoniuSupabase, corespondentaSupabase, arhivaSupabase, inventarieriSupabase, dateLocaleSupabase] = await Promise.all([
+        const [prevederiSupabase, operatiuniSupabase, articolePangarSupabase, miscariStocPangarSupabase, datoriiFurnizoriSupabase, partenerSupabase, locuriSupabase, concesiuniSupabase, persoaneSupabase, bunuriPatrimoniuSupabase, corespondentaSupabase, arhivaSupabase, inventarieriSupabase, dateLocaleSupabase, organismeSupabase] = await Promise.all([
           getToatePrevederile(contActiv.parohieId),
           getOperatiuni(contActiv.parohieId),
           getArticolePangar(contActiv.parohieId),
@@ -3451,6 +3910,7 @@ export default function ParohieERP() {
           getArhiva(contActiv.parohieId),
           getInventarieriPatrimoniu(contActiv.parohieId),
           getDateLocaleParohie(contActiv.parohieId),
+          getOrganismeParohiale(contActiv.parohieId),
         ]);
         // Reconcilierea automată (care copia orice produs local lipsă în Supabase) a fost
         // eliminată — a fost utilă o singură dată, la migrarea inițială, dar ulterior a început
@@ -3491,6 +3951,9 @@ export default function ParohieERP() {
           corespondenta: corespondentaSupabase.length > 0 ? corespondentaSupabase : s.corespondenta,
           arhiva: arhivaSupabase.length > 0 ? arhivaSupabase : s.arhiva,
           inventarieriPatrimoniu: inventarieriSupabase.length > 0 ? inventarieriSupabase : s.inventarieriPatrimoniu,
+          mandateOrganisme: organismeSupabase.mandateOrganisme,
+          membriOrganisme: organismeSupabase.membriOrganisme,
+          proceseVerbaleOrganisme: organismeSupabase.proceseVerbaleOrganisme,
           // Câmpuri ținute în date_locale (vezi parohieDateLocale.js) — suprascriem doar dacă
           // Supabase chiar are ceva salvat pentru fiecare cheie în parte (un cont nou, fără nimic
           // salvat încă, păstrează implicit valorile din emptyState()).
@@ -4062,7 +4525,14 @@ export default function ParohieERP() {
         },
       ],
     },
-    { id: "organisme", label: "Organisme parohiale", icon: Church },
+    {
+      id: "organisme", label: "Organisme parohiale", icon: Church,
+      items: [
+        { label: "Adunarea parohială", icon: Church, onClick: () => navigheazaCuActiune("organisme", "adunare") },
+        { label: "Consiliul parohial", icon: Church, onClick: () => navigheazaCuActiune("organisme", "consiliu") },
+        { label: "Comitetul parohial", icon: Church, onClick: () => navigheazaCuActiune("organisme", "comitet") },
+      ],
+    },
     {
       id: "rapoarte", label: "Rapoarte", icon: FileBarChart,
       items: [
@@ -4317,7 +4787,7 @@ export default function ParohieERP() {
           {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "cimitir" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "corespondenta" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={tabActiv === "rapoarte" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "organisme" && <OrganismeParohialeTab />}
+          {tabActiv === "organisme" && <OrganismeParohialeTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "organisme" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
           {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} />}
         </div>
@@ -4956,6 +5426,50 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
         </Card>
       )}
 
+      {/* Datorii către furnizori — plasate înaintea alertelor de stoc (care pot fi o listă foarte
+          lungă, ex. multe produse epuizate), ca o datorie reală, cu bani și scadență, să nu ceară
+          derulare îndelungată ca să fie văzută. */}
+      {datoriiNeachitate.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-stone-700">Datorii curente către furnizori</span>
+            <span className="text-sm tabular-nums text-stone-500">Total: {fmt(totalDatoriiCurente)} RON</span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+                <th className="px-2 py-1.5">Furnizor</th>
+                <th className="px-2 py-1.5">Factură</th>
+                <th className="px-2 py-1.5 text-right">Sumă</th>
+                <th className="px-2 py-1.5 text-right">Vechime</th>
+                <th className="px-2 py-1.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {datoriiNeachitate.map((d) => {
+                const vechime = zileVechime(d.dataFactura);
+                const veche = vechime > 60;
+                return (
+                  <tr key={d.id} className="border-b border-stone-100">
+                    <td className="px-2 py-1.5">{d.furnizor}</td>
+                    <td className="px-2 py-1.5 text-stone-500">{d.nrFactura} (NRCD {d.nrNRCD})</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(d.suma)}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${veche ? "text-rose-700 bg-rose-50" : "text-stone-500 bg-stone-100"}`}>
+                        {vechime} zile{veche ? " — peste 60!" : ""}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      {!permisiuni.citireOnly && <Btn variant="gold" onClick={() => setAchitareFor(d)}>Achită</Btn>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
       {(alerteSold.length > 0 || alerteStoc.length > 0 || alerteDepozite.length > 0) && (
         <Card className="p-4 border-amber-300 bg-amber-50/60">
           <div className="flex items-center gap-2 mb-3 text-amber-800 font-medium text-sm">
@@ -5000,47 +5514,6 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
 
       {alerteSold.length === 0 && alerteStoc.length === 0 && alerteDepozite.length === 0 && datoriiNeachitate.length === 0 && (
         <Card className="p-4 text-sm text-stone-500">Nicio alertă activă în acest moment.</Card>
-      )}
-
-      {datoriiNeachitate.length > 0 && (
-        <Card className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-stone-700">Datorii curente către furnizori</span>
-            <span className="text-sm tabular-nums text-stone-500">Total: {fmt(totalDatoriiCurente)} RON</span>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-2 py-1.5">Furnizor</th>
-                <th className="px-2 py-1.5">Factură</th>
-                <th className="px-2 py-1.5 text-right">Sumă</th>
-                <th className="px-2 py-1.5 text-right">Vechime</th>
-                <th className="px-2 py-1.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {datoriiNeachitate.map((d) => {
-                const vechime = zileVechime(d.dataFactura);
-                const veche = vechime > 60;
-                return (
-                  <tr key={d.id} className="border-b border-stone-100">
-                    <td className="px-2 py-1.5">{d.furnizor}</td>
-                    <td className="px-2 py-1.5 text-stone-500">{d.nrFactura} (NRCD {d.nrNRCD})</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(d.suma)}</td>
-                    <td className="px-2 py-1.5 text-right">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${veche ? "text-rose-700 bg-rose-50" : "text-stone-500 bg-stone-100"}`}>
-                        {vechime} zile{veche ? " — peste 60!" : ""}
-                      </span>
-                    </td>
-                    <td className="px-2 py-1.5 text-right">
-                      {!permisiuni.citireOnly && <Btn variant="gold" onClick={() => setAchitareFor(d)}>Achită</Btn>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
       )}
 
       {achitareFor && (
