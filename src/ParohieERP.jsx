@@ -3556,8 +3556,15 @@ function useDerived(state) {
       }
     }
 
+    const anCurentStoc = new Date().getFullYear();
     const alerteStoc = [];
     for (const art of articole) {
+      // Calendarele au anul ediției chiar în bazaCod (ex. "CALFOAIE2026") — nu mai alertăm pentru
+      // ediții din anii precedenți, oricât de epuizat le-ar fi stocul (nu mai au ce fi recomandate).
+      if (categorieAfisarePangar(art.bazaCod) === "CALENDARE") {
+        const anCalendar = Number((/(\d{4})$/.exec(art.bazaCod || "") || [])[1]);
+        if (anCalendar && anCalendar < anCurentStoc) continue;
+      }
       const prag = Math.max(PRAG_STOC_PROCENT * (art.stocReferinta || 0), PRAG_STOC_MINIM);
       if (art.stoc === 0) {
         alerteStoc.push({ tip: "epuizat", articol: art, mesaj: `Atenție! Pentru ${art.denumire}, stocul este epuizat!` });
