@@ -3990,25 +3990,78 @@ export default function ParohieERP() {
       id: "consumintern", label: "Consum intern & Filantropie", icon: HeartHandshake,
       items: [
         { label: "Vezi Consum intern", icon: HeartHandshake, onClick: () => setTab("consumintern") },
-        ...(!permisiuni.citireOnly ? [{ label: "Recepție articole", icon: FileText, onClick: () => navigheazaCuActiune("consumintern", "receptie") }] : []),
-        ...(!permisiuni.citireOnly ? [{ label: "Bon de consum nou", icon: Plus, onClick: () => navigheazaCuActiune("consumintern", "bon") }] : []),
-        ...(!permisiuni.citireOnly ? [{ label: "Stoc inițial", icon: Boxes, onClick: () => navigheazaCuActiune("consumintern", "stocInitial") }] : []),
-        ...(!permisiuni.citireOnly ? [{ label: "Articol nou", icon: Plus, onClick: () => navigheazaCuActiune("consumintern", "articolNou") }] : []),
-        { label: "Rapoarte Consum intern", icon: FileBarChart, onClick: () => navigheazaCuActiune("consumintern", "rapoarte") },
-        { label: "Navigator bonuri", icon: FileText, onClick: () => navigheazaCuActiune("consumintern", "navigatorBonuri") },
+        {
+          label: "Intrări", icon: ArrowDownCircle,
+          sub: [
+            ...(!permisiuni.citireOnly ? [{ label: "Recepție articole", icon: Plus, onClick: () => navigheazaCuActiune("consumintern", "receptie") }] : []),
+            ...(!permisiuni.citireOnly ? [{ label: "Stoc inițial", icon: Boxes, onClick: () => navigheazaCuActiune("consumintern", "stocInitial") }] : []),
+          ],
+        },
+        {
+          label: "Ieșiri", icon: ArrowUpCircle,
+          sub: [
+            ...(!permisiuni.citireOnly ? [{ label: "Bon de consum nou", icon: Plus, onClick: () => navigheazaCuActiune("consumintern", "bon") }] : []),
+          ],
+        },
+        {
+          label: "Nomenclator", icon: FileText,
+          sub: [
+            ...(!permisiuni.citireOnly ? [{ label: "Articol nou", icon: Plus, onClick: () => navigheazaCuActiune("consumintern", "articolNou") }] : []),
+          ],
+        },
+        {
+          label: "Rapoarte Consum intern", icon: FileBarChart,
+          sub: [
+            { label: "Rapoarte generale", icon: FileBarChart, onClick: () => navigheazaCuActiune("consumintern", "rapoarte") },
+            { label: "Navigator bonuri", icon: FileText, onClick: () => navigheazaCuActiune("consumintern", "navigatorBonuri") },
+          ],
+        },
       ],
     },
     {
       id: "patrimoniu", label: "Inventar", icon: Gem,
       items: [
         { label: "Vezi Inventar", icon: Gem, onClick: () => setTab("patrimoniu") },
-        ...(!permisiuni.citireOnly ? [{ label: "Bun nou", icon: Plus, onClick: () => navigheazaCuActiune("patrimoniu", "bunNou") }] : []),
-        ...(!permisiuni.citireOnly ? [{ label: "Inventariere anuală", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("patrimoniu", "inventariere") }] : []),
-        { label: "Navigator procese-verbale", icon: FileText, onClick: () => navigheazaCuActiune("patrimoniu", "navigatorPV") },
+        {
+          label: "Nomenclator", icon: FileText,
+          sub: [
+            ...(!permisiuni.citireOnly ? [{ label: "Bun nou", icon: Plus, onClick: () => navigheazaCuActiune("patrimoniu", "bunNou") }] : []),
+          ],
+        },
+        {
+          label: "Rapoarte Inventar", icon: FileBarChart,
+          sub: [
+            ...(!permisiuni.citireOnly ? [{ label: "Inventariere anuală", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("patrimoniu", "inventariere") }] : []),
+            { label: "Navigator procese-verbale", icon: FileText, onClick: () => navigheazaCuActiune("patrimoniu", "navigatorPV") },
+          ],
+        },
       ],
     },
-    { id: "cimitir", label: "Cimitir", icon: Cross },
-    { id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText },
+    {
+      id: "cimitir", label: "Cimitir", icon: Cross,
+      items: [
+        { label: "Vezi Cimitir", icon: Cross, onClick: () => setTab("cimitir") },
+        ...(!permisiuni.citireOnly ? [{ label: "Loc nou", icon: Plus, onClick: () => navigheazaCuActiune("cimitir", "locNou") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Persoană înhumată", icon: Plus, onClick: () => navigheazaCuActiune("cimitir", "persoanaNoua") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Tarife", icon: FileText, onClick: () => navigheazaCuActiune("cimitir", "tarife") }] : []),
+      ],
+    },
+    {
+      id: "corespondenta", label: "Corespondență & Arhivă", icon: ScrollText,
+      items: [
+        { label: "Vezi Corespondență", icon: ScrollText, onClick: () => setTab("corespondenta") },
+        ...(!permisiuni.citireOnly ? [{ label: "Înregistrare nouă — Intrare", icon: ArrowDownCircle, onClick: () => navigheazaCuActiune("corespondenta", "intrareNoua") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Înregistrare nouă — Ieșire", icon: ArrowUpCircle, onClick: () => navigheazaCuActiune("corespondenta", "iesireNoua") }] : []),
+        ...(!permisiuni.citireOnly ? [{ label: "Document nou (Arhivă)", icon: Archive, onClick: () => navigheazaCuActiune("corespondenta", "documentArhivaNou") }] : []),
+        {
+          label: "Rapoarte Corespondență", icon: FileBarChart,
+          sub: [
+            { label: "Navigator intrări", icon: FileText, onClick: () => navigheazaCuActiune("corespondenta", "navigatorIntrari") },
+            { label: "Navigator ieșiri", icon: FileText, onClick: () => navigheazaCuActiune("corespondenta", "navigatorIesiri") },
+          ],
+        },
+      ],
+    },
     { id: "organisme", label: "Organisme parohiale", icon: Church },
     {
       id: "rapoarte", label: "Rapoarte", icon: FileBarChart,
@@ -4261,8 +4314,8 @@ export default function ParohieERP() {
           {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={tabActiv === "pangar" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "consumintern" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "patrimoniu" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
-          {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} />}
+          {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "cimitir" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
+          {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "corespondenta" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={tabActiv === "rapoarte" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "organisme" && <OrganismeParohialeTab />}
           {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
@@ -7030,8 +7083,27 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
 
   const clasaLabel = { venit: "Venit", cheltuiala: "Cheltuială", viramente: "Viramente interne" };
   const clasaTone = { venit: "text-emerald-700 bg-emerald-50", cheltuiala: "text-rose-700 bg-rose-50", viramente: "text-stone-500 bg-stone-100" };
+  const [sortColoanaConturi, setSortColoanaConturi] = useState(null);
+  const [sortDirectieConturi, setSortDirectieConturi] = useState("asc");
+  function sorteazaConturi(coloana) {
+    if (sortColoanaConturi === coloana) setSortDirectieConturi((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortColoanaConturi(coloana); setSortDirectieConturi("asc"); }
+  }
+  const conturiSortate = useMemo(() => {
+    if (!sortColoanaConturi) return state.conturi;
+    const getter = {
+      simbol: (c) => c.simbol, denumire: (c) => c.denumire, clasa: (c) => clasaLabel[c.clasa] || c.clasa,
+      incasari: (c) => derived.rulajPeCont[c.id]?.incasari || 0,
+      plati: (c) => derived.rulajPeCont[c.id]?.plati || 0,
+    }[sortColoanaConturi];
+    return [...state.conturi].sort((a, b) => {
+      const va = getter(a), vb = getter(b);
+      const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va ?? "").localeCompare(String(vb ?? ""), undefined, { numeric: true, sensitivity: "base" });
+      return cmp * (sortDirectieConturi === "asc" ? 1 : -1);
+    });
+  }, [state.conturi, derived.rulajPeCont, sortColoanaConturi, sortDirectieConturi]);
   const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, totalFiltrate } =
-    useTabelFiltrat(state.conturi, ["simbol", "denumire"], 15);
+    useTabelFiltrat(conturiSortate, ["simbol", "denumire"], 15);
 
   return (
     <div className="flex flex-col gap-4">
@@ -7064,11 +7136,11 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Simbol</th>
-              <th className="px-3 py-2">Denumire</th>
-              <th className="px-3 py-2">Clasă</th>
-              <th className="px-3 py-2 text-right">Rulaj încasări</th>
-              <th className="px-3 py-2 text-right">Rulaj plăți</th>
+              <AntetSortabil eticheta="Simbol" coloana="simbol" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} />
+              <AntetSortabil eticheta="Denumire" coloana="denumire" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} />
+              <AntetSortabil eticheta="Clasă" coloana="clasa" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} />
+              <AntetSortabil eticheta="Rulaj încasări" coloana="incasari" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} className="px-3 py-2 text-right" />
+              <AntetSortabil eticheta="Rulaj plăți" coloana="plati" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} className="px-3 py-2 text-right" />
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -12435,7 +12507,7 @@ function InventariereForm({ bunuriActive, onClose, onSave }) {
 
 /* ------------------------------ Cimitir Parohial -------------------------------- */
 
-function CimitirTab({ state, setState, permisiuni, parohieId }) {
+function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
   const [showLoc, setShowLoc] = useState(false);
   const [concesioneazaFor, setConcesioneazaFor] = useState(null);
   const [reinnoiesteFor, setReinnoiesteFor] = useState(null);
@@ -12444,6 +12516,17 @@ function CimitirTab({ state, setState, permisiuni, parohieId }) {
   const [showTarife, setShowTarife] = useState(false);
   const [editConcesiuneFor, setEditConcesiuneFor] = useState(null);
   const [notice, setNotice] = useState(null);
+
+  // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la
+  // Jurnal/Pangar/Consum intern/Corespondență.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    if (actiuneInitiala === "locNou") setShowLoc(true);
+    else if (actiuneInitiala === "persoanaNoua") setShowPersoana(true);
+    else if (actiuneInitiala === "tarife") setShowTarife(true);
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
 
   async function addLoc(codParcela) {
     const locNou = await creeazaLocInhumare(parohieId, { codParcela });
@@ -13137,13 +13220,26 @@ function TarifeCimitirModal({ tarife, onClose, onSave }) {
 
 const MOD_PRIMIRE = { posta: "Poștă", email: "E-mail", direct: "Depunere directă" };
 
-function CorespondentaTab({ state, setState, permisiuni, parohieId }) {
+function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
   const [showIntrare, setShowIntrare] = useState(false);
   const [showIesire, setShowIesire] = useState(false);
   const [showArhiva, setShowArhiva] = useState(false);
   const [filtruCategorie, setFiltruCategorie] = useState("");
   const [browseCoresp, setBrowseCoresp] = useState(null); // null | "intrare" | "iesire"
   const [notice, setNotice] = useState(null);
+
+  // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/
+  // Pangar/Consum intern.
+  useEffect(() => {
+    if (!actiuneInitiala) return;
+    if (actiuneInitiala === "intrareNoua") setShowIntrare(true);
+    else if (actiuneInitiala === "iesireNoua") setShowIesire(true);
+    else if (actiuneInitiala === "documentArhivaNou") setShowArhiva(true);
+    else if (actiuneInitiala === "navigatorIntrari") setBrowseCoresp("intrare");
+    else if (actiuneInitiala === "navigatorIesiri") setBrowseCoresp("iesire");
+    onConsumaActiuneInitiala();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actiuneInitiala]);
 
   async function addIntrare({ data, partener, obiect, modPrimire, termenRaspuns }) {
     const rec = await creeazaCorespondentaIntrare(parohieId, { data, partener, obiect, modPrimire, termenRaspuns });
