@@ -2092,6 +2092,89 @@ export async function creeazaInventariere(parohieId, { data, membri, observatii,
   return { id: rand.id, nrPV, an, data, membri, observatii, bunuri };
 }
 
+/* ---------------------------- Organisme parohiale ---------------------------- */
+// Adunarea parohială / Consiliul parohial / Comitetul parohial — aceeași structură de date
+// pentru toate trei (discriminate prin tip_organism): mandate (perioade), cu membri
+// (componență) și — doar la Adunare/Consiliu, în interfață — procese-verbale de ședință.
+// Membrii se introduc independent, nelegați de Parteneri.
+
+export async function getOrganismeParohiale(parohieId) {
+  const [{ data: mandate, error: errM }, { data: membri, error: errMb }, { data: pv, error: errPv }] = await Promise.all([
+    supabase.from("mandate_organisme_parohiale").select("*").eq("parohie_id", parohieId),
+    supabase.from("membri_organisme_parohiale").select("*").eq("parohie_id", parohieId),
+    supabase.from("procese_verbale_organisme_parohiale").select("*").eq("parohie_id", parohieId),
+  ]);
+  if (errM) throw errM;
+  if (errMb) throw errMb;
+  if (errPv) throw errPv;
+  return {
+    mandateOrganisme: (mandate || []).map((m) => ({ id: m.id, tipOrganism: m.tip_organism, dataInceput: m.data_inceput, dataSfarsit: m.data_sfarsit })),
+    membriOrganisme: (membri || []).map((m) => ({ id: m.id, mandatId: m.mandat_id, nume: m.nume, adresa: m.adresa || "", telefon: m.telefon || "", email: m.email || "" })),
+    proceseVerbaleOrganisme: (pv || []).map((p) => ({ id: p.id, mandatId: p.mandat_id, data: p.data, ordineZi: p.ordine_zi || "", decizii: p.decizii || "" })),
+  };
+}
+
+export async function creeazaMandatOrganism(parohieId, { tipOrganism, dataInceput, dataSfarsit }) {
+  const { data, error } = await supabase
+    .from("mandate_organisme_parohiale")
+    .insert({ parohie_id: parohieId, tip_organism: tipOrganism, data_inceput: dataInceput, data_sfarsit: dataSfarsit })
+    .select()
+    .single();
+  if (error) throw error;
+  return { id: data.id, tipOrganism, dataInceput, dataSfarsit };
+}
+
+export async function stergeMandatOrganism(mandatId) {
+  const { error } = await supabase.from("mandate_organisme_parohiale").delete().eq("id", mandatId);
+  if (error) throw error;
+}
+
+export async function adaugaMembruOrganism(parohieId, { mandatId, nume, adresa, telefon, email }) {
+  const { data, error } = await supabase
+    .from("membri_organisme_parohiale")
+    .insert({ parohie_id: parohieId, mandat_id: mandatId, nume, adresa: adresa || null, telefon: telefon || null, email: email || null })
+    .select()
+    .single();
+  if (error) throw error;
+  return { id: data.id, mandatId, nume, adresa: adresa || "", telefon: telefon || "", email: email || "" };
+}
+
+export async function actualizeazaMembruOrganism(id, { nume, adresa, telefon, email }) {
+  const { error } = await supabase
+    .from("membri_organisme_parohiale")
+    .update({ nume, adresa: adresa || null, telefon: telefon || null, email: email || null })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function stergeMembruOrganism(id) {
+  const { error } = await supabase.from("membri_organisme_parohiale").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function adaugaProcesVerbalOrganism(parohieId, { mandatId, data, ordineZi, decizii }) {
+  const { data: rand, error } = await supabase
+    .from("procese_verbale_organisme_parohiale")
+    .insert({ parohie_id: parohieId, mandat_id: mandatId, data, ordine_zi: ordineZi || null, decizii: decizii || null })
+    .select()
+    .single();
+  if (error) throw error;
+  return { id: rand.id, mandatId, data, ordineZi: ordineZi || "", decizii: decizii || "" };
+}
+
+export async function actualizeazaProcesVerbalOrganism(id, { data, ordineZi, decizii }) {
+  const { error } = await supabase
+    .from("procese_verbale_organisme_parohiale")
+    .update({ data, ordine_zi: ordineZi || null, decizii: decizii || null })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function stergeProcesVerbalOrganism(id) {
+  const { error } = await supabase.from("procese_verbale_organisme_parohiale").delete().eq("id", id);
+  if (error) throw error;
+}
+
 /* ------------------------------- Utilitare ------------------------------- */
 
 function todayISO() {
