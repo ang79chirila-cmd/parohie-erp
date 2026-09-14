@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -1531,6 +1531,26 @@ function ProcesVerbalOrganismForm({ procesVerbal, onClose, onSave }) {
 // un tabel foarte înalt (sute de rânduri), bara de scroll orizontal "reală" ajunge la baza
 // conținutului — la distanță mare de vârf. Aici, o bară subțire, identică ca poziție de scroll,
 // stă chiar deasupra conținutului; mutarea oricăreia dintre cele două mișcă și pe cealaltă.
+// Măsoară live înălțimea unui element (prin ResizeObserver, nu o valoare fixă ghicită) — necesar
+// ca să poți stivui mai multe rânduri/blocuri "sticky" unul sub altul, fiecare pornind exact de
+// unde se termină cel de deasupra, indiferent cât de lung e conținutul lui (nume de parohie pe
+// două linii, filtre extinse etc.) sau cât de mare e fereastra. Folosit pentru "capul de tabel
+// fix" (freeze header) la Registrul Jurnal și tablourile din Pangar.
+function useInaltimeMasurata() {
+  const ref = useRef(null);
+  const [inaltime, setInaltime] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const actualizeaza = () => setInaltime(el.offsetHeight);
+    actualizeaza();
+    const observer = new ResizeObserver(actualizeaza);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, inaltime];
+}
+
 function ScrollOrizontalSus({ children }) {
   const susRef = useRef(null);
   const josRef = useRef(null);
@@ -5875,6 +5895,13 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const [showReconciliere, setShowReconciliere] = useState(false);
   const [browseTip, setBrowseTip] = useState(null); // null | "incasare" | "plata"
 
+  // Capul de tabel fix ("freeze header") — antetul paginii, bara de căutare, capul de tabel și
+  // rândul TOTAL rămân vizibile, stivuite unul sub altul, cât timp utilizatorul scrolează prin
+  // rândurile efective ale jurnalului. Vezi useInaltimeMasurata pentru motivul măsurării live.
+  const [refAntetPagina, inaltimeAntetPagina] = useInaltimeMasurata();
+  const [refBaraCautare, inaltimeBaraCautare] = useInaltimeMasurata();
+  const [refCapTabel, inaltimeCapTabel] = useInaltimeMasurata();
+
   // Acțiune declanșată din meniul principal (bara de sus) — deschide direct modalul/acțiunea
   // cerută, indiferent dacă utilizatorul tocmai a navigat aici sau era deja pe acest tab.
   useEffect(() => {
@@ -6246,7 +6273,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between">
+      <header ref={refAntetPagina} className="flex items-center justify-between sticky top-0 z-30 bg-[#FAF8F3] py-1">
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Jurnal de Venituri și Cheltuieli</h1>
           <p className="text-sm text-stone-500">
@@ -6278,13 +6305,15 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
 
       <ScrollOrizontalSus>
       <Card className="w-full">
-        <BaraCautarePaginare
-          cautare={cautare} onCautare={setCautare}
-          pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
-          totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
-        />
+        <div ref={refBaraCautare} className="sticky z-20 bg-white" style={{ top: inaltimeAntetPagina }}>
+          <BaraCautarePaginare
+            cautare={cautare} onCautare={setCautare}
+            pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
+            totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
+          />
+        </div>
         <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
-          <thead>
+          <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeAntetPagina + inaltimeBaraCautare }}>
             <tr className="text-left uppercase tracking-wide text-stone-500">
               <th className="px-2.5 py-2.5">Nr. crt.</th>
               <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom" />
@@ -6303,7 +6332,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             </tr>
           </thead>
           <tbody>
-            <tr className="bg-stone-50 font-semibold border-b-2 border-stone-300">
+            <tr className="bg-stone-50 font-semibold sticky z-10" style={{ top: inaltimeAntetPagina + inaltimeBaraCautare + inaltimeCapTabel }}>
               <td colSpan={7} className="px-2.5 py-2.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
               <td className="px-2.5 py-2.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
               <td className="px-2.5 py-2.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
