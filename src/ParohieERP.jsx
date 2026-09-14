@@ -605,7 +605,7 @@ function emptyState() {
     operatiuni: [],
     articole: [],
     miscariStoc: [],
-    datoriiFurnizori: [], // { id, furnizor, suma, sumaAchitata, sumaRamasa, platiExistente: [{documentId,nr,an,data,modPlata,suma,liniiPeCont}], dataFactura, dataScadenta, status, nrFactura, nrNRCD, liniiAchizitie }
+    datoriiFurnizori: [], // { id, furnizor, suma, sumaAchitata, sumaRamasa, platiExistente: [{documentId,nr,an,data,moduri:[{modPlata,suma}],suma,liniiPeCont}], dataFactura, dataScadenta, status, nrFactura, nrNRCD, liniiAchizitie }
     contoare: {}, // { "2026": { chitanta: 0, ordinPlata: 0, nrcd: 0 } }
     buget: {}, // { "106": { "2026": 1000 } } — populat exclusiv prin validarea formularului de Prevederi bugetare
     prevederiBugetare: {}, // { "2026": { validat: true, dataValidare: "2025-12-20", linii: [{contId, suma}] } }
@@ -938,6 +938,7 @@ function Btn({ children, onClick, variant = "primary", type = "button", disabled
     primary: "bg-[#1F3864] text-white border border-[#1F3864] hover:bg-[#152848] disabled:bg-stone-300 disabled:border-stone-300",
     gold: "bg-[#B8860B] text-white border border-[#B8860B] hover:bg-[#9c7209] disabled:bg-stone-300 disabled:border-stone-300",
     verde: "bg-emerald-500 text-white border border-emerald-500 hover:bg-emerald-600 disabled:bg-stone-300 disabled:border-stone-300",
+    rosu: "bg-rose-600 text-white border border-rose-600 hover:bg-rose-700 disabled:bg-stone-300 disabled:border-stone-300",
     ghost: "bg-transparent text-stone-600 hover:bg-stone-100 border border-stone-300",
     danger: "bg-transparent text-rose-600 hover:bg-rose-50 border border-rose-200",
   };
@@ -5312,6 +5313,125 @@ function AdminMfaUnlockModal({ parohieId, utilizatorPropriuId, onClose }) {
 
 /* ------------------------------ Dashboard -------------------------------- */
 
+// Achită o factură (NRCD) integral SAU parțial. `plati` e o listă [{modPlata, suma}] — de obicei
+// o singură intrare (plată integral din casă SAU din bancă), dar poate fi și MIXTĂ: o parte din
+// casă și o parte din bancă, în aceeași achitare, cu propriile ei linii separate în document (nu
+// necesită două acțiuni de achitare separate). Suma totală a achitării e suma tuturor intrărilor
+// din `plati`, iar ea poate fi mai mică decât restul de plată (achitare parțială) sau egală cu
+// el (achitare integrală). Fiecare apel creează propriul Ordin de plată, legat de NRCD prin
+// documentSursaId — un NRCD poate avea astfel mai multe OP-uri de-a lungul timpului, câte unul
+// per tranșă. NRCD-ul e marcat "achitată" (și dispare din Datorii curente) DOAR când restul
+// ajunge la zero; altfel rămâne în listă, cu restul de plată actualizat.
+// Funcție de sine stătătoare (nu closure într-o componentă) — folosită atât din Tabloul de bord
+// (Datorii curente), cât și direct din Tablou intrări (Pangar), fără să se dubleze logica de
+// distribuție a sumei pe categorii bugetare.
+async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati, data) {
+  const datorie = (state.datoriiFurnizori || []).find((d) => d.id === datorieId);
+  const sumaRamasaCurenta = datorie.sumaRamasa ?? datorie.suma;
+  const platiValide = plati.map((p) => ({ modPlata: p.modPlata, suma: Math.round(Number(p.suma) * 100) / 100 })).filter((p) => p.suma > 0.004);
+  const suma = Math.round(platiValide.reduce((s, p) => s + p.suma, 0) * 100) / 100;
+  if (platiValide.length === 0 || !(suma > 0) || suma > sumaRamasaCurenta + 0.01) {
+    throw new Error("Suma de plată introdusă nu este validă (trebuie să fie mai mare decât zero și cel mult egală cu restul de plată).");
+  }
+  const esteIntegrala = Math.abs(suma - sumaRamasaCurenta) < 0.01;
+
+  // Restul rămas pe fiecare categorie bugetară, după plățile parțiale deja făcute pe această
+  // factură — necesar ca o achitare parțială nouă să distribuie corect suma introdusă (nu
+  // suma totală inițială a categoriei, care poate fi deja parțial acoperită).
+  const platitPeCont = {};
+  for (const p of datorie.platiExistente || []) {
+    for (const l of p.liniiPeCont || []) {
+      platitPeCont[l.contId] = (platitPeCont[l.contId] || 0) + l.suma;
+    }
+  }
+  const liniiCuRest = (datorie.liniiAchizitie && datorie.liniiAchizitie.length > 0)
+    ? datorie.liniiAchizitie
+        .map((l) => {
+          const contId = CATEGORII_PANGAR[l.categorieBVC]?.achizitie || datorie.contId;
+          const rest = l.suma - (platitPeCont[contId] || 0);
+          return { contId, rest };
+        })
+        .filter((l) => l.rest > 0.005)
+    : [{ contId: datorie.contId || CATEGORII_PANGAR[datorie.categorieBVC]?.achizitie, rest: sumaRamasaCurenta }];
+
+  const explicatie = `Achitare factură ${datorie.nrFactura} (NRCD nr. ${datorie.nrNRCD}/${datorie.anNRCD || yearOf(datorie.dataFactura)})${esteIntegrala ? "" : " — plată parțială"}`;
+
+  // Suma introdusă se distribuie ÎNTÂI proporțional cu restul rămas pe fiecare categorie
+  // bugetară (ca la o plată dintr-o singură sursă), iar ultima categorie absoarbe diferența de
+  // rotunjire. APOI, dacă plata e mixtă (casă + bancă), fiecare parte de categorie se
+  // re-împarte, proporțional cu raportul casă/bancă din `plati`, în câte o linie separată per
+  // sursă — tot cu ultima sursă absorbind rotunjirea, de data asta în interiorul categoriei —
+  // ca totalul liniilor să fie mereu exact suma introdusă, atât per categorie cât și per sursă.
+  let alocatCategorie = 0;
+  const linii = [];
+  liniiCuRest.forEach((l, idx) => {
+    const esteUltimaCategorie = idx === liniiCuRest.length - 1;
+    const parteCategorie = esteUltimaCategorie
+      ? Math.round((suma - alocatCategorie) * 100) / 100
+      : Math.round((suma * (l.rest / sumaRamasaCurenta)) * 100) / 100;
+    alocatCategorie += parteCategorie;
+    if (parteCategorie <= 0.004) return;
+
+    if (platiValide.length === 1) {
+      linii.push({ contId: l.contId, suma: parteCategorie, modPlata: platiValide[0].modPlata, explicatie });
+      return;
+    }
+    let alocatSursa = 0;
+    platiValide.forEach((p, pidx) => {
+      const esteUltimaSursa = pidx === platiValide.length - 1;
+      const parteSursa = esteUltimaSursa
+        ? Math.round((parteCategorie - alocatSursa) * 100) / 100
+        : Math.round((parteCategorie * (p.suma / suma)) * 100) / 100;
+      alocatSursa += parteSursa;
+      if (parteSursa <= 0.004) return;
+      linii.push({ contId: l.contId, suma: parteSursa, modPlata: p.modPlata, explicatie });
+    });
+  });
+
+  const rezultat = await salveazaDocument(parohieId, {
+    tip: "plata",
+    data,
+    tert: datorie.furnizor,
+    documentSursaId: datorie.documentId || null,
+    linii,
+  });
+  if (esteIntegrala && datorie.documentId) {
+    await marcheazaNRCDAchitat(datorie.documentId);
+  }
+  // liniiPeCont ține doar totalul per categorie (indiferent de sursă) — e tot ce contează pentru
+  // calculul restului rămas la o eventuală plată ulterioară.
+  const liniiPeContAgregat = {};
+  for (const l of linii) liniiPeContAgregat[l.contId] = (liniiPeContAgregat[l.contId] || 0) + l.suma;
+
+  setState((s) => ({
+    ...s,
+    operatiuni: [...s.operatiuni, ...rezultat.operatiuniNoi],
+    datoriiFurnizori: esteIntegrala
+      ? (s.datoriiFurnizori || []).filter((d) => d.id !== datorieId)
+      : (s.datoriiFurnizori || []).map((d) =>
+          d.id === datorieId
+            ? {
+                ...d,
+                sumaAchitata: (d.sumaAchitata || 0) + suma,
+                sumaRamasa: Math.round(((d.sumaRamasa ?? d.suma) - suma) * 100) / 100,
+                platiExistente: [
+                  ...(d.platiExistente || []),
+                  {
+                    documentId: rezultat.documentId,
+                    nr: rezultat.nr,
+                    an: rezultat.an,
+                    data,
+                    moduri: platiValide,
+                    suma,
+                    liniiPeCont: Object.entries(liniiPeContAgregat).map(([contId, suma]) => ({ contId, suma })),
+                  },
+                ],
+              }
+            : d
+        ),
+  }));
+}
+
 function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisiuni, parohieId, prevederiInfo, inchidereInfo }) {
   const { alerteStoc, alerteSold, alerteDepozite, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
   const [achitareFor, setAchitareFor] = useState(null);
@@ -5371,86 +5491,8 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
   // documentSursaId — un NRCD poate avea astfel mai multe OP-uri de-a lungul timpului, câte unul
   // per tranșă. NRCD-ul e marcat "achitată" (și dispare din Datorii curente) DOAR când restul
   // ajunge la zero; altfel rămâne în listă, cu restul de plată actualizat.
-  async function achitaDatorie(datorieId, modPlata, data, sumaDePlata) {
-    const datorie = (state.datoriiFurnizori || []).find((d) => d.id === datorieId);
-    const sumaRamasaCurenta = datorie.sumaRamasa ?? datorie.suma;
-    const suma = Math.round(Number(sumaDePlata) * 100) / 100;
-    if (!(suma > 0) || suma > sumaRamasaCurenta + 0.01) {
-      throw new Error("Suma de plată introdusă nu este validă (trebuie să fie mai mare decât zero și cel mult egală cu restul de plată).");
-    }
-    const esteIntegrala = Math.abs(suma - sumaRamasaCurenta) < 0.01;
-
-    // Restul rămas pe fiecare categorie bugetară, după plățile parțiale deja făcute pe această
-    // factură — necesar ca o achitare parțială nouă să distribuie corect suma introdusă (nu
-    // suma totală inițială a categoriei, care poate fi deja parțial acoperită).
-    const platitPeCont = {};
-    for (const p of datorie.platiExistente || []) {
-      for (const l of p.liniiPeCont || []) {
-        platitPeCont[l.contId] = (platitPeCont[l.contId] || 0) + l.suma;
-      }
-    }
-    const liniiCuRest = (datorie.liniiAchizitie && datorie.liniiAchizitie.length > 0)
-      ? datorie.liniiAchizitie
-          .map((l) => {
-            const contId = CATEGORII_PANGAR[l.categorieBVC]?.achizitie || datorie.contId;
-            const rest = l.suma - (platitPeCont[contId] || 0);
-            return { contId, rest };
-          })
-          .filter((l) => l.rest > 0.005)
-      : [{ contId: datorie.contId || CATEGORII_PANGAR[datorie.categorieBVC]?.achizitie, rest: sumaRamasaCurenta }];
-
-    const explicatie = `Achitare factură ${datorie.nrFactura} (NRCD nr. ${datorie.nrNRCD}/${datorie.anNRCD || yearOf(datorie.dataFactura)})${esteIntegrala ? "" : " — plată parțială"}`;
-
-    // Suma introdusă se distribuie proporțional cu restul rămas pe fiecare categorie; ultima
-    // linie absoarbe diferența de rotunjire, ca totalul liniilor să fie mereu exact suma
-    // introdusă (nu doar aproximativ egal, din cauza rotunjirilor la bani).
-    let alocat = 0;
-    const linii = liniiCuRest.map((l, idx) => {
-      const esteUltima = idx === liniiCuRest.length - 1;
-      const parte = esteUltima
-        ? Math.round((suma - alocat) * 100) / 100
-        : Math.round((suma * (l.rest / sumaRamasaCurenta)) * 100) / 100;
-      alocat += parte;
-      return { contId: l.contId, suma: parte, modPlata, explicatie };
-    });
-
-    const rezultat = await salveazaDocument(parohieId, {
-      tip: "plata",
-      data,
-      tert: datorie.furnizor,
-      documentSursaId: datorie.documentId || null,
-      linii,
-    });
-    if (esteIntegrala && datorie.documentId) {
-      await marcheazaNRCDAchitat(datorie.documentId);
-    }
-    setState((s) => ({
-      ...s,
-      operatiuni: [...s.operatiuni, ...rezultat.operatiuniNoi],
-      datoriiFurnizori: esteIntegrala
-        ? (s.datoriiFurnizori || []).filter((d) => d.id !== datorieId)
-        : (s.datoriiFurnizori || []).map((d) =>
-            d.id === datorieId
-              ? {
-                  ...d,
-                  sumaAchitata: (d.sumaAchitata || 0) + suma,
-                  sumaRamasa: Math.round(((d.sumaRamasa ?? d.suma) - suma) * 100) / 100,
-                  platiExistente: [
-                    ...(d.platiExistente || []),
-                    {
-                      documentId: rezultat.documentId,
-                      nr: rezultat.nr,
-                      an: rezultat.an,
-                      data,
-                      modPlata,
-                      suma,
-                      liniiPeCont: linii.map((l) => ({ contId: l.contId, suma: l.suma })),
-                    },
-                  ],
-                }
-              : d
-          ),
-    }));
+  async function achitaDatorie(plati, data) {
+    await achitaDatoriePangar(parohieId, state, setState, achitareFor.id, plati, data);
   }
 
   return (
@@ -5676,7 +5718,7 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
         <AchitareDatorieModal
           datorie={achitareFor}
           onClose={() => setAchitareFor(null)}
-          onSave={async (modPlata, data, suma) => { await achitaDatorie(achitareFor.id, modPlata, data, suma); setAchitareFor(null); }}
+          onSave={async (plati, data) => { await achitaDatorie(plati, data); setAchitareFor(null); }}
         />
       )}
 
@@ -5746,26 +5788,32 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
 
 function AchitareDatorieModal({ datorie, onClose, onSave }) {
   const sumaRamasa = datorie.sumaRamasa ?? datorie.suma;
-  const [modPlata, setModPlata] = useState("transfer");
   const [data, setData] = useState(todayISO());
-  const [suma, setSuma] = useState(String(sumaRamasa));
+  const [sumaBanca, setSumaBanca] = useState(String(sumaRamasa));
+  const [sumaCasa, setSumaCasa] = useState("0");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
   async function submit() {
-    const sumaNum = Number(suma);
-    if (!(sumaNum > 0)) {
-      setError("Introdu o sumă de plată mai mare decât zero.");
+    const nBanca = Number(sumaBanca) || 0;
+    const nCasa = Number(sumaCasa) || 0;
+    const total = Math.round((nBanca + nCasa) * 100) / 100;
+    if (!(total > 0)) {
+      setError("Introdu cel puțin o sumă de plată mai mare decât zero (din casă sau din bancă).");
       return;
     }
-    if (sumaNum > sumaRamasa + 0.01) {
+    if (total > sumaRamasa + 0.01) {
       setError(`Suma introdusă depășește restul de plată (${fmt(sumaRamasa)} RON).`);
       return;
     }
     setError("");
     setSalvand(true);
     try {
-      await onSave(modPlata, data, sumaNum);
+      const plati = [
+        { modPlata: "transfer", suma: nBanca },
+        { modPlata: "numerar", suma: nCasa },
+      ].filter((p) => p.suma > 0);
+      await onSave(plati, data);
     } catch (e) {
       setError(e.message || "Eroare la salvarea plății. Încearcă din nou.");
     } finally {
@@ -5791,37 +5839,49 @@ function AchitareDatorieModal({ datorie, onClose, onSave }) {
           <Card className="p-3 bg-stone-50 text-xs flex flex-col gap-1">
             <span className="font-medium text-stone-600 mb-1">Plăți anterioare</span>
             {datorie.platiExistente.map((p) => (
-              <div key={p.documentId} className="flex justify-between text-stone-500">
-                <span>OP nr. {p.nr}/{p.an} — {fmtDataJurnal(p.data)}</span>
-                <span className="tabular-nums">{fmt(p.suma)} RON</span>
+              <div key={p.documentId} className="flex justify-between text-stone-500 gap-2">
+                <span>
+                  OP nr. {p.nr}/{p.an} — {fmtDataJurnal(p.data)}
+                  {p.moduri && p.moduri.length > 1 && (
+                    <span className="text-stone-400"> ({p.moduri.map((m) => `${m.modPlata === "numerar" ? "casă" : "bancă"} ${fmt(m.suma)}`).join(" + ")})</span>
+                  )}
+                </span>
+                <span className="tabular-nums shrink-0">{fmt(p.suma)} RON</span>
               </div>
             ))}
           </Card>
         )}
 
+        <Field label="Data plății">
+          <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+          {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+        </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Sumă de plată (RON)">
+          <Field label="Sumă din bancă (RON)">
             <input
               type="number"
               step="0.01"
-              min="0.01"
-              max={sumaRamasa}
+              min="0"
               className={inputCls}
-              value={suma}
-              onChange={(e) => setSuma(e.target.value)}
+              value={sumaBanca}
+              onChange={(e) => setSumaBanca(e.target.value)}
             />
           </Field>
-          <Field label="Data plății">
-            <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
-            {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          <Field label="Sumă din casă / numerar (RON)">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              className={inputCls}
+              value={sumaCasa}
+              onChange={(e) => setSumaCasa(e.target.value)}
+            />
           </Field>
         </div>
-        <Field label="Mod de plată">
-          <select className={inputCls} value={modPlata} onChange={(e) => setModPlata(e.target.value)}>
-            <option value="numerar">Numerar (casă)</option>
-            <option value="transfer">Transfer bancar</option>
-          </select>
-        </Field>
+        <p className="text-xs text-stone-400">
+          Poți completa un singur câmp (plată dintr-o singură sursă) sau ambele deodată — o plată mixtă, din casă
+          și din bancă în aceeași achitare, cu propriile ei linii separate în Ordinul de plată.
+        </p>
         {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
         <div className="flex justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
@@ -7955,6 +8015,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const [showVanzariEmise, setShowVanzariEmise] = useState(false);
   const [showRapoarte, setShowRapoarte] = useState(false);
   const [showStocInitial, setShowStocInitial] = useState(false);
+  const [achitareFor, setAchitareFor] = useState(null); // datoria (NRCD) în curs de achitare, din Tablou intrări | null
 
   // Capul de tabel fix ("freeze header"), la fel ca la Registrul Jurnal — antetul paginii, bara
   // de navigare între secțiuni (Intrări/Ieșiri/Stocuri/Nomenclator), sub-antetul propriu al
@@ -9099,25 +9160,37 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                       {i === 0 && <td className="px-3 py-2 text-stone-500 align-top" rowSpan={grup.linii.length}>{grup.furnizor}</td>}
                       {i === 0 && (
                         <td className="px-3 py-2 align-top" rowSpan={grup.linii.length}>
-                          {anInchisDefinitiv ? (
-                            <span className="text-xs text-stone-400">Închis definitiv</span>
-                          ) : (
-                            !permisiuni.citireOnly && (
-                              <div className="flex gap-1.5 justify-end items-center">
-                                <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
-                                {confirmareStergereReceptie === grup.documentId ? (
-                                  <>
-                                    <Btn variant="danger" onClick={async () => { await stergeReceptie(grup.documentId); setConfirmareStergereReceptie(null); }}>
-                                      Confirmă
-                                    </Btn>
-                                    <Btn variant="ghost" onClick={() => setConfirmareStergereReceptie(null)}>Anulează</Btn>
-                                  </>
-                                ) : (
-                                  <Btn variant="danger" onClick={() => setConfirmareStergereReceptie(grup.documentId)}>Șterge</Btn>
-                                )}
-                              </div>
-                            )
-                          )}
+                          <div className="flex gap-1.5 justify-end items-center">
+                            {(() => {
+                              const datorie = (state.datoriiFurnizori || []).find((d) => d.documentId === grup.documentId);
+                              if (!datorie) {
+                                return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white border border-emerald-500 whitespace-nowrap">ACHITAT</span>;
+                              }
+                              if (permisiuni.citireOnly) {
+                                return <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitat</span>;
+                              }
+                              return <Btn variant="rosu" onClick={() => setAchitareFor(datorie)}>Achită</Btn>;
+                            })()}
+                            {anInchisDefinitiv ? (
+                              <span className="text-xs text-stone-400">Închis definitiv</span>
+                            ) : (
+                              !permisiuni.citireOnly && (
+                                <>
+                                  <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
+                                  {confirmareStergereReceptie === grup.documentId ? (
+                                    <>
+                                      <Btn variant="danger" onClick={async () => { await stergeReceptie(grup.documentId); setConfirmareStergereReceptie(null); }}>
+                                        Confirmă
+                                      </Btn>
+                                      <Btn variant="ghost" onClick={() => setConfirmareStergereReceptie(null)}>Anulează</Btn>
+                                    </>
+                                  ) : (
+                                    <Btn variant="danger" onClick={() => setConfirmareStergereReceptie(grup.documentId)}>Șterge</Btn>
+                                  )}
+                                </>
+                              )
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -9301,6 +9374,14 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           onAdauga={adaugaStocInitial}
           onModifica={editeazaStocInitial}
           onSterge={stergeStocInitial}
+        />
+      )}
+
+      {achitareFor && (
+        <AchitareDatorieModal
+          datorie={achitareFor}
+          onClose={() => setAchitareFor(null)}
+          onSave={async (plati, data) => { await achitaDatoriePangar(parohieId, state, setState, achitareFor.id, plati, data); setAchitareFor(null); }}
         />
       )}
 

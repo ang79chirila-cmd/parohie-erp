@@ -1540,12 +1540,16 @@ export async function getDatoriiFurnizori(parohieId) {
   for (const p of platiDocs || []) {
     const linii = liniiPlatiById[p.id] || [];
     const sumaOP = linii.reduce((s, l) => s + Number(l.suma), 0);
+    // Grupat pe mod de plată — o achitare poate fi mixtă (parte din casă, parte din bancă),
+    // caz în care liniile de sub același Ordin de plată au mod_plata diferit.
+    const sumePeMod = {};
+    for (const l of linii) sumePeMod[l.mod_plata] = (sumePeMod[l.mod_plata] || 0) + Number(l.suma);
     const plata = {
       documentId: p.id,
       nr: p.nr,
       an: p.an,
       data: p.data,
-      modPlata: linii[0]?.mod_plata || null,
+      moduri: Object.entries(sumePeMod).map(([modPlata, suma]) => ({ modPlata, suma })),
       suma: sumaOP,
       liniiPeCont: linii.map((l) => ({ contId: l.cont_id, suma: Number(l.suma) })),
     };
