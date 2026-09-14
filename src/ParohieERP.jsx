@@ -6283,16 +6283,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
           totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
         />
-        <table className="w-full text-sm">
+        <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead>
-            <tr className="text-left uppercase tracking-wide text-stone-500 border-b border-stone-200">
+            <tr className="text-left uppercase tracking-wide text-stone-500">
               <th className="px-2.5 py-2.5">Nr. crt.</th>
               <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom" />
               <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-2.5 align-bottom" />
               <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-2.5 align-bottom" />
               <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-2.5 align-bottom" />
-              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-2.5 align-bottom max-w-[220px]" />
-              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-2.5 align-bottom max-w-[280px]" />
+              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-2.5 align-bottom max-w-[260px]" />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-2.5 align-bottom max-w-[320px]" />
               <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-2.5 align-bottom text-right" />
               <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-2.5 align-bottom text-right" />
               <AntetFiltrabil cheie="sursa" eticheta="Sursa/Destinație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-2.5 align-bottom" />
@@ -6362,8 +6362,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                   ) : "—"}
                 </td>
                 <td className="px-2.5 py-2 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
-                <td className="px-2.5 py-2 max-w-[220px] truncate" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
-                <td className="px-2.5 py-2 text-stone-500 max-w-[280px] truncate" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-2.5 py-2 max-w-[260px] whitespace-normal break-words" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
+                <td className="px-2.5 py-2 text-stone-500 max-w-[320px] whitespace-normal break-words" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
                 <td className="px-2.5 py-2 text-right tabular-nums text-emerald-700">
                   {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
                 </td>
@@ -7546,7 +7546,7 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
           încasare) ale transferului, împreună.
         </p>
         <div className="overflow-x-auto max-h-[60vh]">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200 sticky top-0 bg-white">
                 <th className="px-2 py-2">Data</th>
@@ -7563,7 +7563,7 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
                   <tr key={i} className="border-b border-stone-100 hover:bg-stone-50">
                     <td className="px-2 py-2 tabular-nums">{fmtDataJurnal(op.data)}</td>
                     <td className="px-2 py-2 font-mono text-xs">{op.contId} <span className="text-stone-400">({p.cont?.denumire})</span></td>
-                    <td className="px-2 py-2 text-stone-500 max-w-[240px] truncate" title={op.explicatie}>{op.explicatie}</td>
+                    <td className="px-2 py-2 text-stone-500 max-w-[280px] whitespace-normal break-words" title={op.explicatie}>{op.explicatie}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{fmt(op.suma)}</td>
                     <td className="px-2 py-2">
                       {!permisiuni.citireOnly && (
@@ -8850,7 +8850,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           {modStocuri === "lista" && (
             <Card className="overflow-x-auto">
               <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Stocuri (vedere agregată pe produs, FIFO)</div>
-              <table className="w-full text-sm">
+              <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
                     <AntetFiltrabil cheie="produs" eticheta="Produs" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("produs")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
@@ -8902,7 +8902,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             pagina={paginaCod} totalPagini={totalPaginiCod} onPagina={setPaginaCod}
             totalFiltrate={totalCoduriFiltrate} placeholder="Caută cod sau denumire..."
           />
-          <table className="w-full text-sm">
+          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
                 <AntetSortabil eticheta="Denumire produs" coloana="denumire" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} />
@@ -8973,7 +8973,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </div>
           )}
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
               <th className="px-3 py-2">
@@ -9119,7 +9119,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </div>
           )}
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
               <th className="px-3 py-2">
@@ -9658,7 +9658,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
         </p>
 
         <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
                 <th className="px-3 py-2">Cod</th>
@@ -9674,7 +9674,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                 return (
                   <tr key={m.id} className="border-b border-stone-100">
                     <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
-                    <td className="px-3 py-2 max-w-xs truncate" title={art?.denumire || "—"}>{art?.denumire || "—"}</td>
+                    <td className="px-3 py-2 max-w-xs whitespace-normal break-words" title={art?.denumire || "—"}>{art?.denumire || "—"}</td>
                     <td className="px-3 py-2 text-right">
                       <input
                         type="number"
@@ -9722,7 +9722,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
 
         <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mt-1">Linii noi de adăugat</div>
         <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
                 <th className="px-3 py-2">Produs</th>
