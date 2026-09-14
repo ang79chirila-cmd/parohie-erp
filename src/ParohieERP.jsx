@@ -1627,10 +1627,14 @@ function MenuDropdown({ label, icon: Icon, items }) {
   );
 }
 
-// Hook reutilizabil: căutare text simplă + paginare, pentru orice tabel din aplicație.
-function useTabelFiltrat(items, searchFields, pageSize = 15) {
+// Hook reutilizabil: căutare text simplă + paginare, pentru orice tabel din aplicație. Numărul
+// de rânduri pe pagină e configurabil de utilizator (implicit cel dat de ecranul care folosește
+// hook-ul) — schimbarea lui repornește de la pagina 1, ca să nu rămână utilizatorul "pierdut" pe
+// un număr de pagină care nu mai există la noua împărțire.
+function useTabelFiltrat(items, searchFields, pageSizeInitial = 15) {
   const [cautare, setCautareRaw] = useState("");
   const [pagina, setPagina] = useState(1);
+  const [pageSize, setPageSizeRaw] = useState(pageSizeInitial);
 
   const filtrate = useMemo(() => {
     if (!cautare.trim()) return items;
@@ -1647,7 +1651,12 @@ function useTabelFiltrat(items, searchFields, pageSize = 15) {
     setPagina(1);
   }
 
-  return { cautare, setCautare, pagina: paginaSafe, setPagina, totalPagini, afisate, filtrate, totalFiltrate: filtrate.length };
+  function setPageSize(v) {
+    setPageSizeRaw(v);
+    setPagina(1);
+  }
+
+  return { cautare, setCautare, pagina: paginaSafe, setPagina, totalPagini, afisate, filtrate, totalFiltrate: filtrate.length, pageSize, setPageSize };
 }
 
 // Filtrare + sortare per coloană, reutilizabilă — fiecare coloană eligibilă primește propriul
@@ -1757,7 +1766,13 @@ function AntetSortabil({ eticheta, coloana, sortColoana, sortDirectie, onSort, c
   );
 }
 
-function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina, totalFiltrate, placeholder }) {
+function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina, totalFiltrate, placeholder, pageSize, onPageSize }) {
+  // Opțiunile standard cerute (10/20/50/100), plus valoarea implicită a ecranului curent, dacă nu
+  // e deja una din ele — ca fiecare tabel să-și păstreze comportamentul de până acum la prima
+  // afișare, chiar dacă implicitul lui (ex. 12 sau 15) nu e unul din cele patru numere standard.
+  const optiuniPagina = pageSize && ![10, 20, 50, 100].includes(pageSize)
+    ? [10, 20, 50, 100, pageSize].sort((a, b) => a - b)
+    : [10, 20, 50, 100];
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-stone-100 flex-wrap">
       <input
@@ -1766,7 +1781,19 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
         value={cautare}
         onChange={(e) => onCautare(e.target.value)}
       />
-      <div className="flex items-center gap-2 text-xs text-stone-500">
+      <div className="flex items-center gap-3 text-xs text-stone-500">
+        {onPageSize && (
+          <label className="flex items-center gap-1.5">
+            <span>Rânduri/pagină</span>
+            <select
+              className={inputCls + " py-1 pr-6"}
+              value={pageSize}
+              onChange={(e) => onPageSize(Number(e.target.value))}
+            >
+              {optiuniPagina.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        )}
         <span>{totalFiltrate} {totalFiltrate === 1 ? "rezultat" : "rezultate"}</span>
         {totalPagini > 1 && (
           <>
@@ -6153,7 +6180,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const { filtre: filtreColoane, setFiltre: setFiltreColoane, procesate: randuriProcesate, sugestiiPentru } =
     useFiltrareColoane(randuri, configColoaneJurnal);
 
-  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, filtrate, totalFiltrate } =
+  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, filtrate, totalFiltrate, pageSize, setPageSize } =
     useTabelFiltrat(randuriProcesate, ["cautCont", "cautPartener", "cautExplicatie"], 20);
 
   const totalIncasariAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? r.op.suma : 0), 0);
@@ -6318,6 +6345,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             cautare={cautare} onCautare={setCautare}
             pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
             totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
+            pageSize={pageSize} onPageSize={setPageSize}
           />
         </div>
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
@@ -7755,7 +7783,7 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
       return cmp * (sortDirectieConturi === "asc" ? 1 : -1);
     });
   }, [state.conturi, derived.rulajPeCont, sortColoanaConturi, sortDirectieConturi]);
-  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, totalFiltrate } =
+  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, totalFiltrate, pageSize, setPageSize } =
     useTabelFiltrat(conturiSortate, ["simbol", "denumire"], 15);
 
   return (
@@ -7785,6 +7813,7 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
           cautare={cautare} onCautare={setCautare}
           pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
           totalFiltrate={totalFiltrate} placeholder="Caută simbol sau denumire..."
+          pageSize={pageSize} onPageSize={setPageSize}
         />
         <table className="w-full text-sm">
           <thead>
@@ -8386,7 +8415,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       return cmp * (sortDirectieNomenclator === "asc" ? 1 : -1);
     });
   }, [articoleSortate, sortColoanaNomenclator, sortDirectieNomenclator]);
-  const { cautare: cautareCod, setCautare: setCautareCod, pagina: paginaCod, setPagina: setPaginaCod, totalPagini: totalPaginiCod, afisate: coduriAfisate, totalFiltrate: totalCoduriFiltrate } =
+  const { cautare: cautareCod, setCautare: setCautareCod, pagina: paginaCod, setPagina: setPaginaCod, totalPagini: totalPaginiCod, afisate: coduriAfisate, totalFiltrate: totalCoduriFiltrate, pageSize: pageSizeCod, setPageSize: setPageSizeCod } =
     useTabelFiltrat(articoleNomenclatorSortate, ["cod", "denumire", "bazaCod"], 15);
 
   // Selector de an (exercițiu) pentru Recepții recente / Vânzări recente — implicit anul curent.
@@ -8951,6 +8980,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               cautare={cautareCod} onCautare={setCautareCod}
               pagina={paginaCod} totalPagini={totalPaginiCod} onPagina={setPaginaCod}
               totalFiltrate={totalCoduriFiltrate} placeholder="Caută cod sau denumire..."
+              pageSize={pageSizeCod} onPageSize={setPageSizeCod}
             />
           </div>
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
@@ -11764,14 +11794,14 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
 
   const bonuriSortate = [...state.bonuriConsum].sort((a, b) => (a.data < b.data ? 1 : -1));
 
-  const { cautare: cautareArt, setCautare: setCautareArt, pagina: paginaArt, setPagina: setPaginaArt, totalPagini: totalPaginiArt, afisate: articoleAfisate, totalFiltrate: totalArticoleFiltrate } =
+  const { cautare: cautareArt, setCautare: setCautareArt, pagina: paginaArt, setPagina: setPaginaArt, totalPagini: totalPaginiArt, afisate: articoleAfisate, totalFiltrate: totalArticoleFiltrate, pageSize: pageSizeArt, setPageSize: setPageSizeArt } =
     useTabelFiltrat(grupeConsumInternProcesate, ["denumire"], 15);
 
   const bonuriCautabile = useMemo(
     () => bonuriSortate.map((b) => ({ ...b, cautMotiv: MOTIVE_CONSUM[b.motiv].label, cautBeneficiar: b.beneficiar || "" })),
     [bonuriSortate]
   );
-  const { cautare: cautareBonuri, setCautare: setCautareBonuri, pagina: paginaBonuri, setPagina: setPaginaBonuri, totalPagini: totalPaginiBonuri, afisate: bonuriAfisate, totalFiltrate: totalBonuriFiltrate } =
+  const { cautare: cautareBonuri, setCautare: setCautareBonuri, pagina: paginaBonuri, setPagina: setPaginaBonuri, totalPagini: totalPaginiBonuri, afisate: bonuriAfisate, totalFiltrate: totalBonuriFiltrate, pageSize: pageSizeBonuri, setPageSize: setPageSizeBonuri } =
     useTabelFiltrat(bonuriCautabile, ["cautMotiv", "cautBeneficiar"], 15);
 
   return (
@@ -11798,6 +11828,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
           cautare={cautareArt} onCautare={setCautareArt}
           pagina={paginaArt} totalPagini={totalPaginiArt} onPagina={setPaginaArt}
           totalFiltrate={totalArticoleFiltrate} placeholder="Caută denumire articol..."
+          pageSize={pageSizeArt} onPageSize={setPageSizeArt}
         />
         <table className="w-full text-sm">
           <thead>
@@ -11930,6 +11961,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
           cautare={cautareBonuri} onCautare={setCautareBonuri}
           pagina={paginaBonuri} totalPagini={totalPaginiBonuri} onPagina={setPaginaBonuri}
           totalFiltrate={totalBonuriFiltrate} placeholder="Caută motiv sau beneficiar..."
+          pageSize={pageSizeBonuri} onPageSize={setPageSizeBonuri}
         />
         <table className="w-full text-sm">
           <thead>
@@ -12807,7 +12839,7 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
   const bunuriActive = state.bunuriPatrimoniu.filter((b) => b.stare !== "casat");
   const bunuriCasate = state.bunuriPatrimoniu.filter((b) => b.stare === "casat");
   const inventarieriSortate = [...state.inventarieriPatrimoniu].sort((a, b) => (a.data < b.data ? 1 : -1));
-  const { cautare: cautareBun, setCautare: setCautareBun, pagina: paginaBun, setPagina: setPaginaBun, totalPagini: totalPaginiBun, afisate: bunuriAfisate, totalFiltrate: totalBunuriFiltrate } =
+  const { cautare: cautareBun, setCautare: setCautareBun, pagina: paginaBun, setPagina: setPaginaBun, totalPagini: totalPaginiBun, afisate: bunuriAfisate, totalFiltrate: totalBunuriFiltrate, pageSize: pageSizeBun, setPageSize: setPageSizeBun } =
     useTabelFiltrat(bunuriActive, ["denumire", "categorie", "locatie"], 15);
 
   return (
@@ -12834,6 +12866,7 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
           cautare={cautareBun} onCautare={setCautareBun}
           pagina={paginaBun} totalPagini={totalPaginiBun} onPagina={setPaginaBun}
           totalFiltrate={totalBunuriFiltrate} placeholder="Caută denumire, categorie sau locație..."
+          pageSize={pageSizeBun} onPageSize={setPageSizeBun}
         />
         <table className="w-full text-sm">
           <thead>
@@ -13350,21 +13383,21 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
   const locuriDisponibile = state.locuriInhumare.filter((l) => l.stare === "disponibil");
   const concesiuniActive = state.concesiuni.filter((c) => !c.expirataDefinitiv);
 
-  const { cautare: cautareLoc, setCautare: setCautareLoc, pagina: paginaLoc, setPagina: setPaginaLoc, totalPagini: totalPaginiLoc, afisate: locuriAfisate, totalFiltrate: totalLocuriFiltrate } =
+  const { cautare: cautareLoc, setCautare: setCautareLoc, pagina: paginaLoc, setPagina: setPaginaLoc, totalPagini: totalPaginiLoc, afisate: locuriAfisate, totalFiltrate: totalLocuriFiltrate, pageSize: pageSizeLoc, setPageSize: setPageSizeLoc } =
     useTabelFiltrat(state.locuriInhumare, ["codParcela", "stare"], 15);
 
   const concesiuniCautabile = useMemo(
     () => state.concesiuni.map((c) => ({ ...c, cautCodLoc: state.locuriInhumare.find((l) => l.id === c.locId)?.codParcela || "", cautConcesionar: c.concesionar })),
     [state.concesiuni, state.locuriInhumare]
   );
-  const { cautare: cautareConc, setCautare: setCautareConc, pagina: paginaConc, setPagina: setPaginaConc, totalPagini: totalPaginiConc, afisate: concesiuniAfisate, totalFiltrate: totalConcesiuniFiltrate } =
+  const { cautare: cautareConc, setCautare: setCautareConc, pagina: paginaConc, setPagina: setPaginaConc, totalPagini: totalPaginiConc, afisate: concesiuniAfisate, totalFiltrate: totalConcesiuniFiltrate, pageSize: pageSizeConc, setPageSize: setPageSizeConc } =
     useTabelFiltrat(concesiuniCautabile, ["cautCodLoc", "cautConcesionar"], 15);
 
   const persoaneCautabile = useMemo(
     () => state.persoaneInhumate.map((p) => ({ ...p, cautCodLoc: state.locuriInhumare.find((l) => l.id === p.locId)?.codParcela || "", cautNume: p.nume })),
     [state.persoaneInhumate, state.locuriInhumare]
   );
-  const { cautare: cautarePers, setCautare: setCautarePers, pagina: paginaPers, setPagina: setPaginaPers, totalPagini: totalPaginiPers, afisate: persoaneAfisate, totalFiltrate: totalPersoaneFiltrate } =
+  const { cautare: cautarePers, setCautare: setCautarePers, pagina: paginaPers, setPagina: setPaginaPers, totalPagini: totalPaginiPers, afisate: persoaneAfisate, totalFiltrate: totalPersoaneFiltrate, pageSize: pageSizePers, setPageSize: setPageSizePers } =
     useTabelFiltrat(persoaneCautabile, ["cautCodLoc", "cautNume"], 15);
 
   return (
@@ -13402,6 +13435,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
           cautare={cautareLoc} onCautare={setCautareLoc}
           pagina={paginaLoc} totalPagini={totalPaginiLoc} onPagina={setPaginaLoc}
           totalFiltrate={totalLocuriFiltrate} placeholder="Caută cod parcelă sau stare..."
+          pageSize={pageSizeLoc} onPageSize={setPageSizeLoc}
         />
         <table className="w-full text-sm">
           <thead>
@@ -13439,6 +13473,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
           cautare={cautareConc} onCautare={setCautareConc}
           pagina={paginaConc} totalPagini={totalPaginiConc} onPagina={setPaginaConc}
           totalFiltrate={totalConcesiuniFiltrate} placeholder="Caută cod loc sau concesionar..."
+          pageSize={pageSizeConc} onPageSize={setPageSizeConc}
         />
         <table className="w-full text-sm">
           <thead>
@@ -13495,6 +13530,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
           cautare={cautarePers} onCautare={setCautarePers}
           pagina={paginaPers} totalPagini={totalPaginiPers} onPagina={setPaginaPers}
           totalFiltrate={totalPersoaneFiltrate} placeholder="Caută nume sau cod loc..."
+          pageSize={pageSizePers} onPageSize={setPageSizePers}
         />
         <table className="w-full text-sm">
           <thead>
@@ -13963,10 +13999,12 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
   const {
     cautare: cautareIntrare, setCautare: setCautareIntrare, pagina: paginaIntrare, setPagina: setPaginaIntrare,
     totalPagini: totalPaginiIntrare, afisate: intrariAfisate, totalFiltrate: totalIntrariFiltrate,
+    pageSize: pageSizeIntrare, setPageSize: setPageSizeIntrare,
   } = useTabelFiltrat(intrariCautabile, ["cautObiect", "cautPartener"], 12);
   const {
     cautare: cautareIesire, setCautare: setCautareIesire, pagina: paginaIesire, setPagina: setPaginaIesire,
     totalPagini: totalPaginiIesire, afisate: iesiriAfisate, totalFiltrate: totalIesiriFiltrate,
+    pageSize: pageSizeIesire, setPageSize: setPageSizeIesire,
   } = useTabelFiltrat(iesiriCautabile, ["cautObiect", "cautPartener"], 12);
 
   return (
@@ -13997,6 +14035,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
           cautare={cautareIntrare} onCautare={setCautareIntrare}
           pagina={paginaIntrare} totalPagini={totalPaginiIntrare} onPagina={setPaginaIntrare}
           totalFiltrate={totalIntrariFiltrate} placeholder="Caută obiect sau expeditor..."
+          pageSize={pageSizeIntrare} onPageSize={setPageSizeIntrare}
         />
         <table className="w-full text-sm mt-2">
           <thead>
@@ -14066,6 +14105,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
           cautare={cautareIesire} onCautare={setCautareIesire}
           pagina={paginaIesire} totalPagini={totalPaginiIesire} onPagina={setPaginaIesire}
           totalFiltrate={totalIesiriFiltrate} placeholder="Caută obiect sau destinatar..."
+          pageSize={pageSizeIesire} onPageSize={setPageSizeIesire}
         />
         <table className="w-full text-sm mt-2">
           <thead>
@@ -15241,7 +15281,7 @@ function AuditModal({ jurnalAudit, onClose }) {
     () => [...jurnalAudit].sort((a, b) => (a.data !== b.data ? (a.data < b.data ? 1 : -1) : a.ora < b.ora ? 1 : -1)),
     [jurnalAudit]
   );
-  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, totalFiltrate } = useTabelFiltrat(sortate, ["rol", "actiune"], 12);
+  const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, totalFiltrate, pageSize, setPageSize } = useTabelFiltrat(sortate, ["rol", "actiune"], 12);
 
   return (
     <Modal title="Jurnal de audit" onClose={onClose} wide>
@@ -15253,6 +15293,7 @@ function AuditModal({ jurnalAudit, onClose }) {
           cautare={cautare} onCautare={setCautare}
           pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
           totalFiltrate={totalFiltrate} placeholder="Caută după rol sau acțiune..."
+          pageSize={pageSize} onPageSize={setPageSize}
         />
         <table className="w-full text-sm">
           <thead>
