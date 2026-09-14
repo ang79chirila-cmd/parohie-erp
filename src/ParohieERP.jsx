@@ -2361,6 +2361,11 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   autoTable(doc, {
     startY: 8,
     margin: { top: 8, bottom: 8 },
+    // Fără asta, jsPDF-AutoTable poate rupe un rând la mijloc între două pagini (ex. celula
+    // "Nr. chitanță", scrisă pe 2-3 linii, cu prima linie pe o pagină și restul "orfan" pe
+    // pagina următoare, deasupra rândului următor). "avoid" mută întregul rând pe pagina nouă
+    // dacă nu încape complet pe cea curentă — un rând nu se mai desenează niciodată pe jumătate.
+    rowPageBreak: "avoid",
     styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
