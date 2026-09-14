@@ -1551,7 +1551,7 @@ function useInaltimeMasurata() {
   return [ref, inaltime];
 }
 
-function ScrollOrizontalSus({ children }) {
+function ScrollOrizontalSus({ children, inaltimeMaxima }) {
   const susRef = useRef(null);
   const josRef = useRef(null);
   const [latimeContinut, setLatimeContinut] = useState(0);
@@ -1585,7 +1585,15 @@ function ScrollOrizontalSus({ children }) {
           <div style={{ width: latimeContinut, height: 1 }} />
         </div>
       )}
-      <div ref={josRef} onScroll={dinJos} className="overflow-x-auto w-full">
+      {/* inaltimeMaxima (opțional) mărginește și înălțimea acestui div — capul de tabel "înghețat"
+          (freeze header) se construiește DEASUPRA acestei componente, cu sticky relativ la acest
+          div mărginit, care devine astfel singurul container de scroll (orizontal ȘI vertical). */}
+      <div
+        ref={josRef}
+        onScroll={dinJos}
+        className={`overflow-x-auto w-full ${inaltimeMaxima ? "overflow-y-auto" : ""}`}
+        style={inaltimeMaxima ? { maxHeight: inaltimeMaxima } : undefined}
+      >
         {children}
       </div>
     </div>
@@ -4657,24 +4665,24 @@ export default function ParohieERP() {
       {/* Bară principală de navigare — două rânduri: sus identitatea parohiei + cont, jos navigarea */}
       <header className="bg-[#8A2B29] text-white flex flex-col shrink-0 border-b border-white/10">
         <div className="flex items-center gap-1 px-6 h-11 border-b border-white/10">
-          <div className="font-arhaic text-base leading-snug text-[#F0E4C8] shrink-0">
+          <div className="font-arhaic text-xl leading-snug tracking-wide text-[#F7ECD3] shrink-0">
             {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
           </div>
           <div className="flex-1" />
-          <div className="text-[11px] text-white/50 shrink-0 mr-2 whitespace-nowrap">
-            Rol activ: <span className="text-white/80">{permisiuni.label}</span>
+          <div className="text-xs text-white/70 shrink-0 mr-2 whitespace-nowrap">
+            Rol activ: <span className="text-white/95 font-medium">{permisiuni.label}</span>
           </div>
           <button
             title="Setări — jurnal de audit, deblocare 2FA, securitate, schimbă parola, date parohie"
             onClick={() => setShowSetari(true)}
-            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-white/15 text-white/70 hover:bg-white/5 hover:text-white hover:border-white/30 transition-colors shrink-0"
+            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-white/25 text-white/90 hover:bg-white/10 hover:text-white hover:border-white/40 transition-colors shrink-0"
           >
             <Settings size={14} /> Setări
           </button>
           <button
             title="Ieșire din cont — încheie sesiunea curentă"
             onClick={() => setShowLogoutConfirm(true)}
-            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-rose-400/30 text-rose-300/80 hover:bg-rose-500/10 hover:text-rose-200 hover:border-rose-400/50 transition-colors shrink-0 ml-1"
+            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-rose-400/40 text-rose-200 hover:bg-rose-500/10 hover:text-rose-100 hover:border-rose-400/60 transition-colors shrink-0 ml-1"
           >
             <LogOut size={14} /> Ieșire
           </button>
@@ -6303,17 +6311,17 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         </div>
       </header>
 
-      <ScrollOrizontalSus>
+      <ScrollOrizontalSus inaltimeMaxima="65vh">
       <Card className="w-full">
-        <div ref={refBaraCautare} className="sticky z-20 bg-white" style={{ top: inaltimeAntetPagina }}>
+        <div ref={refBaraCautare} className="sticky top-0 z-20 bg-white">
           <BaraCautarePaginare
             cautare={cautare} onCautare={setCautare}
             pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
             totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
           />
         </div>
-        <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
-          <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeAntetPagina + inaltimeBaraCautare }}>
+        <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+          <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeBaraCautare }}>
             <tr className="text-left uppercase tracking-wide text-stone-500">
               <th className="px-2.5 py-2.5">Nr. crt.</th>
               <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom" />
@@ -6332,7 +6340,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             </tr>
           </thead>
           <tbody>
-            <tr className="bg-stone-50 font-semibold sticky z-10" style={{ top: inaltimeAntetPagina + inaltimeBaraCautare + inaltimeCapTabel }}>
+            <tr className="bg-stone-50 font-semibold sticky z-10" style={{ top: inaltimeBaraCautare + inaltimeCapTabel }}>
               <td colSpan={7} className="px-2.5 py-2.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
               <td className="px-2.5 py-2.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
               <td className="px-2.5 py-2.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
@@ -7575,7 +7583,7 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
           încasare) ale transferului, împreună.
         </p>
         <div className="overflow-x-auto max-h-[60vh]">
-          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+          <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200 sticky top-0 bg-white">
                 <th className="px-2 py-2">Data</th>
@@ -7918,6 +7926,15 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const [showVanzariEmise, setShowVanzariEmise] = useState(false);
   const [showRapoarte, setShowRapoarte] = useState(false);
   const [showStocInitial, setShowStocInitial] = useState(false);
+
+  // Capul de tabel fix ("freeze header"), la fel ca la Registrul Jurnal — antetul paginii, bara
+  // de navigare între secțiuni (Intrări/Ieșiri/Stocuri/Nomenclator), sub-antetul propriu al
+  // secțiunii active și capul de tabel rămân vizibile cât timp se scrolează prin rânduri. Aceleași
+  // refs sunt refolosite de fiecare secțiune (o singură secțiune e montată la un moment dat).
+  const [refAntetPangar, inaltimeAntetPangar] = useInaltimeMasurata();
+  const [refNavSectiuniPangar, inaltimeNavSectiuniPangar] = useInaltimeMasurata();
+  const [refSubantetSectiune, inaltimeSubantetSectiune] = useInaltimeMasurata();
+  const [refCapTabelPangar, inaltimeCapTabelPangar] = useInaltimeMasurata();
 
   // Selecție multiplă de tranzacții (Tablou intrări/vânzări) — pentru ștergere, export sau
   // printare în masă. Cheia de selecție e documentId la intrări, `${an}-${nr}` la vânzări (nu au
@@ -8753,7 +8770,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between">
+      <header ref={refAntetPangar} className="flex items-center justify-between sticky top-0 z-30 bg-[#FAF8F3] py-1">
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Pangar</h1>
           <p className="text-sm text-stone-500">
@@ -8791,7 +8808,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         </div>
       </Card>
 
-      <div className="flex gap-2 flex-wrap">
+      <div ref={refNavSectiuniPangar} className="flex gap-2 flex-wrap sticky z-30 bg-[#FAF8F3] py-1" style={{ top: inaltimeAntetPangar }}>
         <Btn variant={sectiunePangar === "intrari" ? "primary" : "ghost"} onClick={() => setSectiunePangar("intrari")}>Intrări</Btn>
         <Btn variant={sectiunePangar === "iesiri" ? "primary" : "ghost"} onClick={() => setSectiunePangar("iesiri")}>Ieșiri</Btn>
         <Btn variant={sectiunePangar === "stocuri" ? "primary" : "ghost"} onClick={() => setSectiunePangar("stocuri")}>Stocuri</Btn>
@@ -8877,11 +8894,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           )}
 
           {modStocuri === "lista" && (
-            <Card className="overflow-x-auto">
-              <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Stocuri (vedere agregată pe produs, FIFO)</div>
-              <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+            <Card className="overflow-hidden">
+              <div className="max-h-[60vh] overflow-auto">
+              <div ref={refSubantetSectiune} className="px-3 pt-3 pb-2 text-xs uppercase tracking-wide text-stone-500 font-medium sticky top-0 z-20 bg-white">Stocuri (vedere agregată pe produs, FIFO)</div>
+              <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+                <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
+                  <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
                     <AntetFiltrabil cheie="produs" eticheta="Produs" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("produs")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="stoc" eticheta="Cantitate stoc" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stoc")} className="px-3 py-2 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la preț vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-2 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
@@ -8916,24 +8934,28 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                   )}
                 </tbody>
               </table>
+              </div>
             </Card>
           )}
         </>
       )}
 
       {sectiunePangar === "nomenclator" && (
-        <Card className="overflow-x-auto">
-          <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
-            Nomenclator — denumire, cod, cost și preț de vânzare (generic, fără stocuri)
+        <Card className="overflow-hidden">
+          <div className="max-h-[60vh] overflow-auto">
+          <div ref={refSubantetSectiune} className="sticky top-0 z-20 bg-white">
+            <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
+              Nomenclator — denumire, cod, cost și preț de vânzare (generic, fără stocuri)
+            </div>
+            <BaraCautarePaginare
+              cautare={cautareCod} onCautare={setCautareCod}
+              pagina={paginaCod} totalPagini={totalPaginiCod} onPagina={setPaginaCod}
+              totalFiltrate={totalCoduriFiltrate} placeholder="Caută cod sau denumire..."
+            />
           </div>
-          <BaraCautarePaginare
-            cautare={cautareCod} onCautare={setCautareCod}
-            pagina={paginaCod} totalPagini={totalPaginiCod} onPagina={setPaginaCod}
-            totalFiltrate={totalCoduriFiltrate} placeholder="Caută cod sau denumire..."
-          />
-          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+          <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+            <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
                 <AntetSortabil eticheta="Denumire produs" coloana="denumire" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} />
                 <AntetSortabil eticheta="Cod (nomenclator)" coloana="cod" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} />
                 <AntetSortabil eticheta="Cost unitar" coloana="pretAchizitie" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} className="px-3 py-2 text-right" />
@@ -8956,13 +8978,15 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               )}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
 
       {sectiunePangar === "intrari" && (
-      <Card className="overflow-x-auto">
-        <div className="px-3 pt-3 flex items-center justify-between flex-wrap gap-2">
+      <Card className="overflow-hidden">
+        <div className="max-h-[60vh] overflow-auto">
+        <div ref={refSubantetSectiune} className="px-3 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2 sticky top-0 z-20 bg-white">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
             Tablou intrări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
           </div>
@@ -9002,9 +9026,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </div>
           )}
         </div>
-        <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+        <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+          <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
               <th className="px-3 py-2">
                 <input
                   type="checkbox"
@@ -9086,6 +9110,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             )}
           </tbody>
         </table>
+        </div>
       </Card>
       )}
 
@@ -9103,8 +9128,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       )}
 
       {sectiunePangar === "iesiri" && (
-      <Card className="overflow-x-auto">
-        <div className="px-3 pt-3 flex items-center justify-between flex-wrap gap-2">
+      <Card className="overflow-hidden">
+        <div className="max-h-[60vh] overflow-auto">
+        <div ref={refSubantetSectiune} className="px-3 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2 sticky top-0 z-20 bg-white">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
             Tablou vânzări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
           </div>
@@ -9148,9 +9174,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </div>
           )}
         </div>
-        <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+        <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+          <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
               <th className="px-3 py-2">
                 <input
                   type="checkbox"
@@ -9220,6 +9246,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             )}
           </tbody>
         </table>
+        </div>
       </Card>
       )}
 
@@ -9687,7 +9714,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
         </p>
 
         <Card className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+          <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
                 <th className="px-3 py-2">Cod</th>
@@ -9751,7 +9778,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
 
         <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mt-1">Linii noi de adăugat</div>
         <Card className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
+          <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
                 <th className="px-3 py-2">Produs</th>
