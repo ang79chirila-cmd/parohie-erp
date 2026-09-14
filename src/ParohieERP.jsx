@@ -4682,6 +4682,14 @@ export default function ParohieERP() {
               >
                 <Building2 size={15} /> Date parohie
               </button>
+              <a
+                href="/manual/Manual-utilizare-Parohia-ERP.docx"
+                download="Manual de utilizare - Parohia ERP.docx"
+                title="Manual de utilizare — descarcă documentul complet, cu instrucțiuni pentru toate modulele aplicației"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-md border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
+              >
+                <Download size={15} /> Manual de utilizare
+              </a>
               <button
                 title="Jurnal de audit — istoricul complet al acțiunilor efectuate în cont (cine, ce, când)"
                 onClick={() => { setShowSetari(false); setShowAudit(true); }}
