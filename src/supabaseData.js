@@ -14,6 +14,16 @@
 
 import { supabase } from "./supabaseClient";
 
+// Formatează o cantitate pentru textul de explicație al unei operațiuni — mereu convertită
+// explicit prin Number() (apără împotriva unei valori care ar ajunge aici ca text brut, de
+// exemplu dintr-o coloană numerică din Postgres serializată cu scală fixă, gen "35.000"), și
+// afișată FĂRĂ NICIO ZECIMALĂ — unitățile de măsură (buc., kg) nu se afișează niciodată cu
+// zecimale, ca să nu poată fi confundate cu o sumă de bani sau cu o valoare de mii. Zecimalele
+// rămân doar pentru sumele în lei, formatate separat prin fmt() în ParohieERP.jsx.
+function fmtCantitate(n) {
+  return Math.round(Number(n)).toLocaleString("ro-RO");
+}
+
 /* ------------------------- Exerciții financiare ------------------------- */
 
 // Aduce exercițiul financiar al unui an anume, pentru parohia curentă.
@@ -844,8 +854,8 @@ export async function vanzareFIFOPangar(parohieId, { linii, data, tert, modPlata
     const cat = categoriiPangar[c.articol.categorie_bvc];
     const cost = c.cantitate * Number(c.articol.pret_achizitie);
     const propriu = c.cantitate * Number(c.articol.pret_vanzare) - cost;
-    liniiBugetare.push({ contId: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um}`, modPlata });
-    liniiBugetare.push({ contId: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um} (marjă)`, modPlata });
+    liniiBugetare.push({ contId: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${fmtCantitate(c.cantitate)} ${c.articol.um}`, modPlata });
+    liniiBugetare.push({ contId: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${fmtCantitate(c.cantitate)} ${c.articol.um} (marjă)`, modPlata });
   }
 
   // Creăm ÎNTÂI chitanța (stocul a fost deja verificat mai sus, doar citire) — dacă scrierea
@@ -942,7 +952,7 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
 
     const stocVechiNou = Number(articolVechi.stoc) - Number(miscare.cantitate);
     if (stocVechiNou < 0) {
-      throw new Error(`Nu poți muta recepția pe alt cod — codul greșit (${articolVechi.cod}) are deja stoc vândut din cantitatea recepționată aici (stoc curent: ${articolVechi.stoc}, de scos: ${miscare.cantitate}).`);
+      throw new Error(`Nu poți muta recepția pe alt cod — codul greșit (${articolVechi.cod}) are deja stoc vândut din cantitatea recepționată aici (stoc curent: ${Number(articolVechi.stoc)}, de scos: ${Number(miscare.cantitate)}).`);
     }
     const stocNouNou = Number(articolNou.stoc) + cantitate;
 
@@ -1173,7 +1183,7 @@ export async function stergeStocInitialPangar(miscareId) {
 
   const stocNou = Number(articol.stoc) - Number(miscare.cantitate);
   if (stocNou < 0) {
-    throw new Error(`Nu poți șterge acest stoc inițial — s-a vândut deja mai mult decât ar rămâne (stoc curent: ${articol.stoc}, cantitate stoc inițial: ${miscare.cantitate}).`);
+    throw new Error(`Nu poți șterge acest stoc inițial — s-a vândut deja mai mult decât ar rămâne (stoc curent: ${Number(articol.stoc)}, cantitate stoc inițial: ${Number(miscare.cantitate)}).`);
   }
 
   const { error: errUpdArt } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", articol.id);
@@ -1265,8 +1275,8 @@ export async function editeazaVanzarePangar(documentId, { cantitate, data, tert,
     const cat = categoriiPangar[c.articol.categorie_bvc];
     const cost = c.cantitate * Number(c.articol.pret_achizitie);
     const propriu = valoareTotala - cost;
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um}`, mod_plata: modPlata });
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um} (marjă)`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${fmtCantitate(c.cantitate)} ${c.articol.um}`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${fmtCantitate(c.cantitate)} ${c.articol.um} (marjă)`, mod_plata: modPlata });
 
     miscariNoi.push({
       id: miscareInserata.id, data, tip: "iesire", articolId: c.articol.id, cantitate: c.cantitate,
@@ -1385,8 +1395,8 @@ export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, t
     const cat = categoriiPangar[c.articol.categorie_bvc];
     const cost = c.cantitate * Number(c.articol.pret_achizitie);
     const propriu = valoareTotala - cost;
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um}`, mod_plata: modPlata });
-    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${c.cantitate} ${c.articol.um} (marjă)`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitTranzitoriu, suma: cost, explicatie: `Vânzare pangar — ${c.articol.cod} — ${fmtCantitate(c.cantitate)} ${c.articol.um}`, mod_plata: modPlata });
+    liniiNoi.push({ document_id: documentId, cont_id: cat.venitPropriu, suma: propriu, explicatie: `Vânzare pangar — ${c.articol.cod} — ${fmtCantitate(c.cantitate)} ${c.articol.um} (marjă)`, mod_plata: modPlata });
 
     miscariNoi.push({
       id: miscareInserata.id, data, tip: "iesire", articolId: c.articol.id, cantitate: c.cantitate,

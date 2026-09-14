@@ -73,6 +73,13 @@ const fmt = (n) =>
     maximumFractionDigits: 2,
   });
 
+// Formatează o cantitate (unități de măsură — buc., kg) STRICT FĂRĂ ZECIMALE, ca să nu se mai
+// poată confunda niciodată cu o sumă de bani sau cu o valoare de mii (vezi și fmtCantitate din
+// supabaseData.js, care face aceeași normalizare pe textul de explicație stocat în bază). Se
+// aplică doar la AFIȘARE — câmpurile editabile (<input>) rămân neatinse, ca să nu stricăm
+// introducerea datelor.
+const fmtCant = (n) => Math.round(Number(n)).toLocaleString("ro-RO");
+
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 // Soldurile Casă și Bancă, calculate strict din operațiunile cu data <= dataLimitaInclusiv —
@@ -801,8 +808,8 @@ function seedDemoState() {
     const costAchizitie = cantitate * art.pretAchizitie;
     const venitPropriu = cantitate * art.pretVanzare - costAchizitie;
     const cat = CATEGORII_PANGAR[art.categorieBVC];
-    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitTranzitoriu, data, suma: costAchizitie, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} ${art.um}`, nr, an });
-    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitPropriu, data, suma: venitPropriu, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${cantitate} ${art.um} (marjă)`, nr, an });
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitTranzitoriu, data, suma: costAchizitie, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${fmtCant(cantitate)} ${art.um}`, nr, an });
+    operatiuni.push({ id: uid(), tip: "incasare", contId: cat.venitPropriu, data, suma: venitPropriu, modPlata: "numerar", tert, explicatie: `Vânzare pangar — ${art.cod} — ${fmtCant(cantitate)} ${art.um} (marjă)`, nr, an });
     miscariStoc.push({ id: uid(), data, tip: "iesire", articolId: art.id, cantitate, valoareUnitara: art.pretVanzare, valoareTotala: cantitate * art.pretVanzare });
   };
 
@@ -8136,7 +8143,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       ...s,
       articole: s.articole.map((a) => (a.id === articolId ? { ...a, ...rezultat.articolPatch } : a)),
       miscariStoc: [...s.miscariStoc, rezultat.miscareNoua],
-      jurnalAudit: adaugaAudit(s, permisiuni.label, `Stoc inițial adăugat — ${art?.cod || articolId}, cantitate ${cantitate}`),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Stoc inițial adăugat — ${art?.cod || articolId}, cantitate ${fmtCant(cantitate)}`),
     }));
   }
 
@@ -8166,7 +8173,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       ...s,
       articole: s.articole.map((a) => (a.id === miscare.articolId ? { ...a, ...rezultat.articolActualizat } : a)),
       miscariStoc: s.miscariStoc.filter((m) => m.id !== miscareId),
-      jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere stoc inițial — ${art?.cod || miscare.articolId}, cantitate ${miscare.cantitate}`),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere stoc inițial — ${art?.cod || miscare.articolId}, cantitate ${fmtCant(miscare.cantitate)}`),
     }));
   }
 
@@ -8814,7 +8821,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                     </div>
                     <div className="p-2 flex flex-col gap-1">
                       <div className="text-sm font-medium text-stone-700 leading-snug">{g.denumire}</div>
-                      <div className="text-xs text-stone-500">Stoc: {g.stocTotal} {g.um} — {fmt(g.valoareTotal)} lei</div>
+                      <div className="text-xs text-stone-500">Stoc: {fmtCant(g.stocTotal)} {g.um} — {fmt(g.valoareTotal)} lei</div>
                       <div className="text-xs text-stone-400">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"} FIFO</div>
                     </div>
                   </div>
@@ -8849,7 +8856,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                     return (
                       <tr key={g.bazaCod} className="border-b border-stone-100 hover:bg-stone-50">
                         <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs font-mono">({g.bazaCod})</span></td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">{g.stocTotal} {g.um}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtCant(g.stocTotal)} {g.um}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{fmt(g.valoareTotal)}</td>
                         <td className="px-3 py-2 text-xs text-stone-500">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"}</td>
                         <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareCls}`}>{g.stareLabel}</span></td>
@@ -8990,7 +8997,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                         </>
                       )}
                       <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{m.cantitate}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmt(m.valoareAchizitie)}</td>
                       {i === 0 && <td className="px-3 py-2 text-stone-500 align-top" rowSpan={grup.linii.length}>{grup.furnizor}</td>}
                       {i === 0 && (
@@ -9074,7 +9081,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                     return {
                       chitanta: `${v.nrChitanta}/${v.anChitanta}`, data: fmtDataJurnal(v.data),
                       codBaza: v.linii.map((l) => l.bazaCod).join(", "),
-                      cantitate: v.linii.map((l) => `${l.cantitate} ${l.um}`).join(", "),
+                      cantitate: v.linii.map((l) => `${fmtCant(l.cantitate)} ${l.um}`).join(", "),
                       valoare: fmt(v.valoare), tert: opChit?.tert || "—",
                     };
                   })}
@@ -9133,7 +9140,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                     {v.linii.map((l) => <div key={l.bazaCod}>{l.bazaCod}</div>)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {v.linii.map((l) => <div key={l.bazaCod}>{l.cantitate} {l.um}</div>)}
+                    {v.linii.map((l) => <div key={l.bazaCod}>{fmtCant(l.cantitate)} {l.um}</div>)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmt(v.valoare)}</td>
                   <td className="px-3 py-2 text-stone-500">{opChit?.tert || "—"}</td>
@@ -10358,7 +10365,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, partene
                 </div>
                 {dl && dl.rezultat.length > 0 && (
                   <div className="text-xs text-stone-400 pl-1 flex flex-col gap-0.5">
-                    <div>FIFO: {dl.rezultat.map((r) => `${r.cantitate} × ${r.cod.cod}`).join("  +  ")}</div>
+                    <div>FIFO: {dl.rezultat.map((r) => `${fmtCant(r.cantitate)} × ${r.cod.cod}`).join("  +  ")}</div>
                     <div>
                       Articole bugetare: {dl.conturi.map((c) => `${c.contId} (${c.eticheta}) — ${fmt(c.suma)} lei`).join("  •  ")}
                     </div>
@@ -11741,7 +11748,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                 <td className="px-3 py-2 text-xs text-stone-500">
                   {g.loturi.filter((l) => l.stoc > 0).length === 0
                     ? "—"
-                    : g.loturi.filter((l) => l.stoc > 0).map((l) => `${l.stoc} × ${fmt(l.costUnitar)} lei`).join("  +  ")}
+                    : g.loturi.filter((l) => l.stoc > 0).map((l) => `${fmtCant(l.stoc)} × ${fmt(l.costUnitar)} lei`).join("  +  ")}
                 </td>
               </tr>
             ))}
@@ -11771,7 +11778,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                 <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(m.data)}</td>
                   <td className="px-3 py-2">{lot?.denumire || m.articolId}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{m.cantitate}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmt(m.valoareUnitara)}</td>
                   <td className="px-3 py-2">
                     {anInchisDefinitiv ? (
@@ -12604,7 +12611,7 @@ function BonConsumForm({ grupe, onClose, onSave }) {
                 </div>
                 <div className="col-span-3 text-xs text-stone-500 pb-2">
                   {simulare && simulare.detaliu.length > 0 && (
-                    <>Valoare FIFO: {simulare.detaliu.map((d, idx) => <span key={idx}>{idx > 0 && " + "}{d.cantitate}×{fmt(d.cost)}</span>)} = {fmt(simulare.valoare)} lei</>
+                    <>Valoare FIFO: {simulare.detaliu.map((d, idx) => <span key={idx}>{idx > 0 && " + "}{fmtCant(d.cantitate)}×{fmt(d.cost)}</span>)} = {fmt(simulare.valoare)} lei</>
                   )}
                 </div>
                 <div className="col-span-1 flex justify-center pb-1.5">
