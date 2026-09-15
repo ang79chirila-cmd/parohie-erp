@@ -1,0 +1,28 @@
+name: Teste automate
+
+# Rulează automat de fiecare dată când se încarcă cod nou pe master, sau la orice pull request
+# către master — fără nicio acțiune suplimentară din partea ta. Dacă vreo modificare viitoare
+# strică una din formulele testate (achitare parțială, consolidare comisioane, formatare
+# cantități), apare un X roșu pe commit, pe GitHub, în loc să treacă neobservat.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  teste:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descarcă codul
+        uses: actions/checkout@v4
+
+      - name: Pregătește Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Testele nu au nicio dependință externă (folosesc doar test runner-ul inclus în Node) —
+      # nu e nevoie de "npm install", rulează direct, în câteva secunde.
+      - name: Rulează testele
+        run: node --test './tests/**/*.test.mjs'
