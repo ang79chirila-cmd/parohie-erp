@@ -17,7 +17,7 @@ import {
   ArrowDownCircle, ArrowUpCircle, AlertTriangle, ArrowLeftRight,
   Trash2, X, Church, Lock, User, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil,
   Download, ChevronDown, FileText, FileSpreadsheet, FileCode, Building2, Boxes, Archive, ClipboardCheck, MapPin, Mail,
-  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload, Settings,
+  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload, Settings, Calendar,
 } from "lucide-react";
 
 // Font arhaic românesc (Arhaic_rom.ttf, furnizat de utilizator) — încorporat direct ca
@@ -1768,7 +1768,65 @@ function AntetSortabil({ eticheta, coloana, sortColoana, sortDirectie, onSort, c
   );
 }
 
-function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina, totalFiltrate, placeholder, pageSize, onPageSize }) {
+// Câmp de introducere a unei date — text liber, scris direct de utilizator în formatul
+// zz.ll.aaaa (fără să depindă de formatul de dată implicit al sistemului de operare, care poate
+// fi oricare altul, ex. lună/zi/an), plus un buton de calendar (folosește selectorul nativ al
+// browserului, ascuns vizual, doar ca sursă a ferestrei de calendar). Comunică mereu în afară
+// data în format ISO (aaaa-ll-zz), ca restul aplicației; string gol dacă nu-i completată/validă.
+function CampDataText({ value, onChange, placeholder }) {
+  const [text, setText] = useState(value ? fmtDataJurnal(value) : "");
+  const refNativ = useRef(null);
+
+  useEffect(() => {
+    setText(value ? fmtDataJurnal(value) : "");
+  }, [value]);
+
+  function actualizeazaDinText(v) {
+    setText(v);
+    const potrivire = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(v.trim());
+    if (!potrivire) {
+      if (v.trim() === "") onChange("");
+      return;
+    }
+    const [, zi, luna, an] = potrivire;
+    const iso = `${an}-${luna}-${zi}`;
+    const d = new Date(`${iso}T00:00:00`);
+    const eValida = !isNaN(d) && d.getUTCFullYear() === Number(an) && d.getUTCMonth() + 1 === Number(luna) && d.getUTCDate() === Number(zi);
+    if (eValida) onChange(iso);
+  }
+
+  return (
+    <div className="relative flex items-center">
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder={placeholder || "zz.ll.aaaa"}
+        value={text}
+        onChange={(e) => actualizeazaDinText(e.target.value)}
+        className={inputCls + " pr-7 w-28"}
+      />
+      <button
+        type="button"
+        title="Alege din calendar"
+        onClick={() => refNativ.current?.showPicker?.()}
+        className="absolute right-1.5 text-stone-400 hover:text-[#1F3864] transition-colors"
+      >
+        <Calendar size={14} />
+      </button>
+      <input
+        ref={refNativ}
+        type="date"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute opacity-0 w-0 h-0 pointer-events-none"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
+function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina, totalFiltrate, placeholder, pageSize, onPageSize, dataStart, onDataStart, dataSfarsit, onDataSfarsit }) {
   // Opțiunile standard cerute (10/20/50/100), plus valoarea implicită a ecranului curent, dacă nu
   // e deja una din ele — ca fiecare tabel să-și păstreze comportamentul de până acum la prima
   // afișare, chiar dacă implicitul lui (ex. 12 sau 15) nu e unul din cele patru numere standard.
@@ -1777,12 +1835,23 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
     : [10, 20, 50, 100];
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-stone-100 flex-wrap">
-      <input
-        className={inputCls + " max-w-xs"}
-        placeholder={placeholder || "Caută..."}
-        value={cautare}
-        onChange={(e) => onCautare(e.target.value)}
-      />
+      <div className="flex items-center gap-2 flex-wrap">
+        {onDataStart && onDataSfarsit && (
+          <>
+            <span className="text-xs text-stone-500">De la</span>
+            <CampDataText value={dataStart} onChange={onDataStart} placeholder="zz.ll.aaaa" />
+            <span className="text-stone-400 text-sm">—</span>
+            <span className="text-xs text-stone-500">Până la</span>
+            <CampDataText value={dataSfarsit} onChange={onDataSfarsit} placeholder="zz.ll.aaaa" />
+          </>
+        )}
+        <input
+          className={inputCls + " max-w-xs"}
+          placeholder={placeholder || "Caută..."}
+          value={cautare}
+          onChange={(e) => onCautare(e.target.value)}
+        />
+      </div>
       <div className="flex items-center gap-3 text-xs text-stone-500">
         {onPageSize && (
           <label className="flex items-center gap-1.5">
@@ -3902,6 +3971,12 @@ export default function ParohieERP() {
 
   const [state, setState] = useState(null);
   const [tab, setTab] = useState("dashboard");
+  // Anul de exercițiu financiar selectat — COMUN tuturor modulelor cu selector de an (Tablou de
+  // bord, Registru Jurnal, Pangar, Rapoarte, Consum intern). O singură sursă de adevăr, la nivelul
+  // aplicației, nu una separată per modul — altfel fiecare tab "uita" alegerea anterioară a
+  // utilizatorului de fiecare dată când era demontat la schimbarea de tab (comportamentul vechi,
+  // obositor, corectat aici).
+  const [anSelectatGlobal, setAnSelectatGlobal] = useState(new Date().getFullYear());
   // Acțiune "de deschis" imediat după navigare — folosită de meniul principal, ca să poți declanșa
   // direct o acțiune dintr-un modul (ex. "Chitanță nouă") fără să navighezi mai întâi manual acolo.
   // Modulul țintă citește acest semnal o singură dată (la montare/schimbare) și îl "consumă"
@@ -4914,6 +4989,8 @@ export default function ParohieERP() {
               onReceptieRapida={setReceptieRapidaArticolId}
               permisiuni={permisiuni}
               parohieId={contActiv.parohieId}
+              anTablou={anSelectatGlobal}
+              setAnTablou={setAnSelectatGlobal}
               prevederiInfo={{
                 inFereastra: (luna === 11 && zi >= 15) || luna === 12,
                 anUrmator: anCurent + 1,
@@ -4938,14 +5015,14 @@ export default function ParohieERP() {
               }}
             />
           )}
-          {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={tabActiv === "operatiuni" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
+          {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={tabActiv === "operatiuni" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} />}
           {tabActiv === "conturi" && <ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} />}
-          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={tabActiv === "pangar" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "consumintern" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
+          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={tabActiv === "pangar" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anPangar={anSelectatGlobal} setAnPangar={setAnSelectatGlobal} />}
+          {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "consumintern" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anConsumIntern={anSelectatGlobal} setAnConsumIntern={setAnSelectatGlobal} />}
           {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "patrimoniu" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "cimitir" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "corespondenta" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={tabActiv === "rapoarte" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
+          {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={tabActiv === "rapoarte" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} />}
           {tabActiv === "organisme" && <OrganismeParohialeTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "organisme" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
           {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
           {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} />}
@@ -5499,13 +5576,13 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
   }));
 }
 
-function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisiuni, parohieId, prevederiInfo, inchidereInfo }) {
+function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisiuni, parohieId, prevederiInfo, inchidereInfo, anTablou, setAnTablou }) {
   const { alerteStoc, alerteSold, alerteDepozite, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
   const [achitareFor, setAchitareFor] = useState(null);
 
-  // Selector de an pentru cardurile Sold/Total — implicit anul curent.
+  // Selector de an pentru cardurile Sold/Total — anul selectat e comun tuturor modulelor
+  // (anTablou/setAnTablou primite ca props din componenta rădăcină), nu mai e local acestui tab.
   const anCurent = new Date().getFullYear();
-  const [anTablou, setAnTablou] = useState(anCurent);
   const aniDisponibiliTablou = useMemo(() => {
     const ani = new Set([anCurent]);
     for (const op of state.operatiuni) ani.add(yearOf(op.data));
@@ -6058,7 +6135,7 @@ function fmtDataJurnal(iso) {
   return `${zi}.${luna}.${an}`;
 }
 
-function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener, actiuneInitiala, onConsumaActiuneInitiala }) {
+function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener, actiuneInitiala, onConsumaActiuneInitiala, anSelectat, setAnSelectat }) {
   const [showChitanta, setShowChitanta] = useState(false);
   const [showOP, setShowOP] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
@@ -6268,7 +6345,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     ani.add(yearOf(todayISO())); // anul curent e mereu selectabil, chiar dacă nu are încă operațiuni
     return [...ani].sort((a, b) => b - a);
   }, [state.operatiuni]);
-  const [anSelectat, setAnSelectat] = useState(yearOf(todayISO()));
+  // anSelectat/setAnSelectat primite ca props — comune tuturor modulelor cu selector de an.
 
   const randuri = useMemo(() => {
     const operatiuniAn = state.operatiuni.filter((op) => op.an === anSelectat);
@@ -6326,8 +6403,21 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const { filtre: filtreColoane, setFiltre: setFiltreColoane, procesate: randuriProcesate, sugestiiPentru } =
     useFiltrareColoane(randuri, configColoaneJurnal);
 
+  // Interval de dată (opțional, ambele capete) — introdus manual (zz.ll.aaaa) sau din calendar;
+  // se aplică ÎNAINTE de căutarea text/paginare, ca "X rezultate" să reflecte deja intervalul.
+  const [dataStart, setDataStart] = useState("");
+  const [dataSfarsit, setDataSfarsit] = useState("");
+  const randuriInInterval = useMemo(() => {
+    if (!dataStart && !dataSfarsit) return randuriProcesate;
+    return randuriProcesate.filter((r) => {
+      if (dataStart && r.op.data < dataStart) return false;
+      if (dataSfarsit && r.op.data > dataSfarsit) return false;
+      return true;
+    });
+  }, [randuriProcesate, dataStart, dataSfarsit]);
+
   const { cautare, setCautare, pagina, setPagina, totalPagini, afisate, filtrate, totalFiltrate, pageSize, setPageSize } =
-    useTabelFiltrat(randuriProcesate, ["cautCont", "cautPartener", "cautExplicatie"], 20);
+    useTabelFiltrat(randuriInInterval, ["cautCont", "cautPartener", "cautExplicatie"], 20);
 
   const totalIncasariAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? r.op.suma : 0), 0);
   const totalPlatiAfisate = filtrate.reduce((sum, r) => sum + (r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? r.op.suma : 0), 0);
@@ -6492,21 +6582,22 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             pagina={pagina} totalPagini={totalPagini} onPagina={setPagina}
             totalFiltrate={totalFiltrate} placeholder="Caută cont, partener sau explicație..."
             pageSize={pageSize} onPageSize={setPageSize}
+            dataStart={dataStart} onDataStart={setDataStart} dataSfarsit={dataSfarsit} onDataSfarsit={setDataSfarsit}
           />
         </div>
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeBaraCautare }}>
             <tr className="text-left uppercase tracking-wide text-stone-500">
               <th className="px-2.5 py-2.5">Nr. crt.</th>
-              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom max-w-[78px] break-words" />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-2.5 align-bottom max-w-[100px] break-words" />
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom max-w-[115px] min-w-[115px]" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-2.5 align-bottom max-w-[100px] min-w-[100px]" />
               <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-2.5 align-bottom" />
               <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-2.5 align-bottom" />
               <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-2.5 align-bottom max-w-[260px]" />
               <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-2.5 align-bottom max-w-[440px]" />
               <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-2.5 align-bottom text-right" />
               <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-2.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-2.5 align-bottom max-w-[80px] break-words" />
+              <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-2.5 align-bottom max-w-[105px] min-w-[105px]" />
               <th className="px-2.5 py-2.5 text-right">Sold final</th>
               <th className="px-2.5 py-2.5 text-right">Sold „Bancă”</th>
               <th className="px-2.5 py-2.5 text-right">Sold „Casă”</th>
@@ -6534,13 +6625,13 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-2.5 py-2 tabular-nums text-stone-500">{r.nrCrt}</td>
-                <td className="px-2.5 py-2 tabular-nums leading-tight max-w-[78px]">
+                <td className="px-2.5 py-2 tabular-nums leading-tight max-w-[115px] min-w-[115px]">
                   <div className="flex flex-col">
                     <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td className="px-2.5 py-2 tabular-nums max-w-[100px]">
+                <td className="px-2.5 py-2 tabular-nums max-w-[100px] min-w-[100px]">
                   {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6581,7 +6672,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                 <td className="px-2.5 py-2 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2.5 py-2 max-w-[80px]">
+                <td className="px-2.5 py-2 max-w-[105px] min-w-[105px]">
                   <span className="flex items-center gap-1">
                     <span className="whitespace-normal break-words">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</span>
                     {r.cont?.clasa === "viramente" && !permisiuni.citireOnly && (
@@ -8108,7 +8199,7 @@ function ContForm({ existente, editing, onClose, onSave }) {
 
 /* ------------------------------ Pangar -------------------------------- */
 
-function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener, receptieRapidaArticolId, onConsumatReceptieRapida, actiuneInitiala, onConsumaActiuneInitiala }) {
+function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener, receptieRapidaArticolId, onConsumatReceptieRapida, actiuneInitiala, onConsumaActiuneInitiala, anPangar, setAnPangar }) {
   const [showArticol, setShowArticol] = useState(false);
   const [variantaFor, setVariantaFor] = useState(null);
   const [showReceptieNRCD, setShowReceptieNRCD] = useState(false);
@@ -8585,9 +8676,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const { cautare: cautareCod, setCautare: setCautareCod, pagina: paginaCod, setPagina: setPaginaCod, totalPagini: totalPaginiCod, afisate: coduriAfisate, totalFiltrate: totalCoduriFiltrate, pageSize: pageSizeCod, setPageSize: setPageSizeCod } =
     useTabelFiltrat(articoleNomenclatorSortate, ["cod", "denumire", "bazaCod"], 15);
 
-  // Selector de an (exercițiu) pentru Recepții recente / Vânzări recente — implicit anul curent.
+  // Selector de an (exercițiu) pentru Recepții recente / Vânzări recente — anPangar/setAnPangar
+  // primite ca props, comune tuturor modulelor cu selector de an.
   const anCurentPangar = new Date().getFullYear();
-  const [anPangar, setAnPangar] = useState(anCurentPangar);
   // Resetăm selecția de tranzacții (Tablou intrări/vânzări) la schimbarea anului, ca să nu rămână
   // "selectate" tranzacții needevizibile după filtrare.
   useEffect(() => { setSelectieIntrari(new Set()); setSelectieIesiri(new Set()); }, [anPangar]);
@@ -10715,7 +10806,7 @@ function construiesteRaportDetaliatPartizi(operatiuni, conturi, tip, interval) {
     .filter((g) => g.randuri.length > 0);
 }
 
-function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiuneInitiala }) {
+function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiuneInitiala, anSelectat, setAnSelectat }) {
   const aniDisponibili = useMemo(() => {
     const ani = new Set(state.operatiuni.map((op) => op.an));
     Object.keys(state.prevederiBugetare || {}).forEach((a) => ani.add(Number(a)));
@@ -10725,7 +10816,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
   }, [state.operatiuni, state.prevederiBugetare]);
 
   const [modInterval, setModInterval] = useState("an"); // "an" | "manual"
-  const [anSelectat, setAnSelectat] = useState(aniDisponibili[0]);
+  // anSelectat/setAnSelectat primite ca props — comune tuturor modulelor cu selector de an.
   const [orientareRaportAnual, setOrientareRaportAnual] = useState("portrait");
   const [formatHartieRaportAnual, setFormatHartieRaportAnual] = useState("A4");
   const [dataStart, setDataStart] = useState(`${aniDisponibili[0]}-01-01`);
@@ -11520,7 +11611,7 @@ const MOTIVE_CONSUM = {
   protocol: { label: "Protocol", contId: "623", cereBeneficiar: false },
 };
 
-function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
+function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala, anConsumIntern, setAnConsumIntern }) {
   const [showArticol, setShowArticol] = useState(false);
   const [showReceptie, setShowReceptie] = useState(false);
   const [showBon, setShowBon] = useState(false);
@@ -11868,7 +11959,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   }, [state.miscariConsumIntern, state.articoleConsumIntern, state.bonuriConsum]);
 
   const anCurentConsumIntern = new Date().getFullYear();
-  const [anConsumIntern, setAnConsumIntern] = useState(anCurentConsumIntern);
+  // anConsumIntern/setAnConsumIntern primite ca props — comune tuturor modulelor cu selector de an.
   const aniDisponibiliConsumIntern = useMemo(() => {
     const ani = new Set([anCurentConsumIntern]);
     for (const e of evenimenteConsumIntern) ani.add(e.an);
