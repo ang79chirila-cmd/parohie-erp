@@ -1603,16 +1603,21 @@ export async function marcheazaNRCDAchitat(documentId) {
 export async function adaugaComisionBancarPending(parohieId, { data, suma, tert, documentIdOrigine }) {
   const an = Number(data.slice(0, 4));
   const luna = Number(data.slice(5, 7));
-  const { error } = await supabase.from("comisioane_bancare_pending").insert({
-    parohie_id: parohieId,
-    data,
-    suma,
-    tert: tert || null,
-    document_id_origine: documentIdOrigine || null,
-    an,
-    luna,
-  });
+  const { data: rand, error } = await supabase
+    .from("comisioane_bancare_pending")
+    .insert({
+      parohie_id: parohieId,
+      data,
+      suma,
+      tert: tert || null,
+      document_id_origine: documentIdOrigine || null,
+      an,
+      luna,
+    })
+    .select()
+    .single();
   if (error) throw error;
+  return { id: rand.id, data: rand.data, suma: Number(rand.suma), tert: rand.tert, documentIdOrigine: rand.document_id_origine, an: rand.an, luna: rand.luna };
 }
 
 // Toate comisioanele încă neconsolidate ale parohiei — indiferent din ce lună/an — citite o

@@ -606,6 +606,7 @@ function emptyState() {
     articole: [],
     miscariStoc: [],
     datoriiFurnizori: [], // { id, furnizor, suma, sumaAchitata, sumaRamasa, platiExistente: [{documentId,nr,an,data,moduri:[{modPlata,suma}],suma,liniiPeCont}], dataFactura, dataScadenta, status, nrFactura, nrNRCD, liniiAchizitie }
+    comisioaneBancareNeconsolidate: [], // { id, data, suma, tert, documentIdOrigine, an, luna } — nu apar în Registrul Jurnal ca document oficial până la consolidarea lunară; folosite DOAR pentru soldul curent afișat pe Tabloul de bord
     contoare: {}, // { "2026": { chitanta: 0, ordinPlata: 0, nrcd: 0 } }
     buget: {}, // { "106": { "2026": 1000 } } — populat exclusiv prin validarea formularului de Prevederi bugetare
     prevederiBugetare: {}, // { "2026": { validat: true, dataValidare: "2025-12-20", linii: [{contId, suma}] } }
@@ -3680,8 +3681,19 @@ function useDerived(state) {
     const datoriiPeste60 = datoriiNeachitate.filter((d) => zilePeste60(d.dataFactura));
     const totalDatoriiCurente = datoriiNeachitate.reduce((sum, d) => sum + (d.sumaRamasa ?? d.suma), 0);
 
+    // Sold Bancă "ajustat" — folosit STRICT pentru afișarea de pe Tabloul de bord (comparabil
+    // direct cu extrasul de cont), NU pentru Registrul Jurnal și NU pentru validările de sold
+    // (ex. la emiterea unui Ordin de plată) — acolo `soldBanca` rămâne neschimbat, legat exclusiv
+    // de documente oficiale, cu număr. Scade comisioanele bancare deja introduse (cu dată de azi
+    // sau mai veche) dar încă neconsolidate într-un Ordin de plată oficial — ele vor apărea oricum
+    // ca document abia la finalul lunii, dar banii sunt deja, practic, cheltuiți.
+    const sumaComisioanePending = (state.comisioaneBancareNeconsolidate || [])
+      .filter((c) => c.data <= aziIso)
+      .reduce((sum, c) => sum + c.suma, 0);
+    const soldBancaAjustat = Math.round((soldBanca - sumaComisioanePending) * 100) / 100;
+
     return {
-      soldCasa, soldBanca, soldDepozit, totalVenituri, totalCheltuieli, rulajPeCont, alerteStoc, alerteSold, alerteDepozite, contById,
+      soldCasa, soldBanca, soldBancaAjustat, sumaComisioanePending, soldDepozit, totalVenituri, totalCheltuieli, rulajPeCont, alerteStoc, alerteSold, alerteDepozite, contById,
       datoriiNeachitate, datoriiPeste60, totalDatoriiCurente,
     };
   }, [state]);
@@ -4088,6 +4100,7 @@ export default function ParohieERP() {
             const operatiuniNoiTotal = [];
             const audituriNoi = [];
             const renumerotariTotal = [];
+            const luniConsolidateCuSucces = new Set();
             for (const cheie of luniDeConsolidat) {
               const [anStr, lunaStr] = cheie.split("-");
               const an = Number(anStr), luna = Number(lunaStr);
@@ -4101,18 +4114,21 @@ export default function ParohieERP() {
                 // la fel ca la orice altă creare de document (vezi addOrdinPlata), altfel numerele
                 // afișate rămân cele vechi și pot coincide, din greșeală, cu alte documente reale.
                 if (rezultat.renumerotari?.length > 0) renumerotariTotal.push(...rezultat.renumerotari);
+                luniConsolidateCuSucces.add(cheie);
               }
             }
-            if (operatiuniNoiTotal.length > 0) {
-              setState((s) => {
-                let sNou = aplicaRenumerotari(s, renumerotariTotal);
-                sNou = { ...sNou, operatiuni: [...sNou.operatiuni, ...operatiuniNoiTotal] };
-                for (const mesaj of audituriNoi) {
-                  sNou = { ...sNou, jurnalAudit: adaugaAudit(sNou, "Sistem", mesaj) };
-                }
-                return sNou;
-              });
-            }
+            // Comisioanele din lunile tocmai consolidate ies din listă; restul (lună încă în curs,
+            // sau lună închisă definitiv, netratabilă acum) rămân — folosite DOAR pentru soldul
+            // curent afișat pe Tabloul de bord, niciodată ca document oficial în Registrul Jurnal.
+            const comisioaneRamase = comisioaneNeconsolidate.filter((c) => !luniConsolidateCuSucces.has(`${c.an}-${c.luna}`));
+            setState((s) => {
+              let sNou = aplicaRenumerotari(s, renumerotariTotal);
+              sNou = { ...sNou, operatiuni: [...sNou.operatiuni, ...operatiuniNoiTotal], comisioaneBancareNeconsolidate: comisioaneRamase };
+              for (const mesaj of audituriNoi) {
+                sNou = { ...sNou, jurnalAudit: adaugaAudit(sNou, "Sistem", mesaj) };
+              }
+              return sNou;
+            });
           }
         } catch (eComisioane) {
           console.error("Eroare la consolidarea automată a comisioanelor bancare:", eComisioane);
@@ -5496,7 +5512,7 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
     return Array.from(ani).sort((a, b) => b - a);
   }, [state.operatiuni, anCurent]);
 
-  const { totalVenituri, totalCheltuieli, soldCasa, soldBanca, soldDepozit } = useMemo(() => {
+  const { totalVenituri, totalCheltuieli, soldCasa, soldBanca, soldBancaAjustat, soldDepozit } = useMemo(() => {
     let venituri = 0;
     let cheltuieli = 0;
     for (const op of state.operatiuni) {
@@ -5511,8 +5527,14 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
     // Sold casă/bancă/depozit = soldul cumulat la finalul anului selectat (la zi, dacă e anul curent).
     const dataLimita = anTablou >= anCurent ? todayISO() : `${anTablou}-12-31`;
     const { soldCasa: sc, soldBanca: sb, soldDepozit: sd } = soldCasaBancaLaData(state.operatiuni, dataLimita);
-    return { totalVenituri: venituri, totalCheltuieli: cheltuieli, soldCasa: sc, soldBanca: sb, soldDepozit: sd };
-  }, [state.operatiuni, derived.contById, anTablou, anCurent]);
+    // Sold Bancă "ajustat" — doar pentru afișarea curentă (anul în curs, la zi), niciodată pentru
+    // un an trecut/închis: scade comisioanele bancare deja introduse, dar încă neconsolidate
+    // într-un Ordin de plată oficial (vezi useDerived, care documentează motivul complet).
+    const sbAjustat = anTablou >= anCurent
+      ? Math.round((sb - (state.comisioaneBancareNeconsolidate || []).filter((c) => c.data <= dataLimita).reduce((s, c) => s + c.suma, 0)) * 100) / 100
+      : sb;
+    return { totalVenituri: venituri, totalCheltuieli: cheltuieli, soldCasa: sc, soldBanca: sb, soldBancaAjustat: sbAjustat, soldDepozit: sd };
+  }, [state.operatiuni, state.comisioaneBancareNeconsolidate, derived.contById, anTablou, anCurent]);
 
   const excedent = totalVenituri - totalCheltuieli;
   const [showPrevederiUrmator, setShowPrevederiUrmator] = useState(false);
@@ -5569,7 +5591,12 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label={`Sold casă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldCasa)} RON`} tone={soldCasa < PRAG_SOLD ? "bad" : "good"} />
-        <StatCard label={`Sold bancă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldBanca)} RON`} tone={soldBanca < PRAG_SOLD ? "bad" : "good"} />
+        <StatCard
+          label={`Sold bancă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`}
+          value={`${fmt(soldBancaAjustat)} RON`}
+          tone={soldBancaAjustat < PRAG_SOLD ? "bad" : "good"}
+          sub={soldBancaAjustat !== soldBanca ? `Include comisioane bancare încă neconsolidate — sold oficial în Jurnal: ${fmt(soldBanca)} RON` : undefined}
+        />
         {soldDepozit !== 0 && (
           <StatCard label={`Sold depozit bancar (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldDepozit)} RON`} tone="good" />
         )}
@@ -6130,14 +6157,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     // Comisionul bancar aferent acestei plăți NU se adaugă la suma către partener — se reține
     // separat, într-o listă de comisioane neconsolidate, și se consolidează automat într-un
     // singur document, cu o linie per comision, la finalul lunii (vezi consolideazaComisioaneLuna).
+    let comisionNou = null;
     if (comisionBancar > 0) {
-      await adaugaComisionBancarPending(parohieId, { data, suma: comisionBancar, tert, documentIdOrigine: documentId });
+      comisionNou = await adaugaComisionBancarPending(parohieId, { data, suma: comisionBancar, tert, documentIdOrigine: documentId });
     }
     setState((s) => {
       const sPatched = aplicaRenumerotari(s, renumerotari);
       return {
         ...sPatched,
         operatiuni: [...sPatched.operatiuni, ...operatiuniNoi],
+        comisioaneBancareNeconsolidate: comisionNou ? [...(sPatched.comisioaneBancareNeconsolidate || []), comisionNou] : sPatched.comisioaneBancareNeconsolidate,
         jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ordin de plată nr. ${nr}/${an} emis — ${fmt(total)} lei${tert ? " (" + tert + ")" : ""}${comisionBancar > 0 ? ` — comision bancar ${fmt(comisionBancar)} lei reținut separat` : ""}`),
       };
     });
