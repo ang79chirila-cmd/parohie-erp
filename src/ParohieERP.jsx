@@ -4087,6 +4087,7 @@ export default function ParohieERP() {
             const tertBanca = dateLocaleSupabase.parohie?.banca || "Bancă";
             const operatiuniNoiTotal = [];
             const audituriNoi = [];
+            const renumerotariTotal = [];
             for (const cheie of luniDeConsolidat) {
               const [anStr, lunaStr] = cheie.split("-");
               const an = Number(anStr), luna = Number(lunaStr);
@@ -4095,11 +4096,17 @@ export default function ParohieERP() {
               if (rezultat) {
                 operatiuniNoiTotal.push(...rezultat.operatiuniNoi);
                 audituriNoi.push(`Comisioane bancare ${String(luna).padStart(2, "0")}/${an} consolidate automat — Ordin de plată nr. ${rezultat.nr}/${rezultat.an}, ${fmt(rezultat.operatiuniNoi.reduce((s, o) => s + o.suma, 0))} lei`);
+                // Fiecare document nou, datat "în trecut", forțează pe server o renumerotare
+                // cronologică a TUTUROR ordinelor de plată ale anului — trebuie aplicată local,
+                // la fel ca la orice altă creare de document (vezi addOrdinPlata), altfel numerele
+                // afișate rămân cele vechi și pot coincide, din greșeală, cu alte documente reale.
+                if (rezultat.renumerotari?.length > 0) renumerotariTotal.push(...rezultat.renumerotari);
               }
             }
             if (operatiuniNoiTotal.length > 0) {
               setState((s) => {
-                let sNou = { ...s, operatiuni: [...s.operatiuni, ...operatiuniNoiTotal] };
+                let sNou = aplicaRenumerotari(s, renumerotariTotal);
+                sNou = { ...sNou, operatiuni: [...sNou.operatiuni, ...operatiuniNoiTotal] };
                 for (const mesaj of audituriNoi) {
                   sNou = { ...sNou, jurnalAudit: adaugaAudit(sNou, "Sistem", mesaj) };
                 }
