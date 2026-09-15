@@ -4986,7 +4986,7 @@ export default function ParohieERP() {
               setState={setState}
               derived={derived}
               setTab={setTab}
-              onReceptieRapida={setReceptieRapidaArticolId}
+              onDeschideStocuri={() => navigheazaCuActiune("pangar", "stocuri")}
               permisiuni={permisiuni}
               parohieId={contActiv.parohieId}
               anTablou={anSelectatGlobal}
@@ -5576,7 +5576,7 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
   }));
 }
 
-function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisiuni, parohieId, prevederiInfo, inchidereInfo, anTablou, setAnTablou }) {
+function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permisiuni, parohieId, prevederiInfo, inchidereInfo, anTablou, setAnTablou }) {
   const { alerteStoc, alerteSold, alerteDepozite, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
   const [achitareFor, setAchitareFor] = useState(null);
 
@@ -5837,22 +5837,15 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
                 </button>
               </li>
             ))}
-            {alerteStoc.map((a, i) => (
-              <li key={`p${i}`} className="text-sm text-amber-900 flex items-center justify-between">
-                <span>{a.mesaj}</span>
-                <span className="flex items-center gap-2">
-                  <button
-                    className="text-xs underline text-[#1F3864]"
-                    onClick={() => { onReceptieRapida(a.articol.id); setTab("pangar"); }}
-                  >
-                    Propune recepție
-                  </button>
-                  <button className="text-xs underline text-[#1F3864]" onClick={() => setTab("pangar")}>
-                    Vezi pangar
-                  </button>
-                </span>
+            {alerteStoc.length > 0 && (
+              <li className="text-sm text-amber-900">
+                ATENȚIE! Sunt situații privind stocurile care necesită atenție! Deschide modulul{" "}
+                <button className="underline text-[#1F3864] font-medium" onClick={onDeschideStocuri}>
+                  Pangar
+                </button>
+                !
               </li>
-            ))}
+            )}
             {alerteDepozite.map((msg, i) => (
               <li key={`d${i}`} className="text-sm text-amber-900 flex items-center justify-between">
                 <span>{msg}</span>
@@ -8652,6 +8645,28 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const { filtre: filtrePangar, setFiltre: setFiltrePangar, procesate: grupuriProcesate, sugestiiPentru: sugestiiPangar, sortColoana: sortColoanaStocuri, sortDirectie: sortDirectieStocuri, onSort: onSortStocuri } =
     useFiltrareColoane(grupuri, configColoanePangar);
 
+  // Tabloul de Stocuri se afișează grupat pe cele 5 categorii mari, în ordinea cerută — "Lumânări"
+  // adună la un loc cele două subcategorii tehnice (LP = "de cult"/parafină, LC = "de ceară"),
+  // care în restul aplicației (nomenclator, nr. facturi) rămân distincte. Sortarea/filtrarea pe
+  // coloană, deja existentă, se aplică ÎN INTERIORUL fiecărui grup, nu peste tot tabelul.
+  const GRUPURI_MARI_STOCURI = useMemo(() => [
+    { titlu: "I. Lumânări", categorii: ["LUMÂNĂRI DE CULT", "LUMÂNĂRI DE CEARĂ"] },
+    { titlu: "II. Candele", categorii: ["CANDELE DE CULT"] },
+    { titlu: "III. Colportaj", categorii: ["COLPORTAJ"] },
+    { titlu: "IV. Vin", categorii: ["VIN"] },
+    { titlu: "V. Calendare", categorii: ["CALENDARE"] },
+  ], []);
+  const grupuriMariCuProduse = useMemo(() => {
+    const rezultat = GRUPURI_MARI_STOCURI.map((gm) => ({
+      ...gm,
+      produse: grupuriProcesate.filter((g) => gm.categorii.includes(categorieAfisarePangar(g.bazaCod))),
+    }));
+    const categoriiCunoscute = GRUPURI_MARI_STOCURI.flatMap((gm) => gm.categorii);
+    const altele = grupuriProcesate.filter((g) => !categoriiCunoscute.includes(categorieAfisarePangar(g.bazaCod)));
+    if (altele.length > 0) rezultat.push({ titlu: "Altele", categorii: [], produse: altele });
+    return rezultat.filter((gm) => gm.produse.length > 0);
+  }, [grupuriProcesate, GRUPURI_MARI_STOCURI]);
+
   const articoleSortate = useMemo(() => [...state.articole].sort(comparaCategorieSiDenumire), [state.articole]);
   const [sortColoanaNomenclator, setSortColoanaNomenclator] = useState(null);
   const [sortDirectieNomenclator, setSortDirectieNomenclator] = useState("asc");
@@ -9196,26 +9211,33 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                   </tr>
                 </thead>
                 <tbody>
-                  {grupuriProcesate.map((g) => {
-                    const stareCls =
-                      g.stareLabel === "Epuizat" ? "text-rose-700 bg-rose-50"
-                      : g.stareLabel === "Scăzut" ? "text-amber-700 bg-amber-50"
-                      : "text-emerald-700 bg-emerald-50";
-                    return (
-                      <tr key={g.bazaCod} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                        <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs font-mono">({g.bazaCod})</span></td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtCant(g.stocTotal)} {g.um}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmt(g.valoareTotal)}</td>
-                        <td className="px-3 py-2 text-xs text-stone-500">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"}</td>
-                        <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareCls}`}>{g.stareLabel}</span></td>
-                        <td className="px-3 py-2">
-                          {!permisiuni.citireOnly && (
-                            <Btn variant="ghost" onClick={() => setVariantaFor(g.coduri[g.coduri.length - 1])}>Preț nou</Btn>
-                          )}
-                        </td>
+                  {grupuriMariCuProduse.map((gm) => (
+                    <React.Fragment key={gm.titlu}>
+                      <tr className="bg-[#1F3864]/5">
+                        <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[#1F3864]">{gm.titlu}</td>
                       </tr>
-                    );
-                  })}
+                      {gm.produse.map((g) => {
+                        const stareCls =
+                          g.stareLabel === "Epuizat" ? "text-rose-700 bg-rose-50"
+                          : g.stareLabel === "Scăzut" ? "text-amber-700 bg-amber-50"
+                          : "text-emerald-700 bg-emerald-50";
+                        return (
+                          <tr key={g.bazaCod} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
+                            <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs font-mono">({g.bazaCod})</span></td>
+                            <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtCant(g.stocTotal)} {g.um}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{fmt(g.valoareTotal)}</td>
+                            <td className="px-3 py-2 text-xs text-stone-500">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"}</td>
+                            <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareCls}`}>{g.stareLabel}</span></td>
+                            <td className="px-3 py-2">
+                              {!permisiuni.citireOnly && (
+                                <Btn variant="ghost" onClick={() => setVariantaFor(g.coduri[g.coduri.length - 1])}>Preț nou</Btn>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
                   {grupuriProcesate.length === 0 && (
                     <tr><td colSpan={6} className="px-3 py-4 text-center text-stone-400">Niciun stoc încă.</td></tr>
                   )}
