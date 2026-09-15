@@ -10,7 +10,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
@@ -1222,7 +1222,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
                 const nrMembri = state.membriOrganisme.filter((x) => x.mandatId === m.id).length;
                 const nrPV = state.proceseVerbaleOrganisme.filter((x) => x.mandatId === m.id).length;
                 return (
-                  <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-3 py-2 font-medium">{fmtDataJurnal(m.dataInceput)} — {fmtDataJurnal(m.dataSfarsit)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{nrMembri}</td>
                     {organismActiv !== "comitet" && <td className="px-3 py-2 text-right tabular-nums">{nrPV}</td>}
@@ -1280,7 +1280,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
               </thead>
               <tbody>
                 {membriMandat.map((m) => (
-                  <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                  <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-3 py-2 font-medium">{m.nume}</td>
                     <td className="px-3 py-2 text-stone-500">{m.adresa || "—"}</td>
                     <td className="px-3 py-2 text-stone-500">{m.telefon || "—"}</td>
@@ -1328,7 +1328,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
                 </thead>
                 <tbody>
                   {pvMandat.map((p) => (
-                    <tr key={p.id} className="border-b border-stone-100 hover:bg-stone-50 align-top">
+                    <tr key={p.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100 align-top">
                       <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.data)}</td>
                       <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={p.ordineZi}>{p.ordineZi || "—"}</td>
                       <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={p.decizii}>{p.decizii || "—"}</td>
@@ -4066,6 +4066,50 @@ export default function ParohieERP() {
           dataCreareInstanta: dateLocaleSupabase.dataCreareInstanta || s.dataCreareInstanta,
         }));
         setDateLocaleIncarcate(true);
+
+        // Consolidare automată a comisioanelor bancare — la fiecare deschidere a aplicației,
+        // verificăm dacă există comisioane neconsolidate dintr-o lună deja ÎNCHEIATĂ calendaristic
+        // (nu doar din exercițiul financiar — o lună se consolidează imediat ce s-a terminat,
+        // indiferent dacă exercițiul anului ei mai e deschis). Fiecare lună găsită devine un singur
+        // Ordin de plată nou, datat în ultima ei zi, cu câte o linie per comision — fără nicio
+        // acțiune din partea utilizatorului. O lună al cărei AN e deja închis definitiv rămâne
+        // neconsolidată (nu se pot crea documente noi acolo) — verificată din nou la fiecare pornire.
+        try {
+          const comisioaneNeconsolidate = await getComisioaneBancareNeconsolidate(contActiv.parohieId);
+          if (comisioaneNeconsolidate.length > 0) {
+            const azi = todayISO();
+            const luniDeConsolidat = new Set();
+            for (const c of comisioaneNeconsolidate) {
+              const ultimaZiLuna = new Date(Date.UTC(c.an, c.luna, 0)).toISOString().slice(0, 10);
+              if (azi > ultimaZiLuna) luniDeConsolidat.add(`${c.an}-${c.luna}`);
+            }
+            const exercitii = dateLocaleSupabase.exercitiiFinanciare || {};
+            const tertBanca = dateLocaleSupabase.parohie?.banca || "Bancă";
+            const operatiuniNoiTotal = [];
+            const audituriNoi = [];
+            for (const cheie of luniDeConsolidat) {
+              const [anStr, lunaStr] = cheie.split("-");
+              const an = Number(anStr), luna = Number(lunaStr);
+              if (exercitii[an]?.inchis) continue; // rămâne neconsolidată, reîncercăm altădată
+              const rezultat = await consolideazaComisioaneLuna(contActiv.parohieId, an, luna, tertBanca);
+              if (rezultat) {
+                operatiuniNoiTotal.push(...rezultat.operatiuniNoi);
+                audituriNoi.push(`Comisioane bancare ${String(luna).padStart(2, "0")}/${an} consolidate automat — Ordin de plată nr. ${rezultat.nr}/${rezultat.an}, ${fmt(rezultat.operatiuniNoi.reduce((s, o) => s + o.suma, 0))} lei`);
+              }
+            }
+            if (operatiuniNoiTotal.length > 0) {
+              setState((s) => {
+                let sNou = { ...s, operatiuni: [...s.operatiuni, ...operatiuniNoiTotal] };
+                for (const mesaj of audituriNoi) {
+                  sNou = { ...sNou, jurnalAudit: adaugaAudit(sNou, "Sistem", mesaj) };
+                }
+                return sNou;
+              });
+            }
+          }
+        } catch (eComisioane) {
+          console.error("Eroare la consolidarea automată a comisioanelor bancare:", eComisioane);
+        }
       } catch (e) {
         console.error("Eroare la încărcarea datelor din Supabase:", e);
       }
@@ -5648,7 +5692,7 @@ function Dashboard({ state, setState, derived, setTab, onReceptieRapida, permisi
                 const vechime = zileVechime(d.dataFactura);
                 const veche = vechime > 60;
                 return (
-                  <tr key={d.id} className="border-b border-stone-100">
+                  <tr key={d.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-2 py-1.5">{d.furnizor}</td>
                     <td className="px-2 py-1.5 text-stone-500">{d.nrFactura} (NRCD {d.nrNRCD})</td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(d.sumaRamasa ?? d.suma)}</td>
@@ -6067,8 +6111,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     });
   }
 
-  async function addOrdinPlata({ data, modPlata, tert, linii }) {
-    const { operatiuniNoi, nr, an, renumerotari } = await salveazaDocument(parohieId, {
+  async function addOrdinPlata({ data, modPlata, tert, linii, comisionBancar }) {
+    const { operatiuniNoi, nr, an, renumerotari, documentId } = await salveazaDocument(parohieId, {
       tip: "plata",
       data,
       tert,
@@ -6076,12 +6120,18 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       linii,
     });
     const total = linii.reduce((sum, l) => sum + l.suma, 0);
+    // Comisionul bancar aferent acestei plăți NU se adaugă la suma către partener — se reține
+    // separat, într-o listă de comisioane neconsolidate, și se consolidează automat într-un
+    // singur document, cu o linie per comision, la finalul lunii (vezi consolideazaComisioaneLuna).
+    if (comisionBancar > 0) {
+      await adaugaComisionBancarPending(parohieId, { data, suma: comisionBancar, tert, documentIdOrigine: documentId });
+    }
     setState((s) => {
       const sPatched = aplicaRenumerotari(s, renumerotari);
       return {
         ...sPatched,
         operatiuni: [...sPatched.operatiuni, ...operatiuniNoi],
-        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ordin de plată nr. ${nr}/${an} emis — ${fmt(total)} lei${tert ? " (" + tert + ")" : ""}`),
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ordin de plată nr. ${nr}/${an} emis — ${fmt(total)} lei${tert ? " (" + tert + ")" : ""}${comisionBancar > 0 ? ` — comision bancar ${fmt(comisionBancar)} lei reținut separat` : ""}`),
       };
     });
   }
@@ -6412,15 +6462,15 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeBaraCautare }}>
             <tr className="text-left uppercase tracking-wide text-stone-500">
               <th className="px-2.5 py-2.5">Nr. crt.</th>
-              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom" />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-2.5 align-bottom" />
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom max-w-[78px] break-words" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-2.5 align-bottom max-w-[100px] break-words" />
               <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-2.5 align-bottom" />
               <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-2.5 align-bottom" />
               <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-2.5 align-bottom max-w-[260px]" />
-              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-2.5 align-bottom max-w-[320px]" />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-2.5 align-bottom max-w-[440px]" />
               <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-2.5 align-bottom text-right" />
               <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-2.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="sursa" eticheta="Sursa/Destinație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-2.5 align-bottom" />
+              <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-2.5 align-bottom max-w-[80px] break-words" />
               <th className="px-2.5 py-2.5 text-right">Sold final</th>
               <th className="px-2.5 py-2.5 text-right">Sold „Bancă”</th>
               <th className="px-2.5 py-2.5 text-right">Sold „Casă”</th>
@@ -6446,15 +6496,15 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               </tr>
             )}
             {afisate.map((r) => (
-              <tr key={r.op.id} className="border-b border-stone-100 hover:bg-stone-50">
+              <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-2.5 py-2 tabular-nums text-stone-500">{r.nrCrt}</td>
-                <td className="px-2.5 py-2 tabular-nums leading-tight">
+                <td className="px-2.5 py-2 tabular-nums leading-tight max-w-[78px]">
                   <div className="flex flex-col">
                     <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td className="px-2.5 py-2 tabular-nums">
+                <td className="px-2.5 py-2 tabular-nums max-w-[100px]">
                   {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6488,16 +6538,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                 </td>
                 <td className="px-2.5 py-2 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
                 <td className="px-2.5 py-2 max-w-[260px] whitespace-normal break-words" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
-                <td className="px-2.5 py-2 text-stone-500 max-w-[320px] whitespace-normal break-words" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-2.5 py-2 text-stone-500 max-w-[440px] whitespace-normal break-words" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
                 <td className="px-2.5 py-2 text-right tabular-nums text-emerald-700">
                   {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
                 </td>
                 <td className="px-2.5 py-2 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2.5 py-2">
+                <td className="px-2.5 py-2 max-w-[80px]">
                   <span className="flex items-center gap-1">
-                    {r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}
+                    <span className="whitespace-normal break-words">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</span>
                     {r.cont?.clasa === "viramente" && !permisiuni.citireOnly && (
                       <button
                         type="button"
@@ -7237,6 +7287,7 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   const [modPlataImplicit, setModPlataImplicit] = useState("transfer"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
   const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "transfer", ajustare106: false }]);
+  const [comisionBancar, setComisionBancar] = useState("");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
@@ -7323,6 +7374,10 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
       setError(`Sold insuficient în Bancă! Sold disponibil: ${fmt(derived.soldBanca)} RON, iar liniile pe Bancă însumează ${fmt(totalBanca)} RON.`);
       return false;
     }
+    if (comisionBancar && (isNaN(Number(comisionBancar)) || Number(comisionBancar) < 0)) {
+      setError("Comisionul bancar trebuie să fie un număr valid, cel puțin 0.");
+      return false;
+    }
     setError("");
     return true;
   }
@@ -7337,6 +7392,7 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
           contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie.trim(), modPlata: l.modPlata,
           ajustare106: l.contId === "106" ? l.ajustare106 : false,
         })),
+        comisionBancar: Number(comisionBancar) || 0,
       });
     } catch (e) {
       setError(e.message || "Eroare la salvarea ordinului de plată. Încearcă din nou.");
@@ -7458,6 +7514,20 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
             </div>
           )}
         </Card>
+
+        {totalBanca > 0 && (
+          <Field label="Comision bancar la această plată (opțional, RON)">
+            <input
+              type="number" step="0.01" min="0" className={inputCls}
+              value={comisionBancar} onChange={(e) => setComisionBancar(e.target.value)}
+              placeholder="0,00"
+            />
+            <span className="text-xs text-stone-400">
+              Nu se adaugă la suma către {tert || "partener"} — se reține separat și se consolidează automat
+              într-un singur document, la finalul lunii.
+            </span>
+          </Field>
+        )}
 
         {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
 
@@ -7685,7 +7755,7 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
               {perechi.map((p, i) => {
                 const op = p.plata || p.incasare;
                 return (
-                  <tr key={i} className="border-b border-stone-100 hover:bg-stone-50">
+                  <tr key={i} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-2 py-2 tabular-nums">{fmtDataJurnal(op.data)}</td>
                     <td className="px-2 py-2 font-mono text-xs">{op.contId} <span className="text-stone-400">({p.cont?.denumire})</span></td>
                     <td className="px-2 py-2 text-stone-500 max-w-[280px] whitespace-normal break-words" title={op.explicatie}>{op.explicatie}</td>
@@ -7890,7 +7960,7 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
             {afisate.map((c) => {
               const rulaj = derived.rulajPeCont[c.id] || { incasari: 0, plati: 0 };
               return (
-                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 font-medium tabular-nums">{c.simbol}</td>
                   <td className="px-3 py-2">
                     {c.denumire} {c.special && <span className="ml-1 text-[10px] text-[#B8860B] border border-[#B8860B]/40 rounded px-1 py-0.5">special</span>}
@@ -9005,7 +9075,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                       : g.stareLabel === "Scăzut" ? "text-amber-700 bg-amber-50"
                       : "text-emerald-700 bg-emerald-50";
                     return (
-                      <tr key={g.bazaCod} className="border-b border-stone-100 hover:bg-stone-50">
+                      <tr key={g.bazaCod} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                         <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs font-mono">({g.bazaCod})</span></td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtCant(g.stocTotal)} {g.um}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{fmt(g.valoareTotal)}</td>
@@ -9056,7 +9126,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </thead>
             <tbody>
               {coduriAfisate.map((a) => (
-                <tr key={a.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={a.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2">{a.denumire}</td>
                   <td className="px-3 py-2 font-mono text-xs font-medium text-[#1F3864]">{a.cod}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-stone-500">{fmt(a.pretAchizitie)}</td>
@@ -9144,7 +9214,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 ...grup.linii.map((m, i) => {
                   const art = state.articole.find((a) => a.id === m.articolId);
                   return (
-                    <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                    <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                       {i === 0 && (
                         <>
                           <td className="px-3 py-2 align-top" rowSpan={grup.linii.length}>
@@ -9302,7 +9372,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[v.anChitanta]?.inchisDefinitiv;
               const cheieSelectie = `${v.anChitanta}-${v.nrChitanta}`;
               return (
-                <tr key={cheieSelectie} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={cheieSelectie} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2">
                     <input type="checkbox" checked={selectieIesiri.has(cheieSelectie)} onChange={() => toggleSelectieIesiri(cheieSelectie)} />
                   </td>
@@ -9839,7 +9909,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
               {miscariStocInitiale.map((m) => {
                 const art = articole.find((a) => a.id === m.articolId);
                 return (
-                  <tr key={m.id} className="border-b border-stone-100">
+                  <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
                     <td className="px-3 py-2 max-w-xs whitespace-normal break-words" title={art?.denumire || "—"}>{art?.denumire || "—"}</td>
                     <td className="px-3 py-2 text-right">
@@ -9900,7 +9970,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
             </thead>
             <tbody>
               {liniiNoi.map((l) => (
-                <tr key={l.key} className="border-b border-stone-100">
+                <tr key={l.key} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2">
                     <select className={`${inputCls} w-72`} value={l.articolId} onChange={(e) => actualizeazaLinieNoua(l.key, "articolId", e.target.value)}>
                       <option value="">— alege produs —</option>
@@ -10955,7 +11025,7 @@ function ExecutieBugetaraRand({ cont, bugetat, realizat }) {
   const procent = bugetat > 0 ? (realizat / bugetat) * 100 : realizat > 0 ? 100 : 0;
 
   return (
-    <tr className="border-b border-stone-100">
+    <tr className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
       <td className="px-2 py-1.5 font-mono tabular-nums">{cont.simbol}</td>
       <td className="px-2 py-1.5">{cont.denumire}</td>
       <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(bugetat)}</td>
@@ -10979,7 +11049,7 @@ function RulajTable({ conturi, rulajPeCont, tip }) {
       </thead>
       <tbody>
         {conturi.map((c) => (
-          <tr key={c.id} className="border-b border-stone-100">
+          <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
             <td className="px-2 py-1.5 tabular-nums">{c.simbol}</td>
             <td className="px-2 py-1.5">{c.denumire}</td>
             <td className="px-2 py-1.5 text-right tabular-nums">{fmt((rulajPeCont[c.id] || {})[tip] || 0)}</td>
@@ -11055,7 +11125,7 @@ function RaportDetaliatPartizi({ titlu, grupuri, parohie }) {
                     <td className="px-2 py-1.5 text-right tabular-nums">{fmt(g.total)}</td>
                   </tr>
                   {g.randuri.map((r) => (
-                    <tr key={r.op.id} className="border-b border-stone-100 hover:bg-stone-50">
+                    <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                       <td className="px-2 py-1.5 font-mono text-stone-400">{g.cont.simbol}</td>
                       <td className="px-2 py-1.5 text-stone-400">{g.cont.denumire}</td>
                       <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
@@ -11924,7 +11994,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
               <tr><td colSpan={3} className="px-3 py-6 text-center text-stone-400">Niciun articol găsit.</td></tr>
             )}
             {articoleAfisate.map((g) => (
-              <tr key={`${g.denumire}|||${g.um}`} className="border-b border-stone-100 hover:bg-stone-50">
+              <tr key={`${g.denumire}|||${g.um}`} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs">({g.um})</span></td>
                 <td className="px-3 py-2 text-right tabular-nums font-medium">{g.stocTotal}</td>
                 <td className="px-3 py-2 text-xs text-stone-500">
@@ -11957,7 +12027,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
               const lot = state.articoleConsumIntern.find((a) => a.id === m.articolId);
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[yearOf(m.data)]?.inchisDefinitiv;
               return (
-                <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(m.data)}</td>
                   <td className="px-3 py-2">{lot?.denumire || m.articolId}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
@@ -12005,7 +12075,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[bon.an]?.inchisDefinitiv;
               const totalBon = bon.linii.reduce((sum, l) => sum + l.valoare, 0);
               return (
-                <tr key={bon.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={bon.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 tabular-nums">{bon.nr}/{bon.an}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(bon.data)}</td>
                   <td className="px-3 py-2">{MOTIVE_CONSUM[bon.motiv]?.label || bon.motiv}</td>
@@ -12059,7 +12129,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
               <tr><td colSpan={5} className="px-2 py-4 text-center text-stone-400">Niciun bon găsit.</td></tr>
             )}
             {bonuriAfisate.map((b) => (
-              <tr key={b.id} className="border-b border-stone-100">
+              <tr key={b.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-2 py-1.5 tabular-nums">{b.nr}/{b.an}</td>
                 <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(b.data)}</td>
                 <td className="px-2 py-1.5">{MOTIVE_CONSUM[b.motiv].label}</td>
@@ -12574,7 +12644,7 @@ function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, on
                   const lot = articole.find((a) => a.id === m.articolId);
                   if (!lot) return null;
                   return (
-                    <tr key={m.id} className="border-b border-stone-100">
+                    <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                       <td className="px-3 py-2">{lot.denumire}</td>
                       <td className="px-3 py-2 text-stone-500">{lot.um}</td>
                       <td className="px-3 py-2 text-right">
@@ -12965,7 +13035,7 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
               <tr><td colSpan={6} className="px-3 py-6 text-center text-stone-400">Niciun bun găsit.</td></tr>
             )}
             {bunuriAfisate.map((b) => (
-              <tr key={b.id} className="border-b border-stone-100 hover:bg-stone-50">
+              <tr key={b.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-3 py-2 font-medium">
                   {b.denumire}
                   {b.valoare >= PRAG_BUN_VALOARE_MARE && (
@@ -13006,7 +13076,7 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
             </thead>
             <tbody>
               {bunuriCasate.map((b) => (
-                <tr key={b.id} className="border-b border-stone-100 text-stone-500">
+                <tr key={b.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100 text-stone-500">
                   <td className="px-3 py-2 line-through">{b.denumire}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(b.dataCasare)}</td>
                   <td className="px-3 py-2">{b.motivCasare}</td>
@@ -13036,7 +13106,7 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
               <tr><td colSpan={4} className="px-2 py-4 text-center text-stone-400">Nicio inventariere înregistrată încă.</td></tr>
             )}
             {inventarieriSortate.map((pv) => (
-              <tr key={pv.id} className="border-b border-stone-100">
+              <tr key={pv.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-2 py-1.5 tabular-nums">{pv.nrPV}/{pv.an}</td>
                 <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(pv.data)}</td>
                 <td className="px-2 py-1.5 text-stone-500">{pv.membri.join(", ")}</td>
@@ -13533,7 +13603,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
             {locuriAfisate.map((l) => {
               const stareTone = l.stare === "disponibil" ? "text-emerald-700 bg-emerald-50" : l.stare === "concesionat" ? "text-amber-700 bg-amber-50" : "text-stone-500 bg-stone-100";
               return (
-                <tr key={l.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={l.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 font-mono font-medium">{l.codParcela}</td>
                   <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{l.stare}</span></td>
                   <td className="px-3 py-2">
@@ -13578,7 +13648,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
               if (c.expirataDefinitiv) { stareLabel = "Expirată — loc eliberat"; stareTone = "text-stone-500 bg-stone-100"; }
               else if (inTermenSuccesori) { stareLabel = "Expirată — termen succesori activ"; stareTone = "text-rose-700 bg-rose-50"; }
               return (
-                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 font-mono">{loc?.codParcela}</td>
                   <td className="px-3 py-2">{c.concesionar}</td>
                   <td className="px-3 py-2 text-stone-500">{DURATE_CONCESIUNE[c.tipDurata]}</td>
@@ -13632,7 +13702,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
               const concesiuneLoc = state.concesiuni.find((c) => c.locId === p.locId);
               const esteConcesionarul = concesiuneLoc && concesiuneLoc.concesionar.trim().toLowerCase() === p.nume.trim().toLowerCase();
               return (
-                <tr key={p.id} className="border-b border-stone-100">
+                <tr key={p.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 font-medium">{p.nume}</td>
                   <td className="px-3 py-2 font-mono text-stone-500">{loc?.codParcela}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.dataDeces)}</td>
@@ -14138,7 +14208,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
               const depasit = c.termenRaspuns && c.termenRaspuns < azi && c.status === "in_lucru";
               const aproape = c.termenRaspuns && !depasit && c.status === "in_lucru" && (new Date(c.termenRaspuns) - new Date(azi)) / 86400000 <= 5;
               return (
-                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(c.data)}</td>
                   <td className="px-3 py-2">{c.partener}</td>
@@ -14205,7 +14275,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
             {iesiriAfisate.map((c) => {
               const referinta = state.corespondenta.find((x) => x.id === c.referintaIntrareId);
               return (
-                <tr key={c.id} className="border-b border-stone-100 hover:bg-stone-50">
+                <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   <td className="px-3 py-2 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
                   <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(c.data)}</td>
                   <td className="px-3 py-2">{c.partener}</td>
@@ -14245,7 +14315,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
               <tr><td colSpan={4} className="px-2 py-4 text-center text-stone-400">Niciun document încă.</td></tr>
             )}
             {documenteFiltrate.map((d) => (
-              <tr key={d.id} className="border-b border-stone-100">
+              <tr key={d.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-2 py-1.5 font-medium">{d.denumire}</td>
                 <td className="px-2 py-1.5 text-stone-500">{d.categorie}</td>
                 <td className="px-2 py-1.5 tabular-nums">{d.an}</td>
@@ -14906,7 +14976,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
               </thead>
               <tbody>
                 {docCurent.linii.map((l) => (
-                  <tr key={l.id} className="border-t border-stone-100">
+                  <tr key={l.id} className="border-t border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-2 py-1.5 font-mono">{contById[l.contId]?.simbol || l.contId}</td>
                     <td className="px-2 py-1.5 text-stone-500">{l.explicatie || "—"}</td>
                     <td className="px-2 py-1.5 text-stone-500">{l.modPlata === "numerar" ? "Casă" : "Bancă"}</td>
@@ -15272,7 +15342,7 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
             </thead>
             <tbody>
               {docCurent.linii.map((l, i) => (
-                <tr key={i} className="border-t border-stone-100">
+                <tr key={i} className="border-t border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                   {coloaneLinii.map((c) => <td key={c.label} className={`px-2 py-1.5 ${c.right ? "text-right tabular-nums" : ""}`}>{c.value(l)}</td>)}
                 </tr>
               ))}
@@ -15390,7 +15460,7 @@ function AuditModal({ jurnalAudit, onClose }) {
               <tr><td colSpan={4} className="px-2 py-6 text-center text-stone-400">Nicio înregistrare încă.</td></tr>
             )}
             {afisate.map((a) => (
-              <tr key={a.id} className="border-b border-stone-100">
+              <tr key={a.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(a.data)}</td>
                 <td className="px-2 py-1.5 tabular-nums text-stone-500">{a.ora}</td>
                 <td className="px-2 py-1.5 text-stone-500">{a.rol}</td>

@@ -1596,6 +1596,90 @@ export async function marcheazaNRCDAchitat(documentId) {
   if (error) throw error;
 }
 
+// Comisioane bancare — vezi comisioane_bancare_pending. Un comision se înregistrează individual,
+// în momentul plății care l-a generat, dar NU intră în acel Ordin de plată — rămâne separat,
+// "neconsolidat", până la finalul lunii, când toate comisioanele lunii sunt adunate într-un singur
+// document nou (vezi consolideazaComisioaneLuna), cu câte o linie proprie pentru fiecare.
+export async function adaugaComisionBancarPending(parohieId, { data, suma, tert, documentIdOrigine }) {
+  const an = Number(data.slice(0, 4));
+  const luna = Number(data.slice(5, 7));
+  const { error } = await supabase.from("comisioane_bancare_pending").insert({
+    parohie_id: parohieId,
+    data,
+    suma,
+    tert: tert || null,
+    document_id_origine: documentIdOrigine || null,
+    an,
+    luna,
+  });
+  if (error) throw error;
+}
+
+// Toate comisioanele încă neconsolidate ale parohiei — indiferent din ce lună/an — citite o
+// singură dată, la încărcarea aplicației, ca să se poată decide ce luni sunt gata de consolidat
+// (vezi consolideazaComisioaneLuna, apelată din ParohieERP.jsx pentru fiecare lună deja încheiată).
+export async function getComisioaneBancareNeconsolidate(parohieId) {
+  const { data, error } = await supabase
+    .from("comisioane_bancare_pending")
+    .select("*")
+    .eq("parohie_id", parohieId)
+    .eq("consolidat", false)
+    .order("data", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((c) => ({
+    id: c.id,
+    data: c.data,
+    suma: Number(c.suma),
+    tert: c.tert,
+    documentIdOrigine: c.document_id_origine,
+    an: c.an,
+    luna: c.luna,
+  }));
+}
+
+// Consolidează TOATE comisioanele neconsolidate ale unei singure luni (an, luna) într-un singur
+// Ordin de plată nou, datat în ultima zi calendaristică a acelei luni, cu câte o linie separată
+// pentru fiecare comision — exact numărul de linii cât comisioane au fost înregistrate în luna
+// respectivă, ca să corespundă 1-la-1 cu extrasul de cont bancar. Marchează apoi comisioanele
+// incluse drept consolidate, legate de noul document. Nu creează nimic dacă nu există comisioane
+// neconsolidate pentru luna cerută (apelantul verifică asta înainte, dar funcția e sigură oricum).
+export async function consolideazaComisioaneLuna(parohieId, an, luna, tertBanca) {
+  const { data: comisioane, error: errC } = await supabase
+    .from("comisioane_bancare_pending")
+    .select("*")
+    .eq("parohie_id", parohieId)
+    .eq("consolidat", false)
+    .eq("an", an)
+    .eq("luna", luna)
+    .order("data", { ascending: true });
+  if (errC) throw errC;
+  if (!comisioane || comisioane.length === 0) return null;
+
+  const ultimaZi = new Date(Date.UTC(an, luna, 0)).toISOString().slice(0, 10); // ziua 0 a lunii următoare = ultima a lunii curente
+  const linii = comisioane.map((c) => ({
+    contId: "627",
+    suma: Number(c.suma),
+    modPlata: "transfer",
+    explicatie: `Comision bancar — plată din ${c.data}${c.tert ? ` către ${c.tert}` : ""}`,
+  }));
+
+  const rezultat = await salveazaDocument(parohieId, {
+    tip: "plata",
+    data: ultimaZi,
+    tert: tertBanca || "Bancă",
+    modPlata: "transfer",
+    linii,
+  });
+
+  const { error: errUpd } = await supabase
+    .from("comisioane_bancare_pending")
+    .update({ consolidat: true, document_id_consolidare: rezultat.documentId })
+    .in("id", comisioane.map((c) => c.id));
+  if (errUpd) throw errUpd;
+
+  return rezultat;
+}
+
 // Șterge un document (Chitanță/Ordin de plată) și liniile lui — apelantul e responsabil să
 // verifice ÎNAINTE că documentul e eligibil pentru ștergere (nu e excedent reportat, nu e legat
 // de stocuri Pangar, nu e virament intern 581); funcția aceasta doar execută ștergerea propriu-zisă.
