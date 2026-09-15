@@ -12,6 +12,7 @@ import {
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
 import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
+import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
   ArrowDownCircle, ArrowUpCircle, AlertTriangle, ArrowLeftRight,
@@ -78,7 +79,7 @@ const fmt = (n) =>
 // supabaseData.js, care face aceeași normalizare pe textul de explicație stocat în bază). Se
 // aplică doar la AFIȘARE — câmpurile editabile (<input>) rămân neatinse, ca să nu stricăm
 // introducerea datelor.
-const fmtCant = (n) => Math.round(Number(n)).toLocaleString("ro-RO");
+const fmtCant = formateazaCantitate;
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -4167,7 +4168,7 @@ export default function ParohieERP() {
             const azi = todayISO();
             const luniDeConsolidat = new Set();
             for (const c of comisioaneNeconsolidate) {
-              const ultimaZiLuna = new Date(Date.UTC(c.an, c.luna, 0)).toISOString().slice(0, 10);
+              const ultimaZiLuna = ultimaZiCalendaristica(c.an, c.luna);
               if (azi > ultimaZiLuna) luniDeConsolidat.add(`${c.an}-${c.luna}`);
             }
             const exercitii = dateLocaleSupabase.exercitiiFinanciare || {};
@@ -5472,9 +5473,8 @@ function AdminMfaUnlockModal({ parohieId, utilizatorPropriuId, onClose }) {
 async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati, data) {
   const datorie = (state.datoriiFurnizori || []).find((d) => d.id === datorieId);
   const sumaRamasaCurenta = datorie.sumaRamasa ?? datorie.suma;
-  const platiValide = plati.map((p) => ({ modPlata: p.modPlata, suma: Math.round(Number(p.suma) * 100) / 100 })).filter((p) => p.suma > 0.004);
-  const suma = Math.round(platiValide.reduce((s, p) => s + p.suma, 0) * 100) / 100;
-  if (platiValide.length === 0 || !(suma > 0) || suma > sumaRamasaCurenta + 0.01) {
+  const { platiValide, suma } = normalizeazaPlati(plati);
+  if (!esteAchitareValida(platiValide, suma, sumaRamasaCurenta)) {
     throw new Error("Suma de plată introdusă nu este validă (trebuie să fie mai mare decât zero și cel mult egală cu restul de plată).");
   }
   const esteIntegrala = Math.abs(suma - sumaRamasaCurenta) < 0.01;
@@ -5482,21 +5482,14 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
   // Restul rămas pe fiecare categorie bugetară, după plățile parțiale deja făcute pe această
   // factură — necesar ca o achitare parțială nouă să distribuie corect suma introdusă (nu
   // suma totală inițială a categoriei, care poate fi deja parțial acoperită).
-  const platitPeCont = {};
-  for (const p of datorie.platiExistente || []) {
-    for (const l of p.liniiPeCont || []) {
-      platitPeCont[l.contId] = (platitPeCont[l.contId] || 0) + l.suma;
-    }
-  }
-  const liniiCuRest = (datorie.liniiAchizitie && datorie.liniiAchizitie.length > 0)
-    ? datorie.liniiAchizitie
-        .map((l) => {
-          const contId = CATEGORII_PANGAR[l.categorieBVC]?.achizitie || datorie.contId;
-          const rest = l.suma - (platitPeCont[contId] || 0);
-          return { contId, rest };
-        })
-        .filter((l) => l.rest > 0.005)
-    : [{ contId: datorie.contId || CATEGORII_PANGAR[datorie.categorieBVC]?.achizitie, rest: sumaRamasaCurenta }];
+  const liniiCuRest = calculeazaLiniiCuRest({
+    liniiAchizitie: datorie.liniiAchizitie,
+    platiExistente: datorie.platiExistente,
+    categoriiPangar: CATEGORII_PANGAR,
+    contIdFallback: datorie.contId,
+    categorieBVCFallback: datorie.categorieBVC,
+    sumaRamasaCurenta,
+  });
 
   const explicatie = `Achitare factură ${datorie.nrFactura} (NRCD nr. ${datorie.nrNRCD}/${datorie.anNRCD || yearOf(datorie.dataFactura)})${esteIntegrala ? "" : " — plată parțială"}`;
 
@@ -5506,31 +5499,8 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
   // re-împarte, proporțional cu raportul casă/bancă din `plati`, în câte o linie separată per
   // sursă — tot cu ultima sursă absorbind rotunjirea, de data asta în interiorul categoriei —
   // ca totalul liniilor să fie mereu exact suma introdusă, atât per categorie cât și per sursă.
-  let alocatCategorie = 0;
-  const linii = [];
-  liniiCuRest.forEach((l, idx) => {
-    const esteUltimaCategorie = idx === liniiCuRest.length - 1;
-    const parteCategorie = esteUltimaCategorie
-      ? Math.round((suma - alocatCategorie) * 100) / 100
-      : Math.round((suma * (l.rest / sumaRamasaCurenta)) * 100) / 100;
-    alocatCategorie += parteCategorie;
-    if (parteCategorie <= 0.004) return;
-
-    if (platiValide.length === 1) {
-      linii.push({ contId: l.contId, suma: parteCategorie, modPlata: platiValide[0].modPlata, explicatie });
-      return;
-    }
-    let alocatSursa = 0;
-    platiValide.forEach((p, pidx) => {
-      const esteUltimaSursa = pidx === platiValide.length - 1;
-      const parteSursa = esteUltimaSursa
-        ? Math.round((parteCategorie - alocatSursa) * 100) / 100
-        : Math.round((parteCategorie * (p.suma / suma)) * 100) / 100;
-      alocatSursa += parteSursa;
-      if (parteSursa <= 0.004) return;
-      linii.push({ contId: l.contId, suma: parteSursa, modPlata: p.modPlata, explicatie });
-    });
-  });
+  // (matematica exactă, cu toate cazurile limită, e verificată automat — vezi tests/pangarFinanciar.test.mjs)
+  const linii = construiesteLiniiAchitare({ liniiCuRest, suma, sumaRamasaCurenta, platiValide, explicatie });
 
   const rezultat = await salveazaDocument(parohieId, {
     tip: "plata",

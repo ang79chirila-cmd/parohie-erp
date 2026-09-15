@@ -13,6 +13,7 @@
 // limitare reală, de reținut dacă apare vreodată nevoia de concurență ridicată.
 
 import { supabase } from "./supabaseClient";
+import { ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 
 // Formatează o cantitate pentru textul de explicație al unei operațiuni — mereu convertită
 // explicit prin Number() (apără împotriva unei valori care ar ajunge aici ca text brut, de
@@ -20,9 +21,8 @@ import { supabase } from "./supabaseClient";
 // afișată FĂRĂ NICIO ZECIMALĂ — unitățile de măsură (buc., kg) nu se afișează niciodată cu
 // zecimale, ca să nu poată fi confundate cu o sumă de bani sau cu o valoare de mii. Zecimalele
 // rămân doar pentru sumele în lei, formatate separat prin fmt() în ParohieERP.jsx.
-function fmtCantitate(n) {
-  return Math.round(Number(n)).toLocaleString("ro-RO");
-}
+// (aceeași funcție, testată automat — vezi tests/pangarFinanciar.test.mjs)
+const fmtCantitate = formateazaCantitate;
 
 /* ------------------------- Exerciții financiare ------------------------- */
 
@@ -1660,7 +1660,7 @@ export async function consolideazaComisioaneLuna(parohieId, an, luna, tertBanca)
   if (errC) throw errC;
   if (!comisioane || comisioane.length === 0) return null;
 
-  const ultimaZi = new Date(Date.UTC(an, luna, 0)).toISOString().slice(0, 10); // ziua 0 a lunii următoare = ultima a lunii curente
+  const ultimaZi = ultimaZiCalendaristica(an, luna);
   const linii = comisioane.map((c) => ({
     contId: "627",
     suma: Number(c.suma),
