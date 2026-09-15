@@ -13,7 +13,7 @@ import {
   construiesteLiniiAchitare,
   ultimaZiCalendaristica,
   formateazaCantitate,
-} from "../pangarFinanciar.mjs";
+} from "../src/pangarFinanciar.mjs";
 
 describe("normalizeazaPlati", () => {
   test("elimină sursele cu sumă zero sau neglijabilă", () => {
