@@ -1723,14 +1723,14 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
             onClick={() => onSort(cheie)}
             className={`inline-flex items-center gap-1 text-left hover:text-stone-700 select-none font-medium ${activ ? "text-stone-800" : ""}`}
           >
-            <span>{eticheta}</span>
+            <span className="break-words">{eticheta}</span>
             <span className="inline-flex flex-col leading-none -space-y-0.5">
               <ChevronUp size={10} className={activ && sortDirectie === "asc" ? "text-[#1F3864]" : "text-stone-300"} />
               <ChevronDown size={10} className={activ && sortDirectie === "desc" ? "text-[#1F3864]" : "text-stone-300"} />
             </span>
           </button>
         ) : (
-          <span className="font-medium">{eticheta}</span>
+          <span className="font-medium break-words">{eticheta}</span>
         )}
         <input
           list={listaId}
@@ -6405,6 +6405,13 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       .filter(([, valoare]) => valoare && String(valoare).trim() !== "")
       .map(([cheie, valoare]) => ({ eticheta: ETICHETE_FILTRE_JURNAL[cheie] || cheie, valoare: String(valoare) })),
     ...(cautare && cautare.trim() !== "" ? [{ eticheta: "Căutare generală", valoare: cautare }] : []),
+    ...(dataStart && dataSfarsit
+      ? [{ eticheta: "Interval de date", valoare: `${fmtDataJurnal(dataStart)} – ${fmtDataJurnal(dataSfarsit)}` }]
+      : dataStart
+      ? [{ eticheta: "Interval de date", valoare: `de la ${fmtDataJurnal(dataStart)}` }]
+      : dataSfarsit
+      ? [{ eticheta: "Interval de date", valoare: `până la ${fmtDataJurnal(dataSfarsit)}` }]
+      : []),
   ];
 
   const coloaneJurnal = [
@@ -6551,16 +6558,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeBaraCautare }}>
             <tr className="text-left uppercase tracking-wide text-stone-500">
-              <th className="px-2.5 py-1 font-medium">Nr. crt.</th>
-              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-1.5 align-bottom max-w-[115px] min-w-[115px]" />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1.5 align-bottom max-w-[100px] min-w-[100px]" />
-              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1.5 align-bottom" />
-              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-1.5 align-bottom" />
-              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-1.5 align-bottom max-w-[260px]" />
-              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-1.5 align-bottom max-w-[440px]" />
-              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-1.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-1.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-1.5 align-bottom max-w-[105px] min-w-[105px]" />
+              <th className="px-1.5 py-1 font-medium max-w-[46px] min-w-[46px]">Nr. crt.</th>
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2 py-1 align-bottom max-w-[128px] min-w-[128px]" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1 align-bottom max-w-[100px] min-w-[100px]" />
+              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1 align-bottom" />
+              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-1 align-bottom" />
+              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-1 align-bottom max-w-[260px]" />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-1 align-bottom max-w-[440px]" />
+              <AntetFiltrabil cheie="incasare" eticheta={<>Încasare<br />(lei)</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2 py-1 align-bottom text-right max-w-[104px] min-w-[104px]" />
+              <AntetFiltrabil cheie="plata" eticheta={<>Plată<br />(lei)</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2 py-1 align-bottom text-right max-w-[104px] min-w-[104px]" />
+              <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2 py-1 align-bottom max-w-[116px] min-w-[116px]" />
               <th className="px-2.5 py-1 text-right font-medium">Sold final</th>
               <th className="px-2.5 py-1 text-right font-medium">Sold „Bancă”</th>
               <th className="px-2.5 py-1 text-right font-medium">Sold „Casă”</th>
@@ -6587,7 +6594,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             )}
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-2.5 py-1 tabular-nums text-stone-500">{r.nrCrt}</td>
+                <td className="px-1.5 py-1 tabular-nums text-stone-500 max-w-[46px] min-w-[46px]">{r.nrCrt}</td>
                 <td className="px-2.5 py-1 tabular-nums leading-tight max-w-[115px] min-w-[115px]">
                   <div className="flex flex-col">
                     <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
@@ -9173,8 +9180,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
                   <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
                     <AntetFiltrabil cheie="produs" eticheta="Produs" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("produs")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
-                    <AntetFiltrabil cheie="stoc" eticheta="Cantitate stoc" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stoc")} className="px-3 py-2 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
-                    <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la preț vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-2 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
+                    <AntetFiltrabil cheie="stoc" eticheta="Cantitate stoc" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stoc")} className="px-3 py-1 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
+                    <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la preț vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-1 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="coduri" eticheta="Coduri active" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("coduri")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="stare" eticheta="Stare" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stare")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <th className="px-3 py-1"></th>
@@ -12104,7 +12111,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
               <AntetFiltrabil cheie="articol" eticheta="Articol" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("articol")} />
-              <AntetFiltrabil cheie="stoc" eticheta="Stoc curent" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("stoc")} className="px-3 py-2 align-bottom text-right" />
+              <AntetFiltrabil cheie="stoc" eticheta="Stoc curent" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("stoc")} className="px-3 py-1 align-bottom text-right" />
               <th className="px-3 py-1">Loturi active (FIFO, cel mai vechi primul)</th>
             </tr>
           </thead>
