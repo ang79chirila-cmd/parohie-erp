@@ -2006,13 +2006,20 @@ function esteValoareNumericaAfisata(v) {
   return esteSumaFormatata(s) || /^-?\d+([.,]\d+)?(\s*%|\s+\p{L}+)?$/u.test(s);
 }
 
-function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta) {
+function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie, infoSelectie) {
   const p = parohie || {};
+  const esteSelectie = !!(infoSelectie && infoSelectie.criterii && infoSelectie.criterii.length > 0);
+  const anMatch = /PE ANUL (\d{4})/.exec(titlu);
   const antet = [
     [`Denumirea unității de cult: ${p.denumire || ""}`],
     [`Cod fiscal: ${p.cif || ""}`],
     [`Preot Paroh: ${p.preotParoh || ""}`],
     [`Data: ${calculeazaDataRaport(titlu, dataRaportCurenta)}`],
+    ...(esteSelectie ? [
+      [`RAPORT DE SELECȚIE (nu conține toate înregistrările${anMatch ? ` din anul ${anMatch[1]}` : ""})`],
+      [`Criterii de selecție: ${infoSelectie.criterii.map((c) => `${c.eticheta}: "${c.valoare}"`).join("; ")}`],
+      [`Înregistrări incluse în selecție: ${rows.length} din ${infoSelectie.totalInregistrariAn}${anMatch ? ` (total operațiuni pe anul ${anMatch[1]})` : ""}`],
+    ] : []),
     [],
   ];
   const aoa = [...antet, columns.map((c) => c.label), ...rows.map((r) => columns.map((c) => parseSumaFormatata(r[c.key] ?? "")))];
@@ -2022,8 +2029,10 @@ function exportXLSX(titlu, columns, rows, parohie, dataRaportCurenta) {
   XLSX.writeFile(wb, `${titlu}.xlsx`);
 }
 
-function exportXML(titlu, columns, rows, parohie, dataRaportCurenta) {
+function exportXML(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie, infoSelectie) {
   const p = parohie || {};
+  const esteSelectie = !!(infoSelectie && infoSelectie.criterii && infoSelectie.criterii.length > 0);
+  const anMatch = /PE ANUL (\d{4})/.exec(titlu);
   const antet = `<Antet>
     <DenumireUnitateCult>${xmlEscape(p.denumire)}</DenumireUnitateCult>
     <CodFiscal>${xmlEscape(p.cif)}</CodFiscal>
@@ -2031,7 +2040,14 @@ function exportXML(titlu, columns, rows, parohie, dataRaportCurenta) {
     <Protoierie>${xmlEscape(p.protoierie)}</Protoierie>
     <PreotParoh>${xmlEscape(p.preotParoh)}</PreotParoh>
     <DataGenerare>${xmlEscape(calculeazaDataRaport(titlu, dataRaportCurenta))}</DataGenerare>
-  </Antet>`;
+  </Antet>${esteSelectie ? `
+  <Selectie>
+    <EsteRaportDeSelectie>true</EsteRaportDeSelectie>
+    <Criterii>${infoSelectie.criterii.map((c) => `<Criteriu><Eticheta>${xmlEscape(c.eticheta)}</Eticheta><Valoare>${xmlEscape(c.valoare)}</Valoare></Criteriu>`).join("")}</Criterii>
+    <InregistrariIncluse>${rows.length}</InregistrariIncluse>
+    <TotalInregistrariAn>${infoSelectie.totalInregistrariAn}</TotalInregistrariAn>
+    ${anMatch ? `<AnRaport>${anMatch[1]}</AnRaport>` : ""}
+  </Selectie>` : ""}`;
   const randuri = rows
     .map((r) => `  <Rand>${columns.map((c) => `<${c.key}>${xmlEscape(r[c.key])}</${c.key}>`).join("")}</Rand>`)
     .join("\n");
@@ -3211,7 +3227,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
   setTimeout(() => win.print(), 300);
 }
 
-function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [], extraCoperta = "" }) {
+function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [], extraCoperta = "", infoSelectie = null }) {
   const [open, setOpen] = useState(false);
   const [dataRaport, setDataRaport] = useState(todayISO());
   const [orientare, setOrientare] = useState("portrait");
@@ -3231,7 +3247,7 @@ function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDi
   const coloaneSelectabile = columns.filter((c) => !coloaneExcluseDinSelectie.includes(c.key));
 
   function run(fn) {
-    fn(titlu, columns, rows, parohie, dataRaport, orientare, formatHartie);
+    fn(titlu, columns, rows, parohie, dataRaport, orientare, formatHartie, infoSelectie);
     setOpen(false);
   }
 
@@ -6550,6 +6566,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               rows={randuriExportJurnal}
               parohie={state.parohie}
               coloaneExcluseDinSelectie={["soldDepozit", "incasare", "plata", "explicatie"]}
+              infoSelectie={{ criterii: criteriiSelectie, totalInregistrariAn: randuri.length }}
               customPdf={({ dataRaport, orientare, formatHartie, coloane }) =>
                 genereazaJurnalPDFCuTotalCumulat(filtrate, coloane || coloaneJurnal, soldDepozitAn, state.parohie, anSelectat, dataRaport, orientare, formatHartie, { criterii: criteriiSelectie, totalInregistrariAn: randuri.length })
               }
@@ -10834,6 +10851,24 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
   const [formatHartieRaportAnual, setFormatHartieRaportAnual] = useState("A4");
   const [dataStart, setDataStart] = useState(`${aniDisponibili[0]}-01-01`);
   const [dataFinal, setDataFinal] = useState(todayISO());
+  // Fișe de cont — cerute explicit: fișă individuală (un singur art. bugetar) SAU fișă de conturi
+  // (selecție multiplă), extrase din același rulaj ca Partizile, dar restrânse la conturile alese
+  // de utilizator, nu la toate conturile clasei. Se resetează selecția la schimbarea tipului
+  // (venituri/cheltuieli) — un id de cont de venit selectat n-are sens păstrat când utilizatorul
+  // trece pe cheltuieli.
+  const [tipFisaCont, setTipFisaCont] = useState("venituri"); // "venituri" | "cheltuieli"
+  const [conturiSelectateFisa, setConturiSelectateFisa] = useState(new Set());
+  function comutaTipFisaCont(tip) {
+    setTipFisaCont(tip);
+    setConturiSelectateFisa(new Set());
+  }
+  function comutaContFisa(id) {
+    setConturiSelectateFisa((prev) => {
+      const nou = new Set(prev);
+      if (nou.has(id)) nou.delete(id); else nou.add(id);
+      return nou;
+    });
+  }
 
   // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/Pangar.
   // Codificată ca "tip:format" (ex. "partiziVenituri:xlsx"), ca fiecare tip de raport să poată fi
@@ -10971,6 +11006,41 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
     else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
   }
 
+  function genereazaFisaConturi(format = "pdf") {
+    const eVenituri = tipFisaCont === "venituri";
+    const conturiSursa = eVenituri ? venituriConturi : cheltuieliConturi;
+    const conturiAlese = conturiSursa.filter((c) => conturiSelectateFisa.has(c.id));
+    if (conturiAlese.length === 0) return;
+    const coloane = [
+      { key: "data", label: "Data" },
+      { key: "nrDoc", label: eVenituri ? "Nr. chitanță" : "Nr. OP" },
+      { key: "partener", label: "Denumire partener" },
+      { key: "explicatie", label: "Explicație" },
+      { key: "suma", label: "Sumă (lei)" },
+    ];
+    const grupuriRaport = conturiAlese.map((c) => {
+      const totalCont = (eVenituri ? stats.rulajPeCont[c.id]?.incasari : stats.rulajPeCont[c.id]?.plati) || 0;
+      const tranzactii = state.operatiuni
+        .filter((op) => op.contId === c.id && op.tip === (eVenituri ? "incasare" : "plata") && op.data >= interval.start && op.data <= interval.final)
+        .sort((a, b) => (a.data !== b.data ? (a.data < b.data ? -1 : 1) : a.nr - b.nr));
+      return {
+        eticheta: `${c.simbol} — ${c.denumire}   (Total: ${fmt(totalCont)} lei)`,
+        columns: coloane,
+        rows: tranzactii.map((op) => ({
+          data: fmtDataJurnal(op.data), nrDoc: String(op.nr), partener: op.tert || "", explicatie: op.explicatie || "", suma: fmt(op.suma),
+        })),
+      };
+    });
+    const etichetaTip = eVenituri ? "VENITURI - INCASARI" : "CHELTUIELI - PLATI";
+    const etichetaPerioada = modInterval === "an" ? `PE ANUL ${anSelectat}` : `(${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
+    const titlu = conturiAlese.length === 1
+      ? `FIȘĂ DE CONT ${conturiAlese[0].simbol} - ${conturiAlese[0].denumire.toUpperCase()} — ${etichetaTip} ${etichetaPerioada}`
+      : `FIȘE DE CONT (${conturiAlese.length} conturi selectate) — ${etichetaTip} ${etichetaPerioada}`;
+    if (format === "xlsx") exportXLSXGrupat(titlu, grupuriRaport, state.parohie);
+    else if (format === "xml") exportXMLGrupat(titlu, grupuriRaport, state.parohie);
+    else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
+  }
+
   function genereazaBugetPrevederi(format = "pdf") {
     const toate = [...venituriConturi, ...cheltuieliConturi];
     const rows = toate.map((c) => ({
@@ -11047,8 +11117,57 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
           )}
         </div>
         <p className="text-xs text-stone-400 mt-2">
-          Perioadă activă: {fmtDataJurnal(interval.start)} – {fmtDataJurnal(interval.final)}. Partizile (din meniul „Rapoarte") se generează pentru această perioadă; rapoartele de buget sunt mereu anuale, pentru anul {anSelectat}.
+          Perioadă activă: {fmtDataJurnal(interval.start)} – {fmtDataJurnal(interval.final)}. Partizile (din meniul „Rapoarte") și Fișele de cont de mai jos se generează pentru această perioadă; rapoartele de buget sunt mereu anuale, pentru anul {anSelectat}.
         </p>
+      </Card>
+
+      <Card className="p-4">
+        <h2 className="font-serif text-lg text-[#1F3864]">Fișe de cont (Art. bugetare)</h2>
+        <p className="text-xs text-stone-500 mb-3">
+          Fișă individuală (un singur art. bugetar) sau fișă de conturi (selecție multiplă), extrase din Partizi Venituri sau din Partizi Cheltuieli, pentru perioada activă de mai sus.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <Btn variant={tipFisaCont === "venituri" ? "primary" : "ghost"} onClick={() => comutaTipFisaCont("venituri")}>Venituri</Btn>
+          <Btn variant={tipFisaCont === "cheltuieli" ? "primary" : "ghost"} onClick={() => comutaTipFisaCont("cheltuieli")}>Cheltuieli</Btn>
+        </div>
+        <div className="flex items-center gap-3 mb-2">
+          <button
+            type="button"
+            className="text-xs text-[#1F3864] underline"
+            onClick={() => setConturiSelectateFisa(new Set((tipFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).map((c) => c.id)))}
+          >
+            Selectează tot
+          </button>
+          <button type="button" className="text-xs text-[#1F3864] underline" onClick={() => setConturiSelectateFisa(new Set())}>
+            Deselectează tot
+          </button>
+          <span className="text-xs text-stone-400">
+            {conturiSelectateFisa.size === 0 ? "Niciun cont selectat" : conturiSelectateFisa.size === 1 ? "Fișă individuală (1 cont)" : `Fișă de conturi (${conturiSelectateFisa.size} conturi)`}
+          </span>
+        </div>
+        <div className="max-h-64 overflow-auto border border-stone-200 rounded-md divide-y divide-stone-100 mb-3">
+          {(tipFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).map((c) => (
+            <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-stone-50 cursor-pointer">
+              <input type="checkbox" checked={conturiSelectateFisa.has(c.id)} onChange={() => comutaContFisa(c.id)} />
+              <span className="tabular-nums text-stone-500 w-16">{c.simbol}</span>
+              <span className="flex-1">{c.denumire}</span>
+            </label>
+          ))}
+          {(tipFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).length === 0 && (
+            <div className="px-3 py-4 text-center text-stone-400 text-sm">Niciun cont de {tipFisaCont === "venituri" ? "venit" : "cheltuială"} în nomenclator.</div>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Btn variant="ghost" disabled={conturiSelectateFisa.size === 0} onClick={() => genereazaFisaConturi("pdf")}>
+            <Download size={14} /> PDF
+          </Btn>
+          <Btn variant="ghost" disabled={conturiSelectateFisa.size === 0} onClick={() => genereazaFisaConturi("xlsx")}>
+            <Download size={14} /> XLSX
+          </Btn>
+          <Btn variant="ghost" disabled={conturiSelectateFisa.size === 0} onClick={() => genereazaFisaConturi("xml")}>
+            <Download size={14} /> XML
+          </Btn>
+        </div>
       </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
