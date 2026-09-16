@@ -8248,6 +8248,10 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     if (sortColoanaIntrari === coloana) setSortDirectieIntrari((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortColoanaIntrari(coloana); setSortDirectieIntrari("asc"); }
   }
+  // Interval de dată (opțional, ambele capete) pentru Tablou intrări — aceeași pereche de
+  // selectoare (tastare manuală sau calendar) ca la Registrul Jurnal.
+  const [dataStartIntrari, setDataStartIntrari] = useState("");
+  const [dataSfarsitIntrari, setDataSfarsitIntrari] = useState("");
   const [selectieIesiri, setSelectieIesiri] = useState(new Set());
   const [sortColoanaIesiri, setSortColoanaIesiri] = useState("data");
   const [sortDirectieIesiri, setSortDirectieIesiri] = useState("desc");
@@ -8255,6 +8259,10 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     if (sortColoanaIesiri === coloana) setSortDirectieIesiri((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortColoanaIesiri(coloana); setSortDirectieIesiri("asc"); }
   }
+  // Interval de dată (opțional, ambele capete) pentru Tablou ieșiri — vezi comentariul identic de
+  // la Intrări, mai sus.
+  const [dataStartIesiri, setDataStartIesiri] = useState("");
+  const [dataSfarsitIesiri, setDataSfarsitIesiri] = useState("");
   const [confirmareStergereSelectieIntrari, setConfirmareStergereSelectieIntrari] = useState(false);
   const [confirmareStergereSelectieIesiri, setConfirmareStergereSelectieIesiri] = useState(false);
   const [stergereSelectieInCurs, setStergereSelectieInCurs] = useState(false);
@@ -8730,7 +8738,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // Grupate pe document (un NRCD poate avea mai multe produse pe aceeași factură) — stocul
   // inițial (fără document, fără NRCD) e needitabil/needștergibil de aici, are propriul modal.
   const receptiiAnFiltrate = useMemo(() => {
-    const intrari = state.miscariStoc.filter((m) => m.tip === "intrare" && m.documentId && yearOf(m.data) === anPangar);
+    const intrari = state.miscariStoc.filter((m) => {
+      if (m.tip !== "intrare" || !m.documentId || yearOf(m.data) !== anPangar) return false;
+      if (dataStartIntrari && m.data < dataStartIntrari) return false;
+      if (dataSfarsitIntrari && m.data > dataSfarsitIntrari) return false;
+      return true;
+    });
     const perDoc = new Map();
     for (const m of intrari) {
       if (!perDoc.has(m.documentId)) {
@@ -8739,7 +8752,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       perDoc.get(m.documentId).linii.push(m);
     }
     return [...perDoc.values()].sort((a, b) => (a.data < b.data ? 1 : -1));
-  }, [state.miscariStoc, anPangar]);
+  }, [state.miscariStoc, anPangar, dataStartIntrari, dataSfarsitIntrari]);
 
   // Versiune sortabilă a Tabloului intrări — sortarea operează la nivel de RECEPȚIE (grup NRCD),
   // nu de linie individuală, fiindcă NRCD/Data/Furnizor sunt comune tuturor liniilor unei recepții
@@ -8774,7 +8787,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   }, [receptiiAnFiltrate, sortColoanaIntrari, sortDirectieIntrari, state.articole]);
 
   const vanzariAnFiltrate = useMemo(() => {
-    const iesiri = state.miscariStoc.filter((m) => m.tip === "iesire" && m.nrChitanta && m.anChitanta === anPangar);
+    const iesiri = state.miscariStoc.filter((m) => {
+      if (m.tip !== "iesire" || !m.nrChitanta || m.anChitanta !== anPangar) return false;
+      if (dataStartIesiri && m.data < dataStartIesiri) return false;
+      if (dataSfarsitIesiri && m.data > dataSfarsitIesiri) return false;
+      return true;
+    });
     const perChitanta = {};
     for (const m of iesiri) {
       const key = `${m.anChitanta}-${m.nrChitanta}`;
@@ -8793,7 +8811,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         return { ...v, linii: Object.values(v.linii), serie: opChit?.serie || null, numarIdentificare: opChit?.numarIdentificare || null };
       })
       .sort((a, b) => (a.data < b.data ? 1 : -1));
-  }, [state.miscariStoc, state.articole, state.operatiuni, anPangar]);
+  }, [state.miscariStoc, state.articole, state.operatiuni, anPangar, dataStartIesiri, dataSfarsitIesiri]);
 
   // Versiune sortabilă a Tabloului vânzări — aceeași logică ca la Intrări: pentru Cod bază/
   // Cantitate se ia prima linie, respectiv suma tuturor liniilor; Valoare e deja totalul
@@ -9321,6 +9339,13 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
             Tablou intrări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-stone-500">De la</span>
+            <CampDataText value={dataStartIntrari} onChange={setDataStartIntrari} />
+            <span className="text-stone-400 text-sm">—</span>
+            <span className="text-xs text-stone-500">Până la</span>
+            <CampDataText value={dataSfarsitIntrari} onChange={setDataSfarsitIntrari} />
+          </div>
           {selectieIntrari.size > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-stone-500">{selectieIntrari.size} selectate</span>
@@ -9476,6 +9501,13 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         <div ref={refSubantetSectiune} className="px-3 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2 sticky top-0 z-20 bg-white">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">
             Tablou vânzări {anPangar} — editabile direct cât timp exercițiul anului lor nu e închis definitiv
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-stone-500">De la</span>
+            <CampDataText value={dataStartIesiri} onChange={setDataStartIesiri} />
+            <span className="text-stone-400 text-sm">—</span>
+            <span className="text-xs text-stone-500">Până la</span>
+            <CampDataText value={dataSfarsitIesiri} onChange={setDataSfarsitIesiri} />
           </div>
           {selectieIesiri.size > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
