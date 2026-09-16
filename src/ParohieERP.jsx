@@ -1213,10 +1213,10 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
           <table className="w-full text-sm mt-2">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-2">Perioadă</th>
-                <th className="px-3 py-2 text-right">Membri</th>
-                {organismActiv !== "comitet" && <th className="px-3 py-2 text-right">Procese-verbale</th>}
-                <th className="px-3 py-2"></th>
+                <th className="px-3 py-1">Perioadă</th>
+                <th className="px-3 py-1 text-right">Membri</th>
+                {organismActiv !== "comitet" && <th className="px-3 py-1 text-right">Procese-verbale</th>}
+                <th className="px-3 py-1"></th>
               </tr>
             </thead>
             <tbody>
@@ -1225,10 +1225,10 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
                 const nrPV = state.proceseVerbaleOrganisme.filter((x) => x.mandatId === m.id).length;
                 return (
                   <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                    <td className="px-3 py-2 font-medium">{fmtDataJurnal(m.dataInceput)} — {fmtDataJurnal(m.dataSfarsit)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{nrMembri}</td>
-                    {organismActiv !== "comitet" && <td className="px-3 py-2 text-right tabular-nums">{nrPV}</td>}
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1 font-medium">{fmtDataJurnal(m.dataInceput)} — {fmtDataJurnal(m.dataSfarsit)}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{nrMembri}</td>
+                    {organismActiv !== "comitet" && <td className="px-3 py-1 text-right tabular-nums">{nrPV}</td>}
+                    <td className="px-3 py-1">
                       <div className="flex gap-1.5 justify-end">
                         <Btn variant="gold" onClick={() => setMandatSelectatId(m.id)}>Deschide</Btn>
                         {!permisiuni.citireOnly && (
@@ -1273,21 +1273,21 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
             <table className="w-full text-sm mt-2">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                  <th className="px-3 py-2">Nume și prenume</th>
-                  <th className="px-3 py-2">Adresă</th>
-                  <th className="px-3 py-2">Telefon</th>
-                  <th className="px-3 py-2">E-mail</th>
-                  <th className="px-3 py-2"></th>
+                  <th className="px-3 py-1">Nume și prenume</th>
+                  <th className="px-3 py-1">Adresă</th>
+                  <th className="px-3 py-1">Telefon</th>
+                  <th className="px-3 py-1">E-mail</th>
+                  <th className="px-3 py-1"></th>
                 </tr>
               </thead>
               <tbody>
                 {membriMandat.map((m) => (
                   <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                    <td className="px-3 py-2 font-medium">{m.nume}</td>
-                    <td className="px-3 py-2 text-stone-500">{m.adresa || "—"}</td>
-                    <td className="px-3 py-2 text-stone-500">{m.telefon || "—"}</td>
-                    <td className="px-3 py-2 text-stone-500">{m.email || "—"}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1 font-medium">{m.nume}</td>
+                    <td className="px-3 py-1 text-stone-500">{m.adresa || "—"}</td>
+                    <td className="px-3 py-1 text-stone-500">{m.telefon || "—"}</td>
+                    <td className="px-3 py-1 text-stone-500">{m.email || "—"}</td>
+                    <td className="px-3 py-1">
                       {!permisiuni.citireOnly && (
                         <div className="flex gap-1.5 justify-end">
                           <Btn variant="gold" onClick={() => setEditareMembru(m)}>Modifică</Btn>
@@ -1322,19 +1322,19 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
               <table className="w-full text-sm mt-2">
                 <thead>
                   <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                    <th className="px-3 py-2">Data</th>
-                    <th className="px-3 py-2">Ordine de zi</th>
-                    <th className="px-3 py-2">Decizii</th>
-                    <th className="px-3 py-2"></th>
+                    <th className="px-3 py-1">Data</th>
+                    <th className="px-3 py-1">Ordine de zi</th>
+                    <th className="px-3 py-1">Decizii</th>
+                    <th className="px-3 py-1"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {pvMandat.map((p) => (
                     <tr key={p.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100 align-top">
-                      <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.data)}</td>
-                      <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={p.ordineZi}>{p.ordineZi || "—"}</td>
-                      <td className="px-3 py-2 text-stone-500 max-w-[240px] truncate" title={p.decizii}>{p.decizii || "—"}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(p.data)}</td>
+                      <td className="px-3 py-1 text-stone-500 max-w-[240px] truncate" title={p.ordineZi}>{p.ordineZi || "—"}</td>
+                      <td className="px-3 py-1 text-stone-500 max-w-[240px] truncate" title={p.decizii}>{p.decizii || "—"}</td>
+                      <td className="px-3 py-1">
                         {!permisiuni.citireOnly && (
                           <div className="flex gap-1.5 justify-end">
                             <Btn variant="gold" onClick={() => setEditarePV(p)}>Modifică</Btn>
@@ -1715,7 +1715,7 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
   const listaId = `sugestii-col-${cheie}`;
   const activ = sortColoana === cheie;
   return (
-    <th className={className || "px-2 py-2 align-bottom"}>
+    <th className={className || "px-2 py-1 align-bottom"}>
       <div className="flex flex-col gap-1">
         {onSort ? (
           <button
@@ -1753,7 +1753,7 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
 function AntetSortabil({ eticheta, coloana, sortColoana, sortDirectie, onSort, className }) {
   const activ = sortColoana === coloana;
   return (
-    <th className={className || "px-3 py-2"}>
+    <th className={className || "px-3 py-1"}>
       <button
         type="button"
         onClick={() => onSort(coloana)}
@@ -5761,11 +5761,11 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-2 py-1.5">Furnizor</th>
-                <th className="px-2 py-1.5">Factură</th>
-                <th className="px-2 py-1.5 text-right">Sumă</th>
-                <th className="px-2 py-1.5 text-right">Vechime</th>
-                <th className="px-2 py-1.5"></th>
+                <th className="px-2 py-1">Furnizor</th>
+                <th className="px-2 py-1">Factură</th>
+                <th className="px-2 py-1 text-right">Sumă</th>
+                <th className="px-2 py-1 text-right">Vechime</th>
+                <th className="px-2 py-1"></th>
               </tr>
             </thead>
             <tbody>
@@ -5774,15 +5774,15 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
                 const veche = vechime > 60;
                 return (
                   <tr key={d.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                    <td className="px-2 py-1.5">{d.furnizor}</td>
-                    <td className="px-2 py-1.5 text-stone-500">{d.nrFactura} (NRCD {d.nrNRCD})</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(d.sumaRamasa ?? d.suma)}</td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-2 py-1">{d.furnizor}</td>
+                    <td className="px-2 py-1 text-stone-500">{d.nrFactura} (NRCD {d.nrNRCD})</td>
+                    <td className="px-2 py-1 text-right tabular-nums font-medium">{fmt(d.sumaRamasa ?? d.suma)}</td>
+                    <td className="px-2 py-1 text-right">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${veche ? "text-rose-700 bg-rose-50" : "text-stone-500 bg-stone-100"}`}>
                         {vechime} zile{veche ? " — peste 60!" : ""}
                       </span>
                     </td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-2 py-1 text-right">
                       {!permisiuni.citireOnly && <Btn variant="gold" onClick={() => setAchitareFor(d)}>Achită</Btn>}
                     </td>
                   </tr>
@@ -6551,7 +6551,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeBaraCautare }}>
             <tr className="text-left uppercase tracking-wide text-stone-500">
-              <th className="px-2.5 py-1.5 font-medium">Nr. crt.</th>
+              <th className="px-2.5 py-1 font-medium">Nr. crt.</th>
               <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-1.5 align-bottom max-w-[115px] min-w-[115px]" />
               <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1.5 align-bottom max-w-[100px] min-w-[100px]" />
               <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1.5 align-bottom" />
@@ -6561,22 +6561,22 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-1.5 align-bottom text-right" />
               <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-1.5 align-bottom text-right" />
               <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-1.5 align-bottom max-w-[105px] min-w-[105px]" />
-              <th className="px-2.5 py-1.5 text-right font-medium">Sold final</th>
-              <th className="px-2.5 py-1.5 text-right font-medium">Sold „Bancă”</th>
-              <th className="px-2.5 py-1.5 text-right font-medium">Sold „Casă”</th>
-              {soldDepozitAn !== 0 && <th className="px-2.5 py-1.5 text-right font-medium">Sold „Depozit”</th>}
+              <th className="px-2.5 py-1 text-right font-medium">Sold final</th>
+              <th className="px-2.5 py-1 text-right font-medium">Sold „Bancă”</th>
+              <th className="px-2.5 py-1 text-right font-medium">Sold „Casă”</th>
+              {soldDepozitAn !== 0 && <th className="px-2.5 py-1 text-right font-medium">Sold „Depozit”</th>}
             </tr>
           </thead>
           <tbody>
             <tr className="bg-stone-50 font-semibold sticky z-10" style={{ top: inaltimeBaraCautare + inaltimeCapTabel }}>
-              <td colSpan={7} className="px-2.5 py-1.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
-              <td className="px-2.5 py-1.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
-              <td className="px-2.5 py-1.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
+              <td colSpan={7} className="px-2.5 py-1 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
+              <td className="px-2.5 py-1 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
+              <td className="px-2.5 py-1 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
               <td></td>
-              <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldFinalAn)}</td>
-              <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldBancaAn)}</td>
-              <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldCasaAn)}</td>
-              {soldDepozitAn !== 0 && <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
+              <td className="px-2.5 py-1 text-right tabular-nums">{fmt(soldFinalAn)}</td>
+              <td className="px-2.5 py-1 text-right tabular-nums">{fmt(soldBancaAn)}</td>
+              <td className="px-2.5 py-1 text-right tabular-nums">{fmt(soldCasaAn)}</td>
+              {soldDepozitAn !== 0 && <td className="px-2.5 py-1 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
             </tr>
             {afisate.length === 0 && (
               <tr>
@@ -6587,14 +6587,14 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             )}
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-2.5 py-1.5 tabular-nums text-stone-500">{r.nrCrt}</td>
-                <td className="px-2.5 py-1.5 tabular-nums leading-tight max-w-[115px] min-w-[115px]">
+                <td className="px-2.5 py-1 tabular-nums text-stone-500">{r.nrCrt}</td>
+                <td className="px-2.5 py-1 tabular-nums leading-tight max-w-[115px] min-w-[115px]">
                   <div className="flex flex-col">
                     <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td className="px-2.5 py-1.5 tabular-nums max-w-[100px] min-w-[100px]">
+                <td className="px-2.5 py-1 tabular-nums max-w-[100px] min-w-[100px]">
                   {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6610,7 +6610,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-2.5 py-1.5 tabular-nums">
+                <td className="px-2.5 py-1 tabular-nums">
                   {r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6626,16 +6626,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-2.5 py-1.5 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
-                <td className="px-2.5 py-1.5 max-w-[260px] whitespace-normal break-words" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
-                <td className="px-2.5 py-1.5 text-stone-500 max-w-[440px] whitespace-normal break-words" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
-                <td className="px-2.5 py-1.5 text-right tabular-nums text-emerald-700">
+                <td className="px-2.5 py-1 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
+                <td className="px-2.5 py-1 max-w-[260px] whitespace-normal break-words" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
+                <td className="px-2.5 py-1 text-stone-500 max-w-[440px] whitespace-normal break-words" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-2.5 py-1 text-right tabular-nums text-emerald-700">
                   {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2.5 py-1.5 text-right tabular-nums text-rose-700">
+                <td className="px-2.5 py-1 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2.5 py-1.5 max-w-[105px] min-w-[105px]">
+                <td className="px-2.5 py-1 max-w-[105px] min-w-[105px]">
                   <span className="flex items-center gap-1">
                     <span className="whitespace-normal break-words">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</span>
                     {r.cont?.clasa === "viramente" && !permisiuni.citireOnly && (
@@ -6654,10 +6654,10 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     )}
                   </span>
                 </td>
-                <td className="px-2.5 py-1.5 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
-                <td className="px-2.5 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
-                <td className="px-2.5 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
-                {soldDepozitAn !== 0 && <td className="px-2.5 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
+                <td className="px-2.5 py-1 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
+                <td className="px-2.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
+                <td className="px-2.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
+                {soldDepozitAn !== 0 && <td className="px-2.5 py-1 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
               </tr>
             ))}
           </tbody>
@@ -7834,11 +7834,11 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200 sticky top-0 bg-white">
-                <th className="px-2 py-2">Data</th>
-                <th className="px-2 py-2">Cont</th>
-                <th className="px-2 py-2">Explicație</th>
-                <th className="px-2 py-2 text-right">Sumă</th>
-                <th className="px-2 py-2"></th>
+                <th className="px-2 py-1">Data</th>
+                <th className="px-2 py-1">Cont</th>
+                <th className="px-2 py-1">Explicație</th>
+                <th className="px-2 py-1 text-right">Sumă</th>
+                <th className="px-2 py-1"></th>
               </tr>
             </thead>
             <tbody>
@@ -7846,11 +7846,11 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
                 const op = p.plata || p.incasare;
                 return (
                   <tr key={i} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                    <td className="px-2 py-2 tabular-nums">{fmtDataJurnal(op.data)}</td>
-                    <td className="px-2 py-2 font-mono text-xs">{op.contId} <span className="text-stone-400">({p.cont?.denumire})</span></td>
-                    <td className="px-2 py-2 text-stone-500 max-w-[280px] whitespace-normal break-words" title={op.explicatie}>{op.explicatie}</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{fmt(op.suma)}</td>
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-1 tabular-nums">{fmtDataJurnal(op.data)}</td>
+                    <td className="px-2 py-1 font-mono text-xs">{op.contId} <span className="text-stone-400">({p.cont?.denumire})</span></td>
+                    <td className="px-2 py-1 text-stone-500 max-w-[280px] whitespace-normal break-words" title={op.explicatie}>{op.explicatie}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmt(op.suma)}</td>
+                    <td className="px-2 py-1">
                       {!permisiuni.citireOnly && (
                         <div className="flex gap-1.5 justify-end">
                           <Btn variant="gold" onClick={() => onModifica(p)}>Modifică</Btn>
@@ -8043,7 +8043,7 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
               <AntetSortabil eticheta="Clasă" coloana="clasa" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} />
               <AntetSortabil eticheta="Rulaj încasări" coloana="incasari" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Rulaj plăți" coloana="plati" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} className="px-3 py-2 text-right" />
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -8051,16 +8051,16 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
               const rulaj = derived.rulajPeCont[c.id] || { incasari: 0, plati: 0 };
               return (
                 <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 font-medium tabular-nums">{c.simbol}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1 font-medium tabular-nums">{c.simbol}</td>
+                  <td className="px-3 py-1">
                     {c.denumire} {c.special && <span className="ml-1 text-[10px] text-[#B8860B] border border-[#B8860B]/40 rounded px-1 py-0.5">special</span>}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${clasaTone[c.clasa]}`}>{clasaLabel[c.clasa]}</span>
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(rulaj.incasari)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(rulaj.plati)}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1 text-right tabular-nums">{fmt(rulaj.incasari)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{fmt(rulaj.plati)}</td>
+                  <td className="px-3 py-1">
                     {!permisiuni.citireOnly && (
                       <div className="flex gap-1 justify-end">
                         <button title="Editează" onClick={() => setEditing(c)} className="text-stone-400 hover:text-[#1F3864] p-1">
@@ -9177,14 +9177,14 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                     <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la preț vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-2 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="coduri" eticheta="Coduri active" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("coduri")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="stare" eticheta="Stare" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stare")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
-                    <th className="px-3 py-2"></th>
+                    <th className="px-3 py-1"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {grupuriMariCuProduse.map((gm) => (
                     <React.Fragment key={gm.titlu}>
                       <tr className="bg-[#1F3864]/5">
-                        <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-[#1F3864]">{gm.titlu}</td>
+                        <td colSpan={6} className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#1F3864]">{gm.titlu}</td>
                       </tr>
                       {gm.produse.map((g) => {
                         const stareCls =
@@ -9193,12 +9193,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                           : "text-emerald-700 bg-emerald-50";
                         return (
                           <tr key={g.bazaCod} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                            <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs font-mono">({g.bazaCod})</span></td>
-                            <td className="px-3 py-2 text-right tabular-nums font-medium">{fmtCant(g.stocTotal)} {g.um}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{fmt(g.valoareTotal)}</td>
-                            <td className="px-3 py-2 text-xs text-stone-500">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"}</td>
-                            <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareCls}`}>{g.stareLabel}</span></td>
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-1 font-medium">{g.denumire} <span className="text-stone-400 text-xs font-mono">({g.bazaCod})</span></td>
+                            <td className="px-3 py-1 text-right tabular-nums font-medium">{fmtCant(g.stocTotal)} {g.um}</td>
+                            <td className="px-3 py-1 text-right tabular-nums">{fmt(g.valoareTotal)}</td>
+                            <td className="px-3 py-1 text-xs text-stone-500">{g.coduri.length} {g.coduri.length === 1 ? "cod" : "coduri"}</td>
+                            <td className="px-3 py-1"><span className={`text-xs px-2 py-0.5 rounded-full ${stareCls}`}>{g.stareLabel}</span></td>
+                            <td className="px-3 py-1">
                               {!permisiuni.citireOnly && (
                                 <Btn variant="ghost" onClick={() => setVariantaFor(g.coduri[g.coduri.length - 1])}>Preț nou</Btn>
                               )}
@@ -9246,11 +9246,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             <tbody>
               {coduriAfisate.map((a) => (
                 <tr key={a.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2">{a.denumire}</td>
-                  <td className="px-3 py-2 font-mono text-xs font-medium text-[#1F3864]">{a.cod}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-stone-500">{fmt(a.pretAchizitie)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(a.pretVanzare)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{fmt(a.pretVanzare - a.pretAchizitie)}</td>
+                  <td className="px-3 py-1">{a.denumire}</td>
+                  <td className="px-3 py-1 font-mono text-xs font-medium text-[#1F3864]">{a.cod}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-stone-500">{fmt(a.pretAchizitie)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{fmt(a.pretVanzare)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-emerald-700">{fmt(a.pretVanzare - a.pretAchizitie)}</td>
                 </tr>
               ))}
               {coduriAfisate.length === 0 && (
@@ -9309,7 +9309,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
-              <th className="px-3 py-2">
+              <th className="px-3 py-1">
                 <input
                   type="checkbox"
                   checked={receptiiAnFiltrate.length > 0 && selectieIntrari.size === receptiiAnFiltrate.length}
@@ -9322,7 +9322,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               <AntetSortabil eticheta="Cantitate" coloana="cantitate" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Valoare" coloana="valoare" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Furnizor" coloana="furnizor" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -9336,19 +9336,19 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                     <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                       {i === 0 && (
                         <>
-                          <td className="px-3 py-2 align-top" rowSpan={grup.linii.length}>
+                          <td className="px-3 py-1 align-top" rowSpan={grup.linii.length}>
                             <input type="checkbox" checked={selectieIntrari.has(grup.documentId)} onChange={() => toggleSelectieIntrari(grup.documentId)} />
                           </td>
-                          <td className="px-3 py-2 tabular-nums align-top" rowSpan={grup.linii.length}>{grup.nrNRCD}</td>
-                          <td className="px-3 py-2 tabular-nums align-top" rowSpan={grup.linii.length}>{fmtDataJurnal(grup.data)}</td>
+                          <td className="px-3 py-1 tabular-nums align-top" rowSpan={grup.linii.length}>{grup.nrNRCD}</td>
+                          <td className="px-3 py-1 tabular-nums align-top" rowSpan={grup.linii.length}>{fmtDataJurnal(grup.data)}</td>
                         </>
                       )}
-                      <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmt(m.valoareAchizitie)}</td>
-                      {i === 0 && <td className="px-3 py-2 text-stone-500 align-top" rowSpan={grup.linii.length}>{grup.furnizor}</td>}
+                      <td className="px-3 py-1 font-mono text-xs">{art?.cod || m.articolId}</td>
+                      <td className="px-3 py-1 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
+                      <td className="px-3 py-1 text-right tabular-nums">{fmt(m.valoareAchizitie)}</td>
+                      {i === 0 && <td className="px-3 py-1 text-stone-500 align-top" rowSpan={grup.linii.length}>{grup.furnizor}</td>}
                       {i === 0 && (
-                        <td className="px-3 py-2 align-top" rowSpan={grup.linii.length}>
+                        <td className="px-3 py-1 align-top" rowSpan={grup.linii.length}>
                           <div className="flex gap-1.5 justify-end items-center">
                             {(() => {
                               const datorie = (state.datoriiFurnizori || []).find((d) => d.documentId === grup.documentId);
@@ -9386,14 +9386,14 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                   );
                 }),
                 <tr key={`${grup.documentId}-total`} className="border-b-2 border-stone-300 bg-stone-50/70 font-medium">
-                  <td className="px-3 py-2"></td>
-                  <td className="px-3 py-2"></td>
-                  <td className="px-3 py-2"></td>
-                  <td className="px-3 py-2 text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
-                  <td className="px-3 py-2"></td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalGrup)}</td>
-                  <td className="px-3 py-2"></td>
-                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-1"></td>
+                  <td className="px-3 py-1"></td>
+                  <td className="px-3 py-1"></td>
+                  <td className="px-3 py-1 text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
+                  <td className="px-3 py-1"></td>
+                  <td className="px-3 py-1 text-right tabular-nums">{fmt(totalGrup)}</td>
+                  <td className="px-3 py-1"></td>
+                  <td className="px-3 py-1"></td>
                 </tr>,
               ];
             })}
@@ -9469,7 +9469,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
-              <th className="px-3 py-2">
+              <th className="px-3 py-1">
                 <input
                   type="checkbox"
                   checked={vanzariAnFiltrate.length > 0 && selectieIesiri.size === vanzariAnFiltrate.length}
@@ -9482,7 +9482,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               <AntetSortabil eticheta="Cantitate" coloana="cantitate" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Valoare" coloana="valoare" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Terț" coloana="tert" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} />
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -9492,20 +9492,20 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               const cheieSelectie = `${v.anChitanta}-${v.nrChitanta}`;
               return (
                 <tr key={cheieSelectie} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     <input type="checkbox" checked={selectieIesiri.has(cheieSelectie)} onChange={() => toggleSelectieIesiri(cheieSelectie)} />
                   </td>
-                  <td className="px-3 py-2 tabular-nums">{v.nrChitanta}/{v.anChitanta}</td>
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(v.data)}</td>
-                  <td className="px-3 py-2 font-mono text-xs">
+                  <td className="px-3 py-1 tabular-nums">{v.nrChitanta}/{v.anChitanta}</td>
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(v.data)}</td>
+                  <td className="px-3 py-1 font-mono text-xs">
                     {v.linii.map((l) => <div key={l.bazaCod}>{l.bazaCod}</div>)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
+                  <td className="px-3 py-1 text-right tabular-nums">
                     {v.linii.map((l) => <div key={l.bazaCod}>{fmtCant(l.cantitate)} {l.um}</div>)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(v.valoare)}</td>
-                  <td className="px-3 py-2 text-stone-500">{opChit?.tert || "—"}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1 text-right tabular-nums">{fmt(v.valoare)}</td>
+                  <td className="px-3 py-1 text-stone-500">{opChit?.tert || "—"}</td>
+                  <td className="px-3 py-1">
                     {anInchisDefinitiv ? (
                       <span className="text-xs text-stone-400">Închis definitiv</span>
                     ) : (
@@ -10017,11 +10017,11 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-2">Cod</th>
-                <th className="px-3 py-2">Denumire</th>
-                <th className="px-3 py-2 text-right">Cantitate</th>
-                <th className="px-3 py-2">Data</th>
-                <th className="px-3 py-2"></th>
+                <th className="px-3 py-1">Cod</th>
+                <th className="px-3 py-1">Denumire</th>
+                <th className="px-3 py-1 text-right">Cantitate</th>
+                <th className="px-3 py-1">Data</th>
+                <th className="px-3 py-1"></th>
               </tr>
             </thead>
             <tbody>
@@ -10029,9 +10029,9 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                 const art = articole.find((a) => a.id === m.articolId);
                 return (
                   <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                    <td className="px-3 py-2 font-mono text-xs">{art?.cod || m.articolId}</td>
-                    <td className="px-3 py-2 max-w-xs whitespace-normal break-words" title={art?.denumire || "—"}>{art?.denumire || "—"}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-1 font-mono text-xs">{art?.cod || m.articolId}</td>
+                    <td className="px-3 py-1 max-w-xs whitespace-normal break-words" title={art?.denumire || "—"}>{art?.denumire || "—"}</td>
+                    <td className="px-3 py-1 text-right">
                       <input
                         type="number"
                         className={`${inputCls} w-24 text-right`}
@@ -10039,7 +10039,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                         onChange={(e) => actualizeazaEditare(m.id, "cantitate", e.target.value)}
                       />
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1">
                       <input
                         type="date"
                         className={`${inputCls} w-40`}
@@ -10047,7 +10047,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                         onChange={(e) => actualizeazaEditare(m.id, "data", e.target.value)}
                       />
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1">
                       <div className="flex gap-1.5 justify-end">
                         <Btn variant="gold" onClick={() => submitModifica(m)} disabled={salvandId === m.id}>
                           {salvandId === m.id ? "..." : "Modifică"}
@@ -10081,22 +10081,22 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-2">Produs</th>
-                <th className="px-3 py-2 text-right">Cantitate</th>
-                <th className="px-3 py-2">Data</th>
-                <th className="px-3 py-2"></th>
+                <th className="px-3 py-1">Produs</th>
+                <th className="px-3 py-1 text-right">Cantitate</th>
+                <th className="px-3 py-1">Data</th>
+                <th className="px-3 py-1"></th>
               </tr>
             </thead>
             <tbody>
               {liniiNoi.map((l) => (
                 <tr key={l.key} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     <select className={`${inputCls} w-72`} value={l.articolId} onChange={(e) => actualizeazaLinieNoua(l.key, "articolId", e.target.value)}>
                       <option value="">— alege produs —</option>
                       {articoleSortate.map((a) => <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>)}
                     </select>
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-1 text-right">
                     <input
                       type="number"
                       placeholder="Cantitate"
@@ -10105,7 +10105,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                       onChange={(e) => actualizeazaLinieNoua(l.key, "cantitate", e.target.value)}
                     />
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     <input
                       type="date"
                       className={`${inputCls} w-40`}
@@ -10113,7 +10113,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
                       onChange={(e) => actualizeazaLinieNoua(l.key, "data", e.target.value)}
                     />
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     <div className="flex gap-1.5 justify-end">
                       <Btn variant="gold" onClick={() => submitLinieNoua(l)} disabled={salvandKeyNou === l.key}>
                         {salvandKeyNou === l.key ? "..." : "Modifică"}
@@ -11091,12 +11091,12 @@ function ExecutieBugetara({ conturi, buget, operatiuni, prevederiBugetare, aniDi
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-            <th className="px-2 py-1.5">Art. bug. nr.</th>
-            <th className="px-2 py-1.5">Denumire</th>
-            <th className="px-2 py-1.5 text-right">Bugetat (lei)</th>
-            <th className="px-2 py-1.5 text-right">Realizat (lei)</th>
-            <th className="px-2 py-1.5 text-right">Diferență</th>
-            <th className="px-2 py-1.5 text-right">% realizare</th>
+            <th className="px-2 py-1">Art. bug. nr.</th>
+            <th className="px-2 py-1">Denumire</th>
+            <th className="px-2 py-1 text-right">Bugetat (lei)</th>
+            <th className="px-2 py-1 text-right">Realizat (lei)</th>
+            <th className="px-2 py-1 text-right">Diferență</th>
+            <th className="px-2 py-1 text-right">% realizare</th>
           </tr>
         </thead>
         <tbody>
@@ -11113,11 +11113,11 @@ function ExecutieBugetara({ conturi, buget, operatiuni, prevederiBugetare, aniDi
           <ExecutieBugetaraSubtotal eticheta="Subtotal cheltuieli" bugetat={subCheltuieli.bugetat} realizat={subCheltuieli.realizat} />
 
           <tr className="bg-[#1F3864]/10 font-semibold border-t-2 border-[#1F3864]/30">
-            <td className="px-2 py-1.5" colSpan={2}>Sold final</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldFinalBugetat)}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldFinalRealizat)}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldFinalBugetat - soldFinalRealizat)}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">—</td>
+            <td className="px-2 py-1" colSpan={2}>Sold final</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt(soldFinalBugetat)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt(soldFinalRealizat)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt(soldFinalBugetat - soldFinalRealizat)}</td>
+            <td className="px-2 py-1 text-right tabular-nums">—</td>
           </tr>
         </tbody>
       </table>
@@ -11130,11 +11130,11 @@ function ExecutieBugetaraSubtotal({ eticheta, bugetat, realizat }) {
   const procent = bugetat > 0 ? (realizat / bugetat) * 100 : realizat > 0 ? 100 : 0;
   return (
     <tr className="font-semibold border-b-2 border-stone-200">
-      <td className="px-2 py-1.5" colSpan={2}>{eticheta}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(bugetat)}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(realizat)}</td>
-      <td className={`px-2 py-1.5 text-right tabular-nums ${diferenta < 0 ? "text-rose-700" : "text-stone-600"}`}>{fmt(diferenta)}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums text-stone-600">{procent.toFixed(0)}%</td>
+      <td className="px-2 py-1" colSpan={2}>{eticheta}</td>
+      <td className="px-2 py-1 text-right tabular-nums">{fmt(bugetat)}</td>
+      <td className="px-2 py-1 text-right tabular-nums">{fmt(realizat)}</td>
+      <td className={`px-2 py-1 text-right tabular-nums ${diferenta < 0 ? "text-rose-700" : "text-stone-600"}`}>{fmt(diferenta)}</td>
+      <td className="px-2 py-1 text-right tabular-nums text-stone-600">{procent.toFixed(0)}%</td>
     </tr>
   );
 }
@@ -11145,12 +11145,12 @@ function ExecutieBugetaraRand({ cont, bugetat, realizat }) {
 
   return (
     <tr className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-      <td className="px-2 py-1.5 font-mono tabular-nums">{cont.simbol}</td>
-      <td className="px-2 py-1.5">{cont.denumire}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{fmt(bugetat)}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(realizat)}</td>
-      <td className={`px-2 py-1.5 text-right tabular-nums ${diferenta < 0 ? "text-rose-700" : "text-stone-500"}`}>{fmt(diferenta)}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums text-stone-500">{procent.toFixed(0)}%</td>
+      <td className="px-2 py-1 font-mono tabular-nums">{cont.simbol}</td>
+      <td className="px-2 py-1">{cont.denumire}</td>
+      <td className="px-2 py-1 text-right tabular-nums text-stone-500">{fmt(bugetat)}</td>
+      <td className="px-2 py-1 text-right tabular-nums">{fmt(realizat)}</td>
+      <td className={`px-2 py-1 text-right tabular-nums ${diferenta < 0 ? "text-rose-700" : "text-stone-500"}`}>{fmt(diferenta)}</td>
+      <td className="px-2 py-1 text-right tabular-nums text-stone-500">{procent.toFixed(0)}%</td>
     </tr>
   );
 }
@@ -11161,22 +11161,22 @@ function RulajTable({ conturi, rulajPeCont, tip }) {
     <table className="w-full text-sm">
       <thead>
         <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-          <th className="px-2 py-1.5">Simbol</th>
-          <th className="px-2 py-1.5">Denumire</th>
-          <th className="px-2 py-1.5 text-right">Rulaj (RON)</th>
+          <th className="px-2 py-1">Simbol</th>
+          <th className="px-2 py-1">Denumire</th>
+          <th className="px-2 py-1 text-right">Rulaj (RON)</th>
         </tr>
       </thead>
       <tbody>
         {conturi.map((c) => (
           <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-            <td className="px-2 py-1.5 tabular-nums">{c.simbol}</td>
-            <td className="px-2 py-1.5">{c.denumire}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">{fmt((rulajPeCont[c.id] || {})[tip] || 0)}</td>
+            <td className="px-2 py-1 tabular-nums">{c.simbol}</td>
+            <td className="px-2 py-1">{c.denumire}</td>
+            <td className="px-2 py-1 text-right tabular-nums">{fmt((rulajPeCont[c.id] || {})[tip] || 0)}</td>
           </tr>
         ))}
         <tr className="font-semibold">
-          <td className="px-2 py-1.5" colSpan={2}>Total</td>
-          <td className="px-2 py-1.5 text-right tabular-nums">{fmt(total)}</td>
+          <td className="px-2 py-1" colSpan={2}>Total</td>
+          <td className="px-2 py-1 text-right tabular-nums">{fmt(total)}</td>
         </tr>
       </tbody>
     </table>
@@ -11225,33 +11225,33 @@ function RaportDetaliatPartizi({ titlu, grupuri, parohie }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-2 py-2">Art. bugetar nr.</th>
-                <th className="px-2 py-2">Denumire art. bugetar</th>
-                <th className="px-2 py-2">Data operațiunii</th>
-                <th className="px-2 py-2">Denumire partener</th>
-                <th className="px-2 py-2">Explicație</th>
-                <th className="px-2 py-2 text-right">Sumă (lei)</th>
-                <th className="px-2 py-2 text-right">Sold</th>
+                <th className="px-2 py-1">Art. bugetar nr.</th>
+                <th className="px-2 py-1">Denumire art. bugetar</th>
+                <th className="px-2 py-1">Data operațiunii</th>
+                <th className="px-2 py-1">Denumire partener</th>
+                <th className="px-2 py-1">Explicație</th>
+                <th className="px-2 py-1 text-right">Sumă (lei)</th>
+                <th className="px-2 py-1 text-right">Sold</th>
               </tr>
             </thead>
             <tbody>
               {grupuri.map((g) => (
                 <React.Fragment key={g.cont.id}>
                   <tr className="bg-[#1F3864]/5 font-semibold border-b border-stone-200">
-                    <td className="px-2 py-1.5 font-mono">{g.cont.simbol}</td>
-                    <td className="px-2 py-1.5" colSpan={4}>TOTAL rulaj — {g.cont.denumire}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(g.total)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(g.total)}</td>
+                    <td className="px-2 py-1 font-mono">{g.cont.simbol}</td>
+                    <td className="px-2 py-1" colSpan={4}>TOTAL rulaj — {g.cont.denumire}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmt(g.total)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmt(g.total)}</td>
                   </tr>
                   {g.randuri.map((r) => (
                     <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                      <td className="px-2 py-1.5 font-mono text-stone-400">{g.cont.simbol}</td>
-                      <td className="px-2 py-1.5 text-stone-400">{g.cont.denumire}</td>
-                      <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
-                      <td className="px-2 py-1.5">{r.op.tert || "—"}</td>
-                      <td className="px-2 py-1.5 text-stone-500">{r.op.explicatie || "—"}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.op.suma)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.sold)}</td>
+                      <td className="px-2 py-1 font-mono text-stone-400">{g.cont.simbol}</td>
+                      <td className="px-2 py-1 text-stone-400">{g.cont.denumire}</td>
+                      <td className="px-2 py-1 tabular-nums">{fmtDataJurnal(r.op.data)}</td>
+                      <td className="px-2 py-1">{r.op.tert || "—"}</td>
+                      <td className="px-2 py-1 text-stone-500">{r.op.explicatie || "—"}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{fmt(r.op.suma)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums font-medium">{fmt(r.sold)}</td>
                     </tr>
                   ))}
                 </React.Fragment>
@@ -12105,7 +12105,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
               <AntetFiltrabil cheie="articol" eticheta="Articol" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("articol")} />
               <AntetFiltrabil cheie="stoc" eticheta="Stoc curent" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("stoc")} className="px-3 py-2 align-bottom text-right" />
-              <th className="px-3 py-2">Loturi active (FIFO, cel mai vechi primul)</th>
+              <th className="px-3 py-1">Loturi active (FIFO, cel mai vechi primul)</th>
             </tr>
           </thead>
           <tbody>
@@ -12114,9 +12114,9 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
             )}
             {articoleAfisate.map((g) => (
               <tr key={`${g.denumire}|||${g.um}`} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-3 py-2 font-medium">{g.denumire} <span className="text-stone-400 text-xs">({g.um})</span></td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium">{g.stocTotal}</td>
-                <td className="px-3 py-2 text-xs text-stone-500">
+                <td className="px-3 py-1 font-medium">{g.denumire} <span className="text-stone-400 text-xs">({g.um})</span></td>
+                <td className="px-3 py-1 text-right tabular-nums font-medium">{g.stocTotal}</td>
+                <td className="px-3 py-1 text-xs text-stone-500">
                   {g.loturi.filter((l) => l.stoc > 0).length === 0
                     ? "—"
                     : g.loturi.filter((l) => l.stoc > 0).map((l) => `${fmtCant(l.stoc)} × ${fmt(l.costUnitar)} lei`).join("  +  ")}
@@ -12134,11 +12134,11 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Articol</th>
-              <th className="px-3 py-2 text-right">Cantitate</th>
-              <th className="px-3 py-2 text-right">Cost/unitate</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1">Data</th>
+              <th className="px-3 py-1">Articol</th>
+              <th className="px-3 py-1 text-right">Cantitate</th>
+              <th className="px-3 py-1 text-right">Cost/unitate</th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -12147,11 +12147,11 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[yearOf(m.data)]?.inchisDefinitiv;
               return (
                 <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(m.data)}</td>
-                  <td className="px-3 py-2">{lot?.denumire || m.articolId}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(m.valoareUnitara)}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(m.data)}</td>
+                  <td className="px-3 py-1">{lot?.denumire || m.articolId}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{fmt(m.valoareUnitara)}</td>
+                  <td className="px-3 py-1">
                     {anInchisDefinitiv ? (
                       <span className="text-xs text-stone-400">Închis definitiv</span>
                     ) : (
@@ -12181,12 +12181,12 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Nr.</th>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Motiv</th>
-              <th className="px-3 py-2">Beneficiar</th>
-              <th className="px-3 py-2 text-right">Valoare</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1">Nr.</th>
+              <th className="px-3 py-1">Data</th>
+              <th className="px-3 py-1">Motiv</th>
+              <th className="px-3 py-1">Beneficiar</th>
+              <th className="px-3 py-1 text-right">Valoare</th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -12195,12 +12195,12 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
               const totalBon = bon.linii.reduce((sum, l) => sum + l.valoare, 0);
               return (
                 <tr key={bon.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 tabular-nums">{bon.nr}/{bon.an}</td>
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(bon.data)}</td>
-                  <td className="px-3 py-2">{MOTIVE_CONSUM[bon.motiv]?.label || bon.motiv}</td>
-                  <td className="px-3 py-2 text-stone-500">{bon.beneficiar || "—"}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalBon)}</td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1 tabular-nums">{bon.nr}/{bon.an}</td>
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(bon.data)}</td>
+                  <td className="px-3 py-1">{MOTIVE_CONSUM[bon.motiv]?.label || bon.motiv}</td>
+                  <td className="px-3 py-1 text-stone-500">{bon.beneficiar || "—"}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{fmt(totalBon)}</td>
+                  <td className="px-3 py-1">
                     {anInchisDefinitiv ? (
                       <span className="text-xs text-stone-400">Închis definitiv</span>
                     ) : (
@@ -12236,11 +12236,11 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1.5">Nr.</th>
-              <th className="px-2 py-1.5">Data</th>
-              <th className="px-2 py-1.5">Motiv</th>
-              <th className="px-2 py-1.5">Beneficiar</th>
-              <th className="px-2 py-1.5 text-right">Valoare (lei)</th>
+              <th className="px-2 py-1">Nr.</th>
+              <th className="px-2 py-1">Data</th>
+              <th className="px-2 py-1">Motiv</th>
+              <th className="px-2 py-1">Beneficiar</th>
+              <th className="px-2 py-1 text-right">Valoare (lei)</th>
             </tr>
           </thead>
           <tbody>
@@ -12249,11 +12249,11 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
             )}
             {bonuriAfisate.map((b) => (
               <tr key={b.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-2 py-1.5 tabular-nums">{b.nr}/{b.an}</td>
-                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(b.data)}</td>
-                <td className="px-2 py-1.5">{MOTIVE_CONSUM[b.motiv].label}</td>
-                <td className="px-2 py-1.5 text-stone-500">{b.beneficiar || "—"}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(b.linii.reduce((s, l) => s + l.valoare, 0))}</td>
+                <td className="px-2 py-1 tabular-nums">{b.nr}/{b.an}</td>
+                <td className="px-2 py-1 tabular-nums">{fmtDataJurnal(b.data)}</td>
+                <td className="px-2 py-1">{MOTIVE_CONSUM[b.motiv].label}</td>
+                <td className="px-2 py-1 text-stone-500">{b.beneficiar || "—"}</td>
+                <td className="px-2 py-1 text-right tabular-nums font-medium">{fmt(b.linii.reduce((s, l) => s + l.valoare, 0))}</td>
               </tr>
             ))}
           </tbody>
@@ -12750,12 +12750,12 @@ function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, on
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                  <th className="px-3 py-2">Denumire</th>
-                  <th className="px-3 py-2">U.M.</th>
-                  <th className="px-3 py-2 text-right">Cantitate</th>
-                  <th className="px-3 py-2 text-right">Cost/unitate</th>
-                  <th className="px-3 py-2">Data</th>
-                  <th className="px-3 py-2"></th>
+                  <th className="px-3 py-1">Denumire</th>
+                  <th className="px-3 py-1">U.M.</th>
+                  <th className="px-3 py-1 text-right">Cantitate</th>
+                  <th className="px-3 py-1 text-right">Cost/unitate</th>
+                  <th className="px-3 py-1">Data</th>
+                  <th className="px-3 py-1"></th>
                 </tr>
               </thead>
               <tbody>
@@ -12764,18 +12764,18 @@ function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, on
                   if (!lot) return null;
                   return (
                     <tr key={m.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                      <td className="px-3 py-2">{lot.denumire}</td>
-                      <td className="px-3 py-2 text-stone-500">{lot.um}</td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-1">{lot.denumire}</td>
+                      <td className="px-3 py-1 text-stone-500">{lot.um}</td>
+                      <td className="px-3 py-1 text-right">
                         <input type="number" className={`${inputCls} w-24 text-right`} value={valoareEditata(m, "cantitate")} onChange={(e) => actualizeazaEditare(m.id, "cantitate", e.target.value)} />
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-1 text-right">
                         <input type="number" step="0.01" className={`${inputCls} w-24 text-right`} value={valoareEditata(m, "cost")} onChange={(e) => actualizeazaEditare(m.id, "cost", e.target.value)} />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1">
                         <input type="date" className={`${inputCls} w-36`} value={valoareEditata(m, "data")} onChange={(e) => actualizeazaEditare(m.id, "data", e.target.value)} />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1">
                         <div className="flex gap-2">
                           <Btn variant="gold" onClick={() => submitModifica(m)} disabled={salvandId === m.id}>Modifică</Btn>
                           {confirmareStergereId === m.id ? (
@@ -13141,12 +13141,12 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Denumire</th>
-              <th className="px-3 py-2">Categorie</th>
-              <th className="px-3 py-2">Locație</th>
-              <th className="px-3 py-2 text-right">Valoare</th>
-              <th className="px-3 py-2">Stare</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1">Denumire</th>
+              <th className="px-3 py-1">Categorie</th>
+              <th className="px-3 py-1">Locație</th>
+              <th className="px-3 py-1 text-right">Valoare</th>
+              <th className="px-3 py-1">Stare</th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -13155,21 +13155,21 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
             )}
             {bunuriAfisate.map((b) => (
               <tr key={b.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-3 py-2 font-medium">
+                <td className="px-3 py-1 font-medium">
                   {b.denumire}
                   {b.valoare >= PRAG_BUN_VALOARE_MARE && (
                     <span className="ml-1 text-[10px] text-[#B8860B] border border-[#B8860B]/40 rounded px-1 py-0.5">valoare mare</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-stone-500">{b.categorie}</td>
-                <td className="px-3 py-2 text-stone-500">{b.locatie || "—"}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{fmt(b.valoare)}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-1 text-stone-500">{b.categorie}</td>
+                <td className="px-3 py-1 text-stone-500">{b.locatie || "—"}</td>
+                <td className="px-3 py-1 text-right tabular-nums">{fmt(b.valoare)}</td>
+                <td className="px-3 py-1">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${b.stare === "necesita_reparatii" ? "text-amber-700 bg-amber-50" : "text-emerald-700 bg-emerald-50"}`}>
                     {STARI_BUN[b.stare]}
                   </span>
                 </td>
-                <td className="px-3 py-2 flex gap-2">
+                <td className="px-3 py-1 flex gap-2">
                   {!permisiuni.citireOnly && !state.exercitiiFinanciare?.[yearOf(b.dataAchizitie)]?.inchisDefinitiv && (
                     <Btn variant="gold" onClick={() => setEditBunFor(b)}>Modifică</Btn>
                   )}
@@ -13187,19 +13187,19 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-2">Denumire</th>
-                <th className="px-3 py-2">Data casării</th>
-                <th className="px-3 py-2">Motiv</th>
-                <th className="px-3 py-2">Aprobat de</th>
+                <th className="px-3 py-1">Denumire</th>
+                <th className="px-3 py-1">Data casării</th>
+                <th className="px-3 py-1">Motiv</th>
+                <th className="px-3 py-1">Aprobat de</th>
               </tr>
             </thead>
             <tbody>
               {bunuriCasate.map((b) => (
                 <tr key={b.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100 text-stone-500">
-                  <td className="px-3 py-2 line-through">{b.denumire}</td>
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(b.dataCasare)}</td>
-                  <td className="px-3 py-2">{b.motivCasare}</td>
-                  <td className="px-3 py-2">{b.aprobatDe || "—"}</td>
+                  <td className="px-3 py-1 line-through">{b.denumire}</td>
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(b.dataCasare)}</td>
+                  <td className="px-3 py-1">{b.motivCasare}</td>
+                  <td className="px-3 py-1">{b.aprobatDe || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -13214,10 +13214,10 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1.5">Nr. PV</th>
-              <th className="px-2 py-1.5">Data</th>
-              <th className="px-2 py-1.5">Comisie</th>
-              <th className="px-2 py-1.5 text-right">Bunuri verificate</th>
+              <th className="px-2 py-1">Nr. PV</th>
+              <th className="px-2 py-1">Data</th>
+              <th className="px-2 py-1">Comisie</th>
+              <th className="px-2 py-1 text-right">Bunuri verificate</th>
             </tr>
           </thead>
           <tbody>
@@ -13226,10 +13226,10 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
             )}
             {inventarieriSortate.map((pv) => (
               <tr key={pv.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-2 py-1.5 tabular-nums">{pv.nrPV}/{pv.an}</td>
-                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(pv.data)}</td>
-                <td className="px-2 py-1.5 text-stone-500">{pv.membri.join(", ")}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{pv.bunuri.length}</td>
+                <td className="px-2 py-1 tabular-nums">{pv.nrPV}/{pv.an}</td>
+                <td className="px-2 py-1 tabular-nums">{fmtDataJurnal(pv.data)}</td>
+                <td className="px-2 py-1 text-stone-500">{pv.membri.join(", ")}</td>
+                <td className="px-2 py-1 text-right tabular-nums">{pv.bunuri.length}</td>
               </tr>
             ))}
           </tbody>
@@ -13710,9 +13710,9 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Cod parcelă</th>
-              <th className="px-3 py-2">Stare</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1">Cod parcelă</th>
+              <th className="px-3 py-1">Stare</th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -13723,9 +13723,9 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
               const stareTone = l.stare === "disponibil" ? "text-emerald-700 bg-emerald-50" : l.stare === "concesionat" ? "text-amber-700 bg-amber-50" : "text-stone-500 bg-stone-100";
               return (
                 <tr key={l.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 font-mono font-medium">{l.codParcela}</td>
-                  <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{l.stare}</span></td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1 font-mono font-medium">{l.codParcela}</td>
+                  <td className="px-3 py-1"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{l.stare}</span></td>
+                  <td className="px-3 py-1">
                     {!permisiuni.citireOnly && l.stare === "disponibil" && (
                       <Btn variant="gold" onClick={() => setConcesioneazaFor(l)}>Concesionează</Btn>
                     )}
@@ -13748,12 +13748,12 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Loc</th>
-              <th className="px-3 py-2">Concesionar</th>
-              <th className="px-3 py-2">Durată</th>
-              <th className="px-3 py-2">Expiră</th>
-              <th className="px-3 py-2">Stare</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-1">Loc</th>
+              <th className="px-3 py-1">Concesionar</th>
+              <th className="px-3 py-1">Durată</th>
+              <th className="px-3 py-1">Expiră</th>
+              <th className="px-3 py-1">Stare</th>
+              <th className="px-3 py-1"></th>
             </tr>
           </thead>
           <tbody>
@@ -13768,12 +13768,12 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
               else if (inTermenSuccesori) { stareLabel = "Expirată — termen succesori activ"; stareTone = "text-rose-700 bg-rose-50"; }
               return (
                 <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 font-mono">{loc?.codParcela}</td>
-                  <td className="px-3 py-2">{c.concesionar}</td>
-                  <td className="px-3 py-2 text-stone-500">{DURATE_CONCESIUNE[c.tipDurata]}</td>
-                  <td className="px-3 py-2 tabular-nums text-stone-500">{c.dataExpirare ? fmtDataJurnal(c.dataExpirare) : "—"}</td>
-                  <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{stareLabel}</span></td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1 font-mono">{loc?.codParcela}</td>
+                  <td className="px-3 py-1">{c.concesionar}</td>
+                  <td className="px-3 py-1 text-stone-500">{DURATE_CONCESIUNE[c.tipDurata]}</td>
+                  <td className="px-3 py-1 tabular-nums text-stone-500">{c.dataExpirare ? fmtDataJurnal(c.dataExpirare) : "—"}</td>
+                  <td className="px-3 py-1"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{stareLabel}</span></td>
+                  <td className="px-3 py-1">
                     {!permisiuni.citireOnly && !c.expirataDefinitiv && (
                       <div className="flex gap-1 justify-end">
                         {inTermenSuccesori && (
@@ -13805,11 +13805,11 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Nume</th>
-              <th className="px-3 py-2">Loc</th>
-              <th className="px-3 py-2">Data decesului</th>
-              <th className="px-3 py-2">Data înhumării</th>
-              <th className="px-3 py-2">Concesionar?</th>
+              <th className="px-3 py-1">Nume</th>
+              <th className="px-3 py-1">Loc</th>
+              <th className="px-3 py-1">Data decesului</th>
+              <th className="px-3 py-1">Data înhumării</th>
+              <th className="px-3 py-1">Concesionar?</th>
             </tr>
           </thead>
           <tbody>
@@ -13822,11 +13822,11 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
               const esteConcesionarul = concesiuneLoc && concesiuneLoc.concesionar.trim().toLowerCase() === p.nume.trim().toLowerCase();
               return (
                 <tr key={p.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 font-medium">{p.nume}</td>
-                  <td className="px-3 py-2 font-mono text-stone-500">{loc?.codParcela}</td>
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.dataDeces)}</td>
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(p.dataInhumare)}</td>
-                  <td className="px-3 py-2">{esteConcesionarul ? "Da — declanșează obligația de reînnoire de către succesori" : "Nu"}</td>
+                  <td className="px-3 py-1 font-medium">{p.nume}</td>
+                  <td className="px-3 py-1 font-mono text-stone-500">{loc?.codParcela}</td>
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(p.dataDeces)}</td>
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(p.dataInhumare)}</td>
+                  <td className="px-3 py-1">{esteConcesionarul ? "Da — declanșează obligația de reînnoire de către succesori" : "Nu"}</td>
                 </tr>
               );
             })}
@@ -14310,13 +14310,13 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         <table className="w-full text-sm mt-2">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Nr.</th>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Expeditor</th>
-              <th className="px-3 py-2">Obiect</th>
-              <th className="px-3 py-2">Mod primire</th>
-              <th className="px-3 py-2">Termen răspuns</th>
-              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-1">Nr.</th>
+              <th className="px-3 py-1">Data</th>
+              <th className="px-3 py-1">Expeditor</th>
+              <th className="px-3 py-1">Obiect</th>
+              <th className="px-3 py-1">Mod primire</th>
+              <th className="px-3 py-1">Termen răspuns</th>
+              <th className="px-3 py-1">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -14328,19 +14328,19 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
               const aproape = c.termenRaspuns && !depasit && c.status === "in_lucru" && (new Date(c.termenRaspuns) - new Date(azi)) / 86400000 <= 5;
               return (
                 <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(c.data)}</td>
-                  <td className="px-3 py-2">{c.partener}</td>
-                  <td className="px-3 py-2 text-stone-500">{c.obiect}</td>
-                  <td className="px-3 py-2 text-stone-500">{MOD_PRIMIRE[c.modPrimire]}</td>
-                  <td className="px-3 py-2 tabular-nums">
+                  <td className="px-3 py-1 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(c.data)}</td>
+                  <td className="px-3 py-1">{c.partener}</td>
+                  <td className="px-3 py-1 text-stone-500">{c.obiect}</td>
+                  <td className="px-3 py-1 text-stone-500">{MOD_PRIMIRE[c.modPrimire]}</td>
+                  <td className="px-3 py-1 tabular-nums">
                     {c.termenRaspuns ? (
                       <span className={depasit ? "text-rose-700 font-medium" : aproape ? "text-amber-700 font-medium" : "text-stone-500"}>
                         {fmtDataJurnal(c.termenRaspuns)}{depasit ? " — depășit!" : aproape ? " — apropiat" : ""}
                       </span>
                     ) : "—"}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-1">
                     {permisiuni.citireOnly ? (
                       <span className={`text-xs px-2 py-0.5 rounded-full ${c.status === "rezolvat" ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50"}`}>
                         {c.status === "rezolvat" ? "Rezolvat" : "În lucru"}
@@ -14380,11 +14380,11 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         <table className="w-full text-sm mt-2">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-2">Nr.</th>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Destinatar</th>
-              <th className="px-3 py-2">Obiect</th>
-              <th className="px-3 py-2">Răspuns la</th>
+              <th className="px-3 py-1">Nr.</th>
+              <th className="px-3 py-1">Data</th>
+              <th className="px-3 py-1">Destinatar</th>
+              <th className="px-3 py-1">Obiect</th>
+              <th className="px-3 py-1">Răspuns la</th>
             </tr>
           </thead>
           <tbody>
@@ -14395,11 +14395,11 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
               const referinta = state.corespondenta.find((x) => x.id === c.referintaIntrareId);
               return (
                 <tr key={c.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  <td className="px-3 py-2 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
-                  <td className="px-3 py-2 tabular-nums">{fmtDataJurnal(c.data)}</td>
-                  <td className="px-3 py-2">{c.partener}</td>
-                  <td className="px-3 py-2 text-stone-500">{c.obiect}</td>
-                  <td className="px-3 py-2 text-stone-500">{referinta ? `Intrare nr. ${referinta.nr}/${referinta.an}` : "—"}</td>
+                  <td className="px-3 py-1 tabular-nums text-stone-500">{c.nr}/{c.an}</td>
+                  <td className="px-3 py-1 tabular-nums">{fmtDataJurnal(c.data)}</td>
+                  <td className="px-3 py-1">{c.partener}</td>
+                  <td className="px-3 py-1 text-stone-500">{c.obiect}</td>
+                  <td className="px-3 py-1 text-stone-500">{referinta ? `Intrare nr. ${referinta.nr}/${referinta.an}` : "—"}</td>
                 </tr>
               );
             })}
@@ -14423,10 +14423,10 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1.5">Denumire</th>
-              <th className="px-2 py-1.5">Categorie</th>
-              <th className="px-2 py-1.5">An</th>
-              <th className="px-2 py-1.5">Note</th>
+              <th className="px-2 py-1">Denumire</th>
+              <th className="px-2 py-1">Categorie</th>
+              <th className="px-2 py-1">An</th>
+              <th className="px-2 py-1">Note</th>
             </tr>
           </thead>
           <tbody>
@@ -14435,10 +14435,10 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
             )}
             {documenteFiltrate.map((d) => (
               <tr key={d.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-2 py-1.5 font-medium">{d.denumire}</td>
-                <td className="px-2 py-1.5 text-stone-500">{d.categorie}</td>
-                <td className="px-2 py-1.5 tabular-nums">{d.an}</td>
-                <td className="px-2 py-1.5 text-stone-500">{d.notite || "—"}</td>
+                <td className="px-2 py-1 font-medium">{d.denumire}</td>
+                <td className="px-2 py-1 text-stone-500">{d.categorie}</td>
+                <td className="px-2 py-1 tabular-nums">{d.an}</td>
+                <td className="px-2 py-1 text-stone-500">{d.notite || "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -15091,31 +15091,31 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
             </Card>
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left bg-stone-50 text-stone-500"><th className="px-2 py-1.5">Art. bug. nr.</th><th className="px-2 py-1.5">Explicație</th><th className="px-2 py-1.5">Sursă/Destinație</th><th className="px-2 py-1.5 text-right">Sumă</th></tr>
+                <tr className="text-left bg-stone-50 text-stone-500"><th className="px-2 py-1">Art. bug. nr.</th><th className="px-2 py-1">Explicație</th><th className="px-2 py-1">Sursă/Destinație</th><th className="px-2 py-1 text-right">Sumă</th></tr>
               </thead>
               <tbody>
                 {docCurent.linii.map((l) => (
                   <tr key={l.id} className="border-t border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                    <td className="px-2 py-1.5 font-mono">{contById[l.contId]?.simbol || l.contId}</td>
-                    <td className="px-2 py-1.5 text-stone-500">{l.explicatie || "—"}</td>
-                    <td className="px-2 py-1.5 text-stone-500">{l.modPlata === "numerar" ? "Casă" : "Bancă"}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(l.suma)}</td>
+                    <td className="px-2 py-1 font-mono">{contById[l.contId]?.simbol || l.contId}</td>
+                    <td className="px-2 py-1 text-stone-500">{l.explicatie || "—"}</td>
+                    <td className="px-2 py-1 text-stone-500">{l.modPlata === "numerar" ? "Casă" : "Bancă"}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmt(l.suma)}</td>
                   </tr>
                 ))}
                 <tr className="border-t-2 border-stone-300 font-semibold">
-                  <td className="px-2 py-1.5" colSpan={3}>Total</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{fmt(docCurent.linii.reduce((s, l) => s + l.suma, 0))}</td>
+                  <td className="px-2 py-1" colSpan={3}>Total</td>
+                  <td className="px-2 py-1 text-right tabular-nums">{fmt(docCurent.linii.reduce((s, l) => s + l.suma, 0))}</td>
                 </tr>
                 {tip === "plata" && (
                   <tr className="bg-amber-50 font-semibold">
-                    <td className="px-2 py-1.5" colSpan={3}>Sold cumulat plăți (an {docCurent.an})</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldCumulatPlati)}</td>
+                    <td className="px-2 py-1" colSpan={3}>Sold cumulat plăți (an {docCurent.an})</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmt(soldCumulatPlati)}</td>
                   </tr>
                 )}
                 {tip === "incasare" && (
                   <tr className="bg-amber-50 font-semibold">
-                    <td className="px-2 py-1.5" colSpan={3}>Sold cumulat încasări (an {docCurent.an})</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(soldCumulatPlati)}</td>
+                    <td className="px-2 py-1" colSpan={3}>Sold cumulat încasări (an {docCurent.an})</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{fmt(soldCumulatPlati)}</td>
                   </tr>
                 )}
               </tbody>
@@ -15456,19 +15456,19 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left bg-stone-50 text-stone-500">
-                {coloaneLinii.map((c) => <th key={c.label} className={`px-2 py-1.5 ${c.right ? "text-right" : ""}`}>{c.label}</th>)}
+                {coloaneLinii.map((c) => <th key={c.label} className={`px-2 py-1 ${c.right ? "text-right" : ""}`}>{c.label}</th>)}
               </tr>
             </thead>
             <tbody>
               {docCurent.linii.map((l, i) => (
                 <tr key={i} className="border-t border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                  {coloaneLinii.map((c) => <td key={c.label} className={`px-2 py-1.5 ${c.right ? "text-right tabular-nums" : ""}`}>{c.value(l)}</td>)}
+                  {coloaneLinii.map((c) => <td key={c.label} className={`px-2 py-1 ${c.right ? "text-right tabular-nums" : ""}`}>{c.value(l)}</td>)}
                 </tr>
               ))}
               {coloaneLinii.some((c) => c.total) && (
                 <tr className="border-t-2 border-stone-300 font-semibold">
-                  <td className="px-2 py-1.5" colSpan={coloaneLinii.length - 1}>Total</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
+                  <td className="px-2 py-1" colSpan={coloaneLinii.length - 1}>Total</td>
+                  <td className="px-2 py-1 text-right tabular-nums">
                     {coloaneLinii.find((c) => c.total)?.totalValue?.(docCurent)}
                   </td>
                 </tr>
@@ -15568,10 +15568,10 @@ function AuditModal({ jurnalAudit, onClose }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1.5">Data</th>
-              <th className="px-2 py-1.5">Ora</th>
-              <th className="px-2 py-1.5">Rol</th>
-              <th className="px-2 py-1.5">Acțiune</th>
+              <th className="px-2 py-1">Data</th>
+              <th className="px-2 py-1">Ora</th>
+              <th className="px-2 py-1">Rol</th>
+              <th className="px-2 py-1">Acțiune</th>
             </tr>
           </thead>
           <tbody>
@@ -15580,10 +15580,10 @@ function AuditModal({ jurnalAudit, onClose }) {
             )}
             {afisate.map((a) => (
               <tr key={a.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-2 py-1.5 tabular-nums">{fmtDataJurnal(a.data)}</td>
-                <td className="px-2 py-1.5 tabular-nums text-stone-500">{a.ora}</td>
-                <td className="px-2 py-1.5 text-stone-500">{a.rol}</td>
-                <td className="px-2 py-1.5">{a.actiune}</td>
+                <td className="px-2 py-1 tabular-nums">{fmtDataJurnal(a.data)}</td>
+                <td className="px-2 py-1 tabular-nums text-stone-500">{a.ora}</td>
+                <td className="px-2 py-1 text-stone-500">{a.rol}</td>
+                <td className="px-2 py-1">{a.actiune}</td>
               </tr>
             ))}
           </tbody>
