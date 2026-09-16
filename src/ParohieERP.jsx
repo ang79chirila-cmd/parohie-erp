@@ -100,6 +100,36 @@ function soldCasaBancaLaData(operatiuni, dataLimitaInclusiv) {
   return { soldCasa, soldBanca, soldDepozit };
 }
 
+// Sold cumulat prin anul de numerotare `anLimita` (inclusiv) — criteriul de apartenență la an
+// e `op.an` (anul din numerotarea documentului, ex. "27/2025"), NU `op.data` (data calendaristică
+// efectivă a operațiunii). E deliberat același criteriu ca la Registrul Jurnal (care filtrează tot
+// după `op.an === anSelectat`), NU cel din `soldCasaBancaLaData` de mai sus (care e pe dată).
+//
+// De ce contează diferența: un document poate avea, din greșeală de introducere, anul de
+// numerotare diferit de anul calendaristic al datei lui (ex. numerotat "1/2026", dar cu data
+// efectivă 16.07.2025) — caz real, găsit și corectat direct în producție. Cât timp Jurnalul și
+// verificarea de sold foloseau criterii diferite (an vs. dată), o asemenea greșeală rămânea
+// invizibilă: Jurnalul arăta un sold, validarea de Ordin de plată arăta altul, fără nicio eroare
+// vizibilă care să semnaleze problema — doar o discrepanță silențioasă între ecrane.
+//
+// Folosită peste tot unde e nevoie de soldul curent/total (Tablou de bord, validarea de Ordin de
+// plată, calculul excedentului la închiderea unui exercițiu) — NU la Reconcilierea bancară, care
+// compară explicit soldul aplicației la o dată calendaristică exactă (data extrasului de bancă),
+// unde `soldCasaBancaLaData` (pe dată) rămâne criteriul corect.
+function soldCasaBancaLaAn(operatiuni, anLimita) {
+  let soldCasa = 0;
+  let soldBanca = 0;
+  let soldDepozit = 0;
+  for (const op of operatiuni) {
+    if (op.an > anLimita) continue;
+    const semn = op.tip === "incasare" ? 1 : -1;
+    if (op.modPlata === "numerar") soldCasa += semn * op.suma;
+    else if (op.modPlata === "depozit") soldDepozit += semn * op.suma;
+    else soldBanca += semn * op.suma;
+  }
+  return { soldCasa, soldBanca, soldDepozit };
+}
+
 // Reconstruiește forma locală buget[contId][an] = suma, pornind de la prevederile bugetare
 // aduse din Supabase (formă { [an]: { validat, dataValidare, linii: [{contId, suma}] } }) —
 // exact aceeași transformare pe care o făcea local valideazaPrevederi() la fiecare validare.
@@ -5041,7 +5071,7 @@ export default function ParohieERP() {
                 inFereastraManuala: luna >= 1 && luna <= 3,
                 inFereastraAlerta: luna === 3 && zi >= 15,
                 onInchide: async (an) => {
-                  const excedent = soldCasaBancaLaData(state.operatiuni, `${an}-12-31`);
+                  const excedent = soldCasaBancaLaAn(state.operatiuni, an);
                   const rezultat = await seteazaExcedentReportat(contActiv.parohieId, an + 1, excedent);
                   setState((s) => {
                     const { operatiuni, exercitiiFinanciare } = inchideExercitiuFinanciar(s, an, "manuala");
@@ -5608,9 +5638,11 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
       if (op.tip === "incasare") venituri += op.suma;
       else if (!eAjustare106Plata) cheltuieli += op.suma;
     }
-    // Sold casă/bancă/depozit = soldul cumulat la finalul anului selectat (la zi, dacă e anul curent).
+    // Sold casă/bancă/depozit = soldul cumulat prin anul selectat — pe criteriul de an de
+    // numerotare (`op.an`), exact ca la Registrul Jurnal (nu pe dată calendaristică — vezi
+    // comentariul de la soldCasaBancaLaAn pentru motiv).
     const dataLimita = anTablou >= anCurent ? todayISO() : `${anTablou}-12-31`;
-    const { soldCasa: sc, soldBanca: sb, soldDepozit: sd } = soldCasaBancaLaData(state.operatiuni, dataLimita);
+    const { soldCasa: sc, soldBanca: sb, soldDepozit: sd } = soldCasaBancaLaAn(state.operatiuni, anTablou);
     // Sold Bancă "ajustat" — doar pentru afișarea curentă (anul în curs, la zi), niciodată pentru
     // un an trecut/închis: scade comisioanele bancare deja introduse, dar încă neconsolidate
     // într-un Ordin de plată oficial (vezi useDerived, care documentează motivul complet).
@@ -5911,7 +5943,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
       {showInchidere && inchidereInfo && (
         <InchidereExercitiuModal
           an={inchidereInfo.anDeInchis}
-          excedent={soldCasaBancaLaData(state.operatiuni, `${inchidereInfo.anDeInchis}-12-31`)}
+          excedent={soldCasaBancaLaAn(state.operatiuni, inchidereInfo.anDeInchis)}
           onConfirm={async () => { await inchidereInfo.onInchide(inchidereInfo.anDeInchis); setShowInchidere(false); }}
           onClose={() => setShowInchidere(false)}
         />
@@ -5920,9 +5952,9 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
       {showInchidereExceptie && (
         <InchidereExercitiuModal
           an={anReconstituire}
-          excedent={soldCasaBancaLaData(state.operatiuni, `${anReconstituire}-12-31`)}
+          excedent={soldCasaBancaLaAn(state.operatiuni, anReconstituire)}
           onConfirm={async () => {
-            const excedent = soldCasaBancaLaData(state.operatiuni, `${anReconstituire}-12-31`);
+            const excedent = soldCasaBancaLaAn(state.operatiuni, anReconstituire);
             const rezultat = await seteazaExcedentReportat(parohieId, anReconstituire + 1, excedent);
             setState((s) => {
               const { operatiuni, exercitiiFinanciare } = inchideExercitiuFinanciar(s, anReconstituire, "manuala-exceptie");
@@ -7501,11 +7533,11 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
       setError("Suma totală a ordinului de plată trebuie să fie mai mare ca 0.");
       return false;
     }
-    if (totalCasa > derived.soldCasa) {
+    if (totalCasa > 0 && totalCasa > derived.soldCasa) {
       setError(`Sold insuficient în Casă! Sold disponibil: ${fmt(derived.soldCasa)} RON, iar liniile pe Casă însumează ${fmt(totalCasa)} RON.`);
       return false;
     }
-    if (totalBanca > derived.soldBanca) {
+    if (totalBanca > 0 && totalBanca > derived.soldBanca) {
       setError(`Sold insuficient în Bancă! Sold disponibil: ${fmt(derived.soldBanca)} RON, iar liniile pe Bancă însumează ${fmt(totalBanca)} RON.`);
       return false;
     }
@@ -15159,7 +15191,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     // explicită; abia după aceea recalculăm automat acele linii (utilizatorul nu le tastează).
     const anEsteSoftInchis = !!exercitiiFinanciare?.[anNou]?.inchis && !exercitiiFinanciare?.[anNou]?.inchisDefinitiv;
     if (anEsteSoftInchis && !confirmareExcedent) {
-      const { soldCasa: casaVecheTotal, soldBanca: bancaVecheTotal } = soldCasaBancaLaData(operatiuni, `${anNou}-12-31`);
+      const { soldCasa: casaVecheTotal, soldBanca: bancaVecheTotal } = soldCasaBancaLaAn(operatiuni, anNou);
       setConfirmareExcedent({
         excedentVechi: { soldCasa: casaVecheTotal, soldBanca: bancaVecheTotal },
         excedentNou: { soldCasa: casaVecheTotal - casaVeche + casaNoua, soldBanca: bancaVecheTotal - bancaVeche + bancaNoua },
