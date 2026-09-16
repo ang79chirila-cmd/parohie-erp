@@ -8774,6 +8774,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           return sA - sB;
         }
         case "furnizor": return (a.furnizor || "").localeCompare(b.furnizor || "");
+        case "factura": return (a.nrFactura || "").localeCompare(b.nrFactura || "", undefined, { numeric: true, sensitivity: "base" });
         default: return 0;
       }
     };
@@ -9392,6 +9393,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               <AntetSortabil eticheta="Cantitate" coloana="cantitate" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Valoare" coloana="valoare" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Furnizor" coloana="furnizor" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
+              <AntetSortabil eticheta="Factură" coloana="factura" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
               <th className="px-3 py-1"></th>
             </tr>
           </thead>
@@ -9417,6 +9419,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                       <td className="px-3 py-1 text-right tabular-nums">{fmtCant(m.cantitate)}</td>
                       <td className="px-3 py-1 text-right tabular-nums">{fmt(m.valoareAchizitie)}</td>
                       {i === 0 && <td className="px-3 py-1 text-stone-500 align-top" rowSpan={grup.linii.length}>{grup.furnizor}</td>}
+                      {i === 0 && (
+                        <td className="px-3 py-1 text-stone-500 align-top tabular-nums" rowSpan={grup.linii.length}>
+                          {grup.nrFactura ? `${grup.nrFactura} din ${fmtDataJurnal(grup.data)}` : "—"}
+                        </td>
+                      )}
                       {i === 0 && (
                         <td className="px-3 py-1 align-top" rowSpan={grup.linii.length}>
                           <div className="flex gap-1.5 justify-end items-center">
@@ -9464,11 +9471,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                   <td className="px-3 py-1 text-right tabular-nums">{fmt(totalGrup)}</td>
                   <td className="px-3 py-1"></td>
                   <td className="px-3 py-1"></td>
+                  <td className="px-3 py-1"></td>
                 </tr>,
               ];
             })}
             {receptiiAnFiltrate.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-4 text-center text-stone-400">Nicio recepție în {anPangar}.</td></tr>
+              <tr><td colSpan={9} className="px-3 py-4 text-center text-stone-400">Nicio recepție în {anPangar}.</td></tr>
             )}
           </tbody>
         </table>
