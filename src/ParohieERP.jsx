@@ -1782,11 +1782,19 @@ function CampDataText({ value, onChange, placeholder }) {
     setText(value ? fmtDataJurnal(value) : "");
   }, [value]);
 
-  function actualizeazaDinText(v) {
-    setText(v);
-    const potrivire = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(v.trim());
+  function actualizeazaDinText(vRaw) {
+    // Utilizatorul tastează doar cifre — punctele de separare (zi/lună, lună/an) se inserează
+    // automat pe măsură ce scrie, fără să fie nevoie să le tasteze el însuși. Acceptă și
+    // lipire (paste) a unei date deja formatate: cifrele sunt extrase oricum, indiferent ce
+    // separatoare conținea textul original.
+    const cifre = vRaw.replace(/\D/g, "").slice(0, 8);
+    let vFormatat = cifre;
+    if (cifre.length > 4) vFormatat = `${cifre.slice(0, 2)}.${cifre.slice(2, 4)}.${cifre.slice(4)}`;
+    else if (cifre.length > 2) vFormatat = `${cifre.slice(0, 2)}.${cifre.slice(2)}`;
+    setText(vFormatat);
+    const potrivire = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(vFormatat);
     if (!potrivire) {
-      if (v.trim() === "") onChange("");
+      if (cifre.length === 0) onChange("");
       return;
     }
     const [, zi, luna, an] = potrivire;
