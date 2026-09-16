@@ -1799,7 +1799,12 @@ function CampDataText({ value, onChange, placeholder }) {
     }
     const [, zi, luna, an] = potrivire;
     const iso = `${an}-${luna}-${zi}`;
-    const d = new Date(`${iso}T00:00:00`);
+    // Construim data DIRECT în UTC (Date.UTC), nu prin parsare de string local — dacă am folosi
+    // `new Date(iso + "T00:00:00")`, ora locală 00:00 într-un fus est de UTC (ex. România,
+    // UTC+2/+3) corespunde de fapt serii DINAINTE în UTC, iar validarea de mai jos (care citește
+    // cu getUTC*) pica mereu, la ORICE dată tastată manual — exact bug-ul raportat: câmpul de
+    // calendar (care ocolește complet această parsare) funcționa, tastarea manuală niciodată.
+    const d = new Date(Date.UTC(Number(an), Number(luna) - 1, Number(zi)));
     const eValida = !isNaN(d) && d.getUTCFullYear() === Number(an) && d.getUTCMonth() + 1 === Number(luna) && d.getUTCDate() === Number(zi);
     if (eValida) onChange(iso);
   }
