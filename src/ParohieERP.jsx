@@ -1812,7 +1812,7 @@ function CampDataText({ value, onChange, placeholder }) {
         placeholder={placeholder || "__.__.____"}
         value={text}
         onChange={(e) => actualizeazaDinText(e.target.value)}
-        className={inputCls + " pr-7 w-28"}
+        className={inputCls + " pr-7 w-32"}
       />
       <button
         type="button"
