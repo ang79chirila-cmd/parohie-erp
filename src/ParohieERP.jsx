@@ -1809,7 +1809,7 @@ function CampDataText({ value, onChange, placeholder }) {
       <input
         type="text"
         inputMode="numeric"
-        placeholder={placeholder || "zz.ll.aaaa"}
+        placeholder={placeholder || "__.__.____"}
         value={text}
         onChange={(e) => actualizeazaDinText(e.target.value)}
         className={inputCls + " pr-7 w-28"}
@@ -1848,10 +1848,10 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
         {onDataStart && onDataSfarsit && (
           <>
             <span className="text-xs text-stone-500">De la</span>
-            <CampDataText value={dataStart} onChange={onDataStart} placeholder="zz.ll.aaaa" />
+            <CampDataText value={dataStart} onChange={onDataStart} placeholder="__.__.____" />
             <span className="text-stone-400 text-sm">—</span>
             <span className="text-xs text-stone-500">Până la</span>
-            <CampDataText value={dataSfarsit} onChange={onDataSfarsit} placeholder="zz.ll.aaaa" />
+            <CampDataText value={dataSfarsit} onChange={onDataSfarsit} placeholder="__.__.____" />
           </>
         )}
         <input
