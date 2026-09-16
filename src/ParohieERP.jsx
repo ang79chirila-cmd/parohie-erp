@@ -2368,6 +2368,19 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   const idxExplicatie = coloanePdf.findIndex((c) => c.key === "explicatie");
   const nrColoane = coloanePdf.length;
 
+  // Etichete de antet forțate pe 2 rânduri, DOAR pentru desenul din PDF — coloanele astfel
+  // marcate rămân, altfel, cu eticheta lor obișnuită (dintr-un singur rând) peste tot altundeva
+  // în aplicație (selectorul de coloane, XLSX, XML), unde un "\n" literal ar arăta greșit.
+  // La Sursa/Destinație, un spațiu explicit după "/" — cerut explicit, ca separare vizuală de
+  // linia următoare, nu doar rupere seacă exact pe caracterul slash.
+  const ETICHETE_PDF_PE_2_RANDURI = {
+    incasare: "Încasare\n(lei)",
+    plata: "Plată\n(lei)",
+    soldFinal: "Sold\nfinal",
+    sursa: "Sursa/ \nDestinație",
+  };
+  const etichetaPdf = (c) => ETICHETE_PDF_PE_2_RANDURI[c.key] || c.label;
+
   // Toate coloanele exprimate în lei/RON se aliniază la dreapta — cerut explicit, în toate
   // rapoartele. AutoTable indexează stilurile de coloană după poziție, nu după cheie, deci
   // construim maparea dinamic (coloanele pot lipsi/varia, din selecția de coloane de mai sus).
@@ -2462,8 +2475,9 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   if (idxIncasare !== -1 && idxPlata !== -1) {
     doc.setFont("NotoSans", "bold");
     doc.setFontSize(9);
-    const candidatiLatime = [coloanePdf[idxIncasare].label, coloanePdf[idxPlata].label, fmt(totalGeneralIncasari), fmt(totalGeneralPlati)];
-    const latimeColoanaSume = Math.max(...candidatiLatime.map((t) => doc.getTextWidth(String(t)))) + 3; // + cellPadding (1.5mm × 2 laturi)
+    const candidatiLatime = [etichetaPdf(coloanePdf[idxIncasare]), etichetaPdf(coloanePdf[idxPlata]), fmt(totalGeneralIncasari), fmt(totalGeneralPlati)]
+      .flatMap((t) => String(t).split("\n"));
+    const latimeColoanaSume = Math.max(...candidatiLatime.map((t) => doc.getTextWidth(t))) + 3; // + cellPadding (1.5mm × 2 laturi)
     columnStyles[idxIncasare] = { ...(columnStyles[idxIncasare] || {}), cellWidth: latimeColoanaSume };
     columnStyles[idxPlata] = { ...(columnStyles[idxPlata] || {}), cellWidth: latimeColoanaSume };
   }
@@ -2480,7 +2494,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
     footStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [231, 229, 228], textColor: [41, 37, 36] },
     columnStyles,
-    head: [randAntetReport, coloanePdf.map((c) => c.label)],
+    head: [randAntetReport, coloanePdf.map((c) => etichetaPdf(c))],
     foot: [randSubsolTotal],
     showHead: "everyPage",
     showFoot: "everyPage",
