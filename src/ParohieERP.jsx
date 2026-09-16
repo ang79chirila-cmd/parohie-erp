@@ -4633,13 +4633,6 @@ export default function ParohieERP() {
   const NAV_TOATE = [
     { id: "dashboard", label: "Tablou de bord", icon: Church },
     {
-      id: "nomenclatoare", label: "Nomenclatoare", icon: Landmark,
-      items: [
-        { label: "Articole bugetare", icon: Landmark, onClick: () => setTab("conturi") },
-        { label: "Produse Pangar", icon: Flame, onClick: () => setTab("pangar") },
-      ],
-    },
-    {
       id: "operatiuni", label: "Registru Jurnal", icon: BookOpen,
       subTabs: ["operatiuni", "conturi"],
       items: [
@@ -4680,6 +4673,7 @@ export default function ParohieERP() {
           ],
         },
         { label: "Reconciliere bancară", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("operatiuni", "reconciliere") },
+        { label: "Articole bugetare", icon: Landmark, onClick: () => setTab("conturi") },
       ],
     },
     {
@@ -4849,7 +4843,7 @@ export default function ParohieERP() {
     },
     { id: "import", label: "Import date", icon: Upload },
   ];
-  const NAV = NAV_TOATE.filter((n) => (n.id === "nomenclatoare" || permisiuni.tabs.includes(n.id)) && (n.id !== "cimitir" || state.parohie?.areCimitir));
+  const NAV = NAV_TOATE.filter((n) => permisiuni.tabs.includes(n.id) && (n.id !== "cimitir" || state.parohie?.areCimitir));
   const tabActiv = permisiuni.tabs.includes(tab) ? tab : NAV[0].id;
 
   // Creare Ordin de plată provenit din citirea automată AI (Import date) — mirror exact al
@@ -14448,9 +14442,75 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
   const iesiri = state.corespondenta.filter((c) => c.tip === "iesire").sort((a, b) => (a.data < b.data ? 1 : -1));
   const azi = todayISO();
   const documenteFiltrate = filtruCategorie ? state.arhiva.filter((d) => d.categorie === filtruCategorie) : state.arhiva;
+  const configColoaneArhiva = useMemo(() => ({
+    denumire: { get: (d) => d.denumire || "" },
+    categorie: { get: (d) => d.categorie || "" },
+    an: { get: (d) => d.an },
+    notite: { get: (d) => d.notite || "" },
+  }), []);
+  const {
+    filtre: filtreColoaneArhiva, setFiltre: setFiltreColoaneArhiva, procesate: documenteArhivaProcesate,
+    sugestiiPentru: sugestiiArhiva, sortColoana: sortColoanaArhiva, sortDirectie: sortDirectieArhiva, onSort: onSortArhiva,
+  } = useFiltrareColoane(documenteFiltrate, configColoaneArhiva);
 
-  const intrariCautabile = useMemo(() => intrari.map((c) => ({ ...c, cautObiect: c.obiect, cautPartener: c.partener })), [intrari]);
-  const iesiriCautabile = useMemo(() => iesiri.map((c) => ({ ...c, cautObiect: c.obiect, cautPartener: c.partener })), [iesiri]);
+  // Filtrare + sortare pe coloană (câmp de text sub fiecare etichetă, săgeți asc/desc la clic),
+  // aceeași componentă reutilizabilă ca la Registrul Jurnal.
+  const configColoaneIntrare = useMemo(() => ({
+    nr: { get: (c) => `${c.nr}/${c.an}` },
+    data: { get: (c) => c.data },
+    partener: { get: (c) => c.partener || "" },
+    obiect: { get: (c) => c.obiect || "" },
+    modPrimire: { get: (c) => MOD_PRIMIRE[c.modPrimire] || "" },
+    termenRaspuns: { get: (c) => c.termenRaspuns || "" },
+    status: { get: (c) => (c.status === "rezolvat" ? "Rezolvat" : "În lucru") },
+  }), []);
+  const {
+    filtre: filtreColoaneIntrare, setFiltre: setFiltreColoaneIntrare, procesate: intrariProcesate,
+    sugestiiPentru: sugestiiIntrare, sortColoana: sortColoanaIntrare, sortDirectie: sortDirectieIntrare, onSort: onSortIntrare,
+  } = useFiltrareColoane(intrari, configColoaneIntrare);
+
+  const configColoaneIesire = useMemo(() => ({
+    nr: { get: (c) => `${c.nr}/${c.an}` },
+    data: { get: (c) => c.data },
+    partener: { get: (c) => c.partener || "" },
+    obiect: { get: (c) => c.obiect || "" },
+    referinta: {
+      get: (c) => {
+        const r = state.corespondenta.find((x) => x.id === c.referintaIntrareId);
+        return r ? `Intrare nr. ${r.nr}/${r.an}` : "";
+      },
+    },
+  }), [state.corespondenta]);
+  const {
+    filtre: filtreColoaneIesire, setFiltre: setFiltreColoaneIesire, procesate: iesiriProcesate,
+    sugestiiPentru: sugestiiIesire, sortColoana: sortColoanaIesire, sortDirectie: sortDirectieIesire, onSort: onSortIesire,
+  } = useFiltrareColoane(iesiri, configColoaneIesire);
+
+  // Interval de dată (opțional, ambele capete) — aceeași pereche de selectoare ca la Jurnal/Pangar.
+  const [dataStartIntrare, setDataStartIntrare] = useState("");
+  const [dataSfarsitIntrare, setDataSfarsitIntrare] = useState("");
+  const intrariInInterval = useMemo(() => {
+    if (!dataStartIntrare && !dataSfarsitIntrare) return intrariProcesate;
+    return intrariProcesate.filter((c) => {
+      if (dataStartIntrare && c.data < dataStartIntrare) return false;
+      if (dataSfarsitIntrare && c.data > dataSfarsitIntrare) return false;
+      return true;
+    });
+  }, [intrariProcesate, dataStartIntrare, dataSfarsitIntrare]);
+
+  const [dataStartIesire, setDataStartIesire] = useState("");
+  const [dataSfarsitIesire, setDataSfarsitIesire] = useState("");
+  const iesiriInInterval = useMemo(() => {
+    if (!dataStartIesire && !dataSfarsitIesire) return iesiriProcesate;
+    return iesiriProcesate.filter((c) => {
+      if (dataStartIesire && c.data < dataStartIesire) return false;
+      if (dataSfarsitIesire && c.data > dataSfarsitIesire) return false;
+      return true;
+    });
+  }, [iesiriProcesate, dataStartIesire, dataSfarsitIesire]);
+
+  const intrariCautabile = useMemo(() => intrariInInterval.map((c) => ({ ...c, cautObiect: c.obiect, cautPartener: c.partener })), [intrariInInterval]);
+  const iesiriCautabile = useMemo(() => iesiriInInterval.map((c) => ({ ...c, cautObiect: c.obiect, cautPartener: c.partener })), [iesiriInInterval]);
   const {
     cautare: cautareIntrare, setCautare: setCautareIntrare, pagina: paginaIntrare, setPagina: setPaginaIntrare,
     totalPagini: totalPaginiIntrare, afisate: intrariAfisate, totalFiltrate: totalIntrariFiltrate,
@@ -14461,6 +14521,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
     totalPagini: totalPaginiIesire, afisate: iesiriAfisate, totalFiltrate: totalIesiriFiltrate,
     pageSize: pageSizeIesire, setPageSize: setPageSizeIesire,
   } = useTabelFiltrat(iesiriCautabile, ["cautObiect", "cautPartener"], 12);
+
 
   return (
     <div className="flex flex-col gap-3">
@@ -14491,17 +14552,18 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
           pagina={paginaIntrare} totalPagini={totalPaginiIntrare} onPagina={setPaginaIntrare}
           totalFiltrate={totalIntrariFiltrate} placeholder="Caută obiect sau expeditor..."
           pageSize={pageSizeIntrare} onPageSize={setPageSizeIntrare}
+          dataStart={dataStartIntrare} onDataStart={setDataStartIntrare} dataSfarsit={dataSfarsitIntrare} onDataSfarsit={setDataSfarsitIntrare}
         />
-        <table className="w-full text-sm mt-2">
+        <table className="w-full text-sm mt-2 border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-200 [&_td]:border [&_td]:border-stone-100">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Nr.</th>
-              <th className="px-3 py-1">Data</th>
-              <th className="px-3 py-1">Expeditor</th>
-              <th className="px-3 py-1">Obiect</th>
-              <th className="px-3 py-1">Mod primire</th>
-              <th className="px-3 py-1">Termen răspuns</th>
-              <th className="px-3 py-1">Status</th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+              <AntetFiltrabil cheie="nr" eticheta="Nr." filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("nr")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="data" eticheta="Data" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("data")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="partener" eticheta="Expeditor" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("partener")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="obiect" eticheta="Obiect" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("obiect")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="modPrimire" eticheta="Mod primire" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("modPrimire")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="termenRaspuns" eticheta="Termen răspuns" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("termenRaspuns")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="status" eticheta="Status" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("status")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
             </tr>
           </thead>
           <tbody>
@@ -14561,15 +14623,16 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
           pagina={paginaIesire} totalPagini={totalPaginiIesire} onPagina={setPaginaIesire}
           totalFiltrate={totalIesiriFiltrate} placeholder="Caută obiect sau destinatar..."
           pageSize={pageSizeIesire} onPageSize={setPageSizeIesire}
+          dataStart={dataStartIesire} onDataStart={setDataStartIesire} dataSfarsit={dataSfarsitIesire} onDataSfarsit={setDataSfarsitIesire}
         />
-        <table className="w-full text-sm mt-2">
+        <table className="w-full text-sm mt-2 border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-200 [&_td]:border [&_td]:border-stone-100">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Nr.</th>
-              <th className="px-3 py-1">Data</th>
-              <th className="px-3 py-1">Destinatar</th>
-              <th className="px-3 py-1">Obiect</th>
-              <th className="px-3 py-1">Răspuns la</th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+              <AntetFiltrabil cheie="nr" eticheta="Nr." filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("nr")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="data" eticheta="Data" filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("data")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="partener" eticheta="Destinatar" filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("partener")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="obiect" eticheta="Obiect" filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("obiect")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
+              <AntetFiltrabil cheie="referinta" eticheta="Răspuns la" filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("referinta")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
             </tr>
           </thead>
           <tbody>
@@ -14605,20 +14668,20 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
             )}
           </div>
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-200 [&_td]:border [&_td]:border-stone-100">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1">Denumire</th>
-              <th className="px-2 py-1">Categorie</th>
-              <th className="px-2 py-1">An</th>
-              <th className="px-2 py-1">Note</th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+              <AntetFiltrabil cheie="denumire" eticheta="Denumire" filtre={filtreColoaneArhiva} setFiltre={setFiltreColoaneArhiva} sugestii={sugestiiArhiva("denumire")} sortColoana={sortColoanaArhiva} sortDirectie={sortDirectieArhiva} onSort={onSortArhiva} className="px-2 py-1 align-bottom" />
+              <AntetFiltrabil cheie="categorie" eticheta="Categorie" filtre={filtreColoaneArhiva} setFiltre={setFiltreColoaneArhiva} sugestii={sugestiiArhiva("categorie")} sortColoana={sortColoanaArhiva} sortDirectie={sortDirectieArhiva} onSort={onSortArhiva} className="px-2 py-1 align-bottom" />
+              <AntetFiltrabil cheie="an" eticheta="An" filtre={filtreColoaneArhiva} setFiltre={setFiltreColoaneArhiva} sugestii={sugestiiArhiva("an")} sortColoana={sortColoanaArhiva} sortDirectie={sortDirectieArhiva} onSort={onSortArhiva} className="px-2 py-1 align-bottom" />
+              <AntetFiltrabil cheie="notite" eticheta="Note" filtre={filtreColoaneArhiva} setFiltre={setFiltreColoaneArhiva} sugestii={sugestiiArhiva("notite")} sortColoana={sortColoanaArhiva} sortDirectie={sortDirectieArhiva} onSort={onSortArhiva} className="px-2 py-1 align-bottom" />
             </tr>
           </thead>
           <tbody>
-            {documenteFiltrate.length === 0 && (
+            {documenteArhivaProcesate.length === 0 && (
               <tr><td colSpan={4} className="px-2 py-4 text-center text-stone-400">Niciun document încă.</td></tr>
             )}
-            {documenteFiltrate.map((d) => (
+            {documenteArhivaProcesate.map((d) => (
               <tr key={d.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                 <td className="px-2 py-1 font-medium">{d.denumire}</td>
                 <td className="px-2 py-1 text-stone-500">{d.categorie}</td>
