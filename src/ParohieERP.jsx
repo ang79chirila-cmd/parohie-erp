@@ -10589,7 +10589,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, partene
     ? ultimaChitantaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
-  const [tert, setTert] = useState("");
+  const [tert, setTert] = useState("Comitet Pangar");
   const [modPlata, setModPlata] = useState("numerar");
   const [linii, setLinii] = useState([{ id: uid(), bazaCod: "", cantitate: "" }]);
   const [error, setError] = useState("");
