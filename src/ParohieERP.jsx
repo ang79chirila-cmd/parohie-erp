@@ -1178,7 +1178,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header>
         <h1 className="font-serif text-2xl text-[#1F3864]">Organisme parohiale</h1>
         <p className="text-sm text-stone-500">
@@ -1835,7 +1835,7 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
     ? [10, 20, 50, 100, pageSize].sort((a, b) => a - b)
     : [10, 20, 50, 100];
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-stone-100 flex-wrap">
+    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-stone-100 flex-wrap">
       <div className="flex items-center gap-2 flex-wrap">
         {onDataStart && onDataSfarsit && (
           <>
@@ -5616,7 +5616,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3">
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Tablou de bord</h1>
@@ -6506,7 +6506,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header ref={refAntetPagina} className="flex items-center justify-between sticky top-0 z-30 bg-[#FAF8F3] py-1">
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Jurnal de Venituri și Cheltuieli</h1>
@@ -6551,32 +6551,32 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeBaraCautare }}>
             <tr className="text-left uppercase tracking-wide text-stone-500">
-              <th className="px-2.5 py-2.5">Nr. crt.</th>
-              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-2.5 align-bottom max-w-[115px] min-w-[115px]" />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-2.5 align-bottom max-w-[100px] min-w-[100px]" />
-              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-2.5 align-bottom" />
-              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-2.5 align-bottom" />
-              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-2.5 align-bottom max-w-[260px]" />
-              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-2.5 align-bottom max-w-[440px]" />
-              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-2.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-2.5 align-bottom text-right" />
-              <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-2.5 align-bottom max-w-[105px] min-w-[105px]" />
-              <th className="px-2.5 py-2.5 text-right">Sold final</th>
-              <th className="px-2.5 py-2.5 text-right">Sold „Bancă”</th>
-              <th className="px-2.5 py-2.5 text-right">Sold „Casă”</th>
-              {soldDepozitAn !== 0 && <th className="px-2.5 py-2.5 text-right">Sold „Depozit”</th>}
+              <th className="px-2.5 py-1.5 font-medium">Nr. crt.</th>
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2.5 py-1.5 align-bottom max-w-[115px] min-w-[115px]" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1.5 align-bottom max-w-[100px] min-w-[100px]" />
+              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1.5 align-bottom" />
+              <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-1.5 align-bottom" />
+              <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-1.5 align-bottom max-w-[260px]" />
+              <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-1.5 align-bottom max-w-[440px]" />
+              <AntetFiltrabil cheie="incasare" eticheta="Încasare (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2.5 py-1.5 align-bottom text-right" />
+              <AntetFiltrabil cheie="plata" eticheta="Plată (lei)" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2.5 py-1.5 align-bottom text-right" />
+              <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2.5 py-1.5 align-bottom max-w-[105px] min-w-[105px]" />
+              <th className="px-2.5 py-1.5 text-right font-medium">Sold final</th>
+              <th className="px-2.5 py-1.5 text-right font-medium">Sold „Bancă”</th>
+              <th className="px-2.5 py-1.5 text-right font-medium">Sold „Casă”</th>
+              {soldDepozitAn !== 0 && <th className="px-2.5 py-1.5 text-right font-medium">Sold „Depozit”</th>}
             </tr>
           </thead>
           <tbody>
             <tr className="bg-stone-50 font-semibold sticky z-10" style={{ top: inaltimeBaraCautare + inaltimeCapTabel }}>
-              <td colSpan={7} className="px-2.5 py-2.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
-              <td className="px-2.5 py-2.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
-              <td className="px-2.5 py-2.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
+              <td colSpan={7} className="px-2.5 py-1.5 text-right text-xs uppercase tracking-wide text-stone-500">TOTAL</td>
+              <td className="px-2.5 py-1.5 text-right tabular-nums text-emerald-700">{fmt(totalIncasariAfisate)}</td>
+              <td className="px-2.5 py-1.5 text-right tabular-nums text-rose-700">{fmt(totalPlatiAfisate)}</td>
               <td></td>
-              <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldFinalAn)}</td>
-              <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldBancaAn)}</td>
-              <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldCasaAn)}</td>
-              {soldDepozitAn !== 0 && <td className="px-2.5 py-2.5 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
+              <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldFinalAn)}</td>
+              <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldBancaAn)}</td>
+              <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldCasaAn)}</td>
+              {soldDepozitAn !== 0 && <td className="px-2.5 py-1.5 text-right tabular-nums">{fmt(soldDepozitAn)}</td>}
             </tr>
             {afisate.length === 0 && (
               <tr>
@@ -6587,14 +6587,14 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             )}
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-2.5 py-2 tabular-nums text-stone-500">{r.nrCrt}</td>
-                <td className="px-2.5 py-2 tabular-nums leading-tight max-w-[115px] min-w-[115px]">
+                <td className="px-2.5 py-1.5 tabular-nums text-stone-500">{r.nrCrt}</td>
+                <td className="px-2.5 py-1.5 tabular-nums leading-tight max-w-[115px] min-w-[115px]">
                   <div className="flex flex-col">
                     <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td className="px-2.5 py-2 tabular-nums max-w-[100px] min-w-[100px]">
+                <td className="px-2.5 py-1.5 tabular-nums max-w-[100px] min-w-[100px]">
                   {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6610,7 +6610,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-2.5 py-2 tabular-nums">
+                <td className="px-2.5 py-1.5 tabular-nums">
                   {r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6626,16 +6626,16 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-2.5 py-2 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
-                <td className="px-2.5 py-2 max-w-[260px] whitespace-normal break-words" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
-                <td className="px-2.5 py-2 text-stone-500 max-w-[440px] whitespace-normal break-words" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums text-emerald-700">
+                <td className="px-2.5 py-1.5 font-mono">{r.cont ? r.cont.simbol : r.op.contId}</td>
+                <td className="px-2.5 py-1.5 max-w-[260px] whitespace-normal break-words" title={r.op.tert || ""}>{r.op.tert || "—"}</td>
+                <td className="px-2.5 py-1.5 text-stone-500 max-w-[440px] whitespace-normal break-words" title={r.op.explicatie || r.cont?.denumire || ""}>{r.op.explicatie || r.cont?.denumire || "—"}</td>
+                <td className="px-2.5 py-1.5 text-right tabular-nums text-emerald-700">
                   {r.op.tip === "incasare" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2.5 py-2 text-right tabular-nums text-rose-700">
+                <td className="px-2.5 py-1.5 text-right tabular-nums text-rose-700">
                   {r.op.tip === "plata" ? fmt(r.op.suma) : ""}
                 </td>
-                <td className="px-2.5 py-2 max-w-[105px] min-w-[105px]">
+                <td className="px-2.5 py-1.5 max-w-[105px] min-w-[105px]">
                   <span className="flex items-center gap-1">
                     <span className="whitespace-normal break-words">{r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"}</span>
                     {r.cont?.clasa === "viramente" && !permisiuni.citireOnly && (
@@ -6654,10 +6654,10 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     )}
                   </span>
                 </td>
-                <td className="px-2.5 py-2 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
-                {soldDepozitAn !== 0 && <td className="px-2.5 py-2 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
+                <td className="px-2.5 py-1.5 text-right tabular-nums font-medium">{fmt(r.soldFinal)}</td>
+                <td className="px-2.5 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldBanca)}</td>
+                <td className="px-2.5 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldCasa)}</td>
+                {soldDepozitAn !== 0 && <td className="px-2.5 py-1.5 text-right tabular-nums text-stone-500">{fmt(r.soldDepozit)}</td>}
               </tr>
             ))}
           </tbody>
@@ -8007,7 +8007,7 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
     useTabelFiltrat(conturiSortate, ["simbol", "denumire"], 15);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header className="flex items-center justify-between">
         <div>
           <Btn variant="ghost" onClick={() => setTab("operatiuni")} className="mb-2">
@@ -9041,7 +9041,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header ref={refAntetPangar} className="flex items-center justify-between sticky top-0 z-30 bg-[#FAF8F3] py-1">
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Pangar</h1>
@@ -10987,7 +10987,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3">
       <header>
         <h1 className="font-serif text-2xl text-[#1F3864]">Rapoarte</h1>
         <p className="text-sm text-stone-500">Centralizatoare și situații, calculate din registrul jurnal.</p>
@@ -11362,7 +11362,7 @@ function ProfilParohieTab({ state, setState, obligatoriu, setTab }) {
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-3xl">
+    <div className="flex flex-col gap-3 max-w-3xl">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">
@@ -12075,7 +12075,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
     useTabelFiltrat(bonuriCautabile, ["cautMotiv", "cautBeneficiar"], 15);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header>
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Consum propriu intern & Acte filantropice & Protocol</h1>
@@ -13113,7 +13113,7 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
     useTabelFiltrat(bunuriActive, ["denumire", "categorie", "locatie"], 15);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header>
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Inventar & Patrimoniu</h1>
@@ -13671,7 +13671,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
     useTabelFiltrat(persoaneCautabile, ["cautCodLoc", "cautNume"], 15);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="font-serif text-2xl text-[#1F3864]">Cimitir Parohial</h1>
@@ -14278,7 +14278,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
   } = useTabelFiltrat(iesiriCautabile, ["cautObiect", "cautPartener"], 12);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <header>
         <h1 className="font-serif text-2xl text-[#1F3864]">Corespondență & Arhivă</h1>
         <p className="text-sm text-stone-500">Termen de retenție unic: {TERMEN_RETENTIE_ANI} de ani, pentru toate documentele.</p>
