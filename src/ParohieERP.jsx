@@ -6598,8 +6598,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             <tr className="text-left uppercase tracking-wide text-stone-500">
               <th className="px-1.5 py-1 font-medium max-w-[46px] min-w-[46px]">Nr. crt.</th>
               <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2 py-1 align-bottom max-w-[128px] min-w-[128px]" />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1 align-bottom max-w-[100px] min-w-[100px]" />
-              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1 align-bottom" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1 align-bottom max-w-[132px] min-w-[132px]" />
+              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1 align-bottom max-w-[132px] min-w-[132px]" />
               <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-1 align-bottom" />
               <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-1 align-bottom max-w-[260px]" />
               <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-1 align-bottom max-w-[440px]" />
@@ -6639,7 +6639,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td className="px-2.5 py-1 tabular-nums max-w-[100px] min-w-[100px]">
+                <td className="px-2.5 py-1 tabular-nums max-w-[132px] min-w-[132px]">
                   {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6655,7 +6655,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-2.5 py-1 tabular-nums">
+                <td className="px-2.5 py-1 tabular-nums max-w-[132px] min-w-[132px]">
                   {r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
