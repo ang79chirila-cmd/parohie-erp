@@ -10930,19 +10930,24 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
   const [formatHartieRaportAnual, setFormatHartieRaportAnual] = useState("A4");
   const [dataStart, setDataStart] = useState(`${aniDisponibili[0]}-01-01`);
   const [dataFinal, setDataFinal] = useState(todayISO());
-  // Fișe de cont — cerute explicit: fișă individuală (un singur art. bugetar) SAU fișă de conturi
-  // (selecție multiplă), extrase din același rulaj ca Partizile, dar restrânse la conturile alese
-  // de utilizator, nu la toate conturile clasei. Se resetează selecția la schimbarea tipului
-  // (venituri/cheltuieli) — un id de cont de venit selectat n-are sens păstrat când utilizatorul
-  // trece pe cheltuieli.
-  const [tipFisaCont, setTipFisaCont] = useState("venituri"); // "venituri" | "cheltuieli"
-  const [conturiSelectateFisa, setConturiSelectateFisa] = useState(new Set());
-  function comutaTipFisaCont(tip) {
-    setTipFisaCont(tip);
-    setConturiSelectateFisa(new Set());
+  // Fișe de cont — fișă individuală (un singur art. bugetar), fișă de conturi (selecție multiplă
+  // din aceeași clasă), SAU analiză de conectare venituri-cheltuieli (selecție simultană din
+  // ambele clase — cerută explicit, ca să poți lega, de exemplu, veniturile din distribuirea
+  // lumânărilor de cheltuiala cu achiziția lumânărilor). Cele două selecții sunt independente,
+  // nu se resetează una pe alta la comutarea vederii — doar tab-ul "activ" (care listă se vede
+  // pe ecran) se schimbă; bifele rămân.
+  const [tabFisaCont, setTabFisaCont] = useState("venituri"); // doar ce listă e vizibilă — "venituri" | "cheltuieli"
+  const [conturiSelectateVenituri, setConturiSelectateVenituri] = useState(new Set());
+  const [conturiSelectateCheltuieli, setConturiSelectateCheltuieli] = useState(new Set());
+  function comutaContFisaVenituri(id) {
+    setConturiSelectateVenituri((prev) => {
+      const nou = new Set(prev);
+      if (nou.has(id)) nou.delete(id); else nou.add(id);
+      return nou;
+    });
   }
-  function comutaContFisa(id) {
-    setConturiSelectateFisa((prev) => {
+  function comutaContFisaCheltuieli(id) {
+    setConturiSelectateCheltuieli((prev) => {
       const nou = new Set(prev);
       if (nou.has(id)) nou.delete(id); else nou.add(id);
       return nou;
@@ -11085,11 +11090,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
     else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
   }
 
-  function genereazaFisaConturi(format = "pdf") {
-    const eVenituri = tipFisaCont === "venituri";
-    const conturiSursa = eVenituri ? venituriConturi : cheltuieliConturi;
-    const conturiAlese = conturiSursa.filter((c) => conturiSelectateFisa.has(c.id));
-    if (conturiAlese.length === 0) return;
+  function construiesteGrupuriConturi(conturiAlese, eVenituri) {
     const coloane = [
       { key: "data", label: "Data" },
       { key: "nrDoc", label: eVenituri ? "Nr. chitanță" : "Nr. OP" },
@@ -11097,7 +11098,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
       { key: "explicatie", label: "Explicație" },
       { key: "suma", label: "Sumă (lei)" },
     ];
-    const grupuriRaport = conturiAlese.map((c) => {
+    return conturiAlese.map((c) => {
       const totalCont = (eVenituri ? stats.rulajPeCont[c.id]?.incasari : stats.rulajPeCont[c.id]?.plati) || 0;
       const tranzactii = state.operatiuni
         .filter((op) => op.contId === c.id && op.tip === (eVenituri ? "incasare" : "plata") && op.data >= interval.start && op.data <= interval.final)
@@ -11110,11 +11111,51 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
         })),
       };
     });
-    const etichetaTip = eVenituri ? "VENITURI - INCASARI" : "CHELTUIELI - PLATI";
+  }
+
+  function genereazaFisaConturi(format = "pdf") {
+    const conturiAleseVenituri = venituriConturi.filter((c) => conturiSelectateVenituri.has(c.id));
+    const conturiAleseCheltuieli = cheltuieliConturi.filter((c) => conturiSelectateCheltuieli.has(c.id));
+    const nrTotal = conturiAleseVenituri.length + conturiAleseCheltuieli.length;
+    if (nrTotal === 0) return;
+    const eAmbeleClase = conturiAleseVenituri.length > 0 && conturiAleseCheltuieli.length > 0;
+
+    const grupuriVenituri = construiesteGrupuriConturi(conturiAleseVenituri, true);
+    const grupuriCheltuieli = construiesteGrupuriConturi(conturiAleseCheltuieli, false);
+
+    // Rezumatul de conectare — cerut explicit, ca să se vadă direct, fără calcul manual, dacă
+    // veniturile alese acoperă cheltuielile alese cărora le sunt asociate (ex. venituri din
+    // distribuirea lumânărilor vs. cheltuiala cu achiziția lumânărilor).
+    let grupRezumatConectare = [];
+    if (eAmbeleClase) {
+      const totalVenituriSelectate = conturiAleseVenituri.reduce((s, c) => s + (stats.rulajPeCont[c.id]?.incasari || 0), 0);
+      const totalCheltuieliSelectate = conturiAleseCheltuieli.reduce((s, c) => s + (stats.rulajPeCont[c.id]?.plati || 0), 0);
+      grupRezumatConectare = [{
+        eticheta: "Rezumat conectare venituri–cheltuieli",
+        columns: [{ key: "categorie", label: "Categorie" }, { key: "suma", label: "Sumă (lei)" }],
+        rows: [
+          { categorie: `Total venituri selectate (${conturiAleseVenituri.length} conturi)`, suma: fmt(totalVenituriSelectate) },
+          { categorie: `Total cheltuieli selectate (${conturiAleseCheltuieli.length} conturi)`, suma: fmt(totalCheltuieliSelectate) },
+          { categorie: "Diferență (venituri − cheltuieli)", suma: fmt(totalVenituriSelectate - totalCheltuieliSelectate) },
+        ],
+      }];
+    }
+
+    const grupuriRaport = [...grupRezumatConectare, ...grupuriVenituri, ...grupuriCheltuieli];
     const etichetaPerioada = modInterval === "an" ? `PE ANUL ${anSelectat}` : `(${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
-    const titlu = conturiAlese.length === 1
-      ? `FIȘĂ DE CONT ${conturiAlese[0].simbol} - ${conturiAlese[0].denumire.toUpperCase()} — ${etichetaTip} ${etichetaPerioada}`
-      : `FIȘE DE CONT (${conturiAlese.length} conturi selectate) — ${etichetaTip} ${etichetaPerioada}`;
+
+    let titlu;
+    if (eAmbeleClase) {
+      titlu = `ANALIZĂ CONECTARE VENITURI-CHELTUIELI (${conturiAleseVenituri.length} conturi venituri, ${conturiAleseCheltuieli.length} conturi cheltuieli) ${etichetaPerioada}`;
+    } else {
+      const eVenituri = conturiAleseVenituri.length > 0;
+      const conturiAlese = eVenituri ? conturiAleseVenituri : conturiAleseCheltuieli;
+      const etichetaTip = eVenituri ? "VENITURI - INCASARI" : "CHELTUIELI - PLATI";
+      titlu = conturiAlese.length === 1
+        ? `FIȘĂ DE CONT ${conturiAlese[0].simbol} - ${conturiAlese[0].denumire.toUpperCase()} — ${etichetaTip} ${etichetaPerioada}`
+        : `FIȘE DE CONT (${conturiAlese.length} conturi selectate) — ${etichetaTip} ${etichetaPerioada}`;
+    }
+
     if (format === "xlsx") exportXLSXGrupat(titlu, grupuriRaport, state.parohie);
     else if (format === "xml") exportXMLGrupat(titlu, grupuriRaport, state.parohie);
     else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
@@ -11203,47 +11244,67 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
       <Card className="p-4">
         <h2 className="font-serif text-lg text-[#1F3864]">Fișe de cont (Art. bugetare)</h2>
         <p className="text-xs text-stone-500 mb-3">
-          Fișă individuală (un singur art. bugetar) sau fișă de conturi (selecție multiplă), extrase din Partizi Venituri sau din Partizi Cheltuieli, pentru perioada activă de mai sus.
+          Fișă individuală (un singur art. bugetar), fișă de conturi (selecție multiplă din aceeași clasă), sau analiză de conectare venituri-cheltuieli (bifează simultan din ambele liste — ex. venituri din distribuirea lumânărilor + cheltuiala cu achiziția lumânărilor). Extrase din Partizi Venituri/Cheltuieli, pentru perioada activă de mai sus.
         </p>
         <div className="flex gap-2 mb-3">
-          <Btn variant={tipFisaCont === "venituri" ? "primary" : "ghost"} onClick={() => comutaTipFisaCont("venituri")}>Venituri</Btn>
-          <Btn variant={tipFisaCont === "cheltuieli" ? "primary" : "ghost"} onClick={() => comutaTipFisaCont("cheltuieli")}>Cheltuieli</Btn>
+          <Btn variant={tabFisaCont === "venituri" ? "primary" : "ghost"} onClick={() => setTabFisaCont("venituri")}>
+            Venituri{conturiSelectateVenituri.size > 0 ? ` (${conturiSelectateVenituri.size})` : ""}
+          </Btn>
+          <Btn variant={tabFisaCont === "cheltuieli" ? "primary" : "ghost"} onClick={() => setTabFisaCont("cheltuieli")}>
+            Cheltuieli{conturiSelectateCheltuieli.size > 0 ? ` (${conturiSelectateCheltuieli.size})` : ""}
+          </Btn>
         </div>
         <div className="flex items-center gap-3 mb-2">
           <button
             type="button"
             className="text-xs text-[#1F3864] underline"
-            onClick={() => setConturiSelectateFisa(new Set((tipFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).map((c) => c.id)))}
+            onClick={() => (tabFisaCont === "venituri"
+              ? setConturiSelectateVenituri(new Set(venituriConturi.map((c) => c.id)))
+              : setConturiSelectateCheltuieli(new Set(cheltuieliConturi.map((c) => c.id))))}
           >
-            Selectează tot
+            Selectează tot ({tabFisaCont === "venituri" ? "venituri" : "cheltuieli"})
           </button>
-          <button type="button" className="text-xs text-[#1F3864] underline" onClick={() => setConturiSelectateFisa(new Set())}>
-            Deselectează tot
+          <button
+            type="button"
+            className="text-xs text-[#1F3864] underline"
+            onClick={() => (tabFisaCont === "venituri" ? setConturiSelectateVenituri(new Set()) : setConturiSelectateCheltuieli(new Set()))}
+          >
+            Deselectează tot ({tabFisaCont === "venituri" ? "venituri" : "cheltuieli"})
           </button>
           <span className="text-xs text-stone-400">
-            {conturiSelectateFisa.size === 0 ? "Niciun cont selectat" : conturiSelectateFisa.size === 1 ? "Fișă individuală (1 cont)" : `Fișă de conturi (${conturiSelectateFisa.size} conturi)`}
+            {conturiSelectateVenituri.size === 0 && conturiSelectateCheltuieli.size === 0
+              ? "Niciun cont selectat"
+              : conturiSelectateVenituri.size > 0 && conturiSelectateCheltuieli.size > 0
+              ? `Analiză de conectare: ${conturiSelectateVenituri.size} conturi venituri + ${conturiSelectateCheltuieli.size} conturi cheltuieli`
+              : conturiSelectateVenituri.size + conturiSelectateCheltuieli.size === 1
+              ? "Fișă individuală (1 cont)"
+              : `Fișă de conturi (${conturiSelectateVenituri.size + conturiSelectateCheltuieli.size} conturi)`}
           </span>
         </div>
         <div className="max-h-64 overflow-auto border border-stone-200 rounded-md divide-y divide-stone-100 mb-3">
-          {(tipFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).map((c) => (
+          {(tabFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).map((c) => (
             <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-stone-50 cursor-pointer">
-              <input type="checkbox" checked={conturiSelectateFisa.has(c.id)} onChange={() => comutaContFisa(c.id)} />
-              <span className="tabular-nums text-stone-500 w-16">{c.simbol}</span>
+              <input
+                type="checkbox"
+                checked={(tabFisaCont === "venituri" ? conturiSelectateVenituri : conturiSelectateCheltuieli).has(c.id)}
+                onChange={() => (tabFisaCont === "venituri" ? comutaContFisaVenituri(c.id) : comutaContFisaCheltuieli(c.id))}
+              />
+              <span className="tabular-nums text-stone-500 min-w-[76px] flex-shrink-0 whitespace-nowrap">{c.simbol}</span>
               <span className="flex-1">{c.denumire}</span>
             </label>
           ))}
-          {(tipFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).length === 0 && (
-            <div className="px-3 py-4 text-center text-stone-400 text-sm">Niciun cont de {tipFisaCont === "venituri" ? "venit" : "cheltuială"} în nomenclator.</div>
+          {(tabFisaCont === "venituri" ? venituriConturi : cheltuieliConturi).length === 0 && (
+            <div className="px-3 py-4 text-center text-stone-400 text-sm">Niciun cont de {tabFisaCont === "venituri" ? "venit" : "cheltuială"} în nomenclator.</div>
           )}
         </div>
         <div className="flex gap-2">
-          <Btn variant="ghost" disabled={conturiSelectateFisa.size === 0} onClick={() => genereazaFisaConturi("pdf")}>
+          <Btn variant="ghost" disabled={conturiSelectateVenituri.size === 0 && conturiSelectateCheltuieli.size === 0} onClick={() => genereazaFisaConturi("pdf")}>
             <Download size={14} /> PDF
           </Btn>
-          <Btn variant="ghost" disabled={conturiSelectateFisa.size === 0} onClick={() => genereazaFisaConturi("xlsx")}>
+          <Btn variant="ghost" disabled={conturiSelectateVenituri.size === 0 && conturiSelectateCheltuieli.size === 0} onClick={() => genereazaFisaConturi("xlsx")}>
             <Download size={14} /> XLSX
           </Btn>
-          <Btn variant="ghost" disabled={conturiSelectateFisa.size === 0} onClick={() => genereazaFisaConturi("xml")}>
+          <Btn variant="ghost" disabled={conturiSelectateVenituri.size === 0 && conturiSelectateCheltuieli.size === 0} onClick={() => genereazaFisaConturi("xml")}>
             <Download size={14} /> XML
           </Btn>
         </div>
