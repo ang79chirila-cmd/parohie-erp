@@ -9006,7 +9006,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         return patch ? { ...a, stoc: patch.stocNou } : a;
       }),
       miscariStoc: s.miscariStoc.filter((m) => !idsVechi.has(m.id)),
-      operatiuni: s.operatiuni.filter((op) => !(op.tip === "incasare" && op.nr === nrChitanta && op.an === anChitanta)),
+      operatiuni: s.operatiuni.filter((op) => op.documentId !== documentId),
       jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere vânzare pangar — chitanță nr. ${nrChitanta}/${anChitanta}`),
     }));
     return true;
@@ -9155,17 +9155,6 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   }, [receptiiAnFiltrate, sortColoanaIntrari, sortDirectieIntrari, state.articole]);
 
   const vanzariAnFiltrate = useMemo(() => {
-    // TEMPORAR — diagnostic pentru bug-ul cu Terț/Serie goale la anumite chitanțe Pangar.
-    if (typeof window !== "undefined" && anPangar === 2025) {
-      const nrDeUrmarit = [2, 3, 4, 9, 14, 15];
-      for (const nrTest of nrDeUrmarit) {
-        const candidatiIncasare = state.operatiuni.filter((op) => op.tip === "incasare" && op.nr === nrTest && op.an === 2025);
-        const rezumat = candidatiIncasare
-          .map((op, i) => `  linia ${i}: tert="${op.tert}" serie="${op.serie}" contId="${op.contId}" documentId="${op.documentId}"`)
-          .join("\n");
-        console.log(`[DEBUG nr=${nrTest}] candidați tip=incasare: ${candidatiIncasare.length}\n${rezumat || "  (niciunul)"}`);
-      }
-    }
     const iesiri = state.miscariStoc.filter((m) => {
       if (m.tip !== "iesire" || !m.nrChitanta || m.anChitanta !== anPangar) return false;
       if (dataStartIesiri && m.data < dataStartIesiri) return false;
@@ -9186,7 +9175,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     }
     return Object.values(perChitanta)
       .map((v) => {
-        const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
+        const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.contId !== "581" && op.contId !== "5081" && op.nr === v.nrChitanta && op.an === v.anChitanta);
         return { ...v, linii: Object.values(v.linii), serie: opChit?.serie || null, numarIdentificare: opChit?.numarIdentificare || null };
       })
       .sort((a, b) => (a.data < b.data ? 1 : -1));
@@ -9196,7 +9185,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // Cantitate se ia prima linie, respectiv suma tuturor liniilor; Valoare e deja totalul
   // chitanței; Terț necesită aceeași căutare în operatiuni ca la afișare (nu e stocat pe rând).
   const vanzariIesiriSortate = useMemo(() => {
-    const gasesteTert = (v) => state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta)?.tert || "";
+    const gasesteTert = (v) => state.operatiuni.find((op) => op.tip === "incasare" && op.contId !== "581" && op.contId !== "5081" && op.nr === v.nrChitanta && op.an === v.anChitanta)?.tert || "";
     const cmp = (a, b) => {
       switch (sortColoanaIesiri) {
         case "nrChitanta": return (a.nrChitanta || 0) - (b.nrChitanta || 0);
@@ -9340,7 +9329,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       }
       let tert = "";
       if (m.tip === "iesire" && m.nrChitanta) {
-        const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === m.nrChitanta && op.an === m.anChitanta);
+        const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.contId !== "581" && op.contId !== "5081" && op.nr === m.nrChitanta && op.an === m.anChitanta);
         tert = opChit?.tert || "";
       } else if (m.tip === "intrare") {
         tert = m.furnizor || "";
@@ -9907,7 +9896,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 rows={vanzariAnFiltrate
                   .filter((v) => selectieIesiri.has(`${v.anChitanta}-${v.nrChitanta}`))
                   .map((v) => {
-                    const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
+                    const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.contId !== "581" && op.contId !== "5081" && op.nr === v.nrChitanta && op.an === v.anChitanta);
                     return {
                       chitanta: `${v.nrChitanta}/${v.anChitanta}`, data: fmtDataJurnal(v.data),
                       codBaza: v.linii.map((l) => l.bazaCod).join(", "),
@@ -9956,7 +9945,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           </thead>
           <tbody>
             {vanzariIesiriSortate.map((v) => {
-              const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.nr === v.nrChitanta && op.an === v.anChitanta);
+              const opChit = state.operatiuni.find((op) => op.tip === "incasare" && op.contId !== "581" && op.contId !== "5081" && op.nr === v.nrChitanta && op.an === v.anChitanta);
               const anInchisDefinitiv = !!state.exercitiiFinanciare?.[v.anChitanta]?.inchisDefinitiv;
               const cheieSelectie = `${v.anChitanta}-${v.nrChitanta}`;
               return (
@@ -15641,7 +15630,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   // aceeași linie de produs).
   const vanzarePangarPentruEditare = useMemo(() => {
     if (!docCurent || miscariPangarLegate.length === 0) return null;
-    const opChit = operatiuni.find((op) => op.tip === "incasare" && op.nr === docCurent.nr && op.an === docCurent.an);
+    const opChit = operatiuni.find((op) => op.tip === "incasare" && op.contId !== "581" && op.contId !== "5081" && op.nr === docCurent.nr && op.an === docCurent.an);
     const liniiMap = {};
     for (const m of miscariPangarLegate) {
       const art = (articole || []).find((a) => a.id === m.articolId);
