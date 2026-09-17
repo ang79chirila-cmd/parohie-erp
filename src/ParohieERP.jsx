@@ -3798,6 +3798,29 @@ function useDerived(state) {
     if (soldCasa < PRAG_SOLD) alerteSold.push(`Atenție! Soldul din casă este scăzut (<${PRAG_SOLD} RON)!`);
     if (soldBanca < PRAG_SOLD) alerteSold.push(`Atenție! Soldul din bancă este scăzut (<${PRAG_SOLD} RON)!`);
 
+    // Decalaj între ultima chitanță și ultimul Ordin de plată introduse — semnal informativ, NU o
+    // blocare (nu există conceptul de "lună închisă" în aplicație, doar de an/exercițiu). Dacă
+    // plățile au fost introduse mult mai "în față" decât încasările aferente (sau invers), soldurile
+    // de Casă/Bancă afișate ACUM pot fi nesigure — nu pentru că ar fi greșite ca atare, ci pentru că
+    // încasări deja reale, dar încă neintroduse, ar schimba imaginea. Comparăm doar chitanțe/OP-uri
+    // reale (excludem viramentele interne — 581 — care nu reprezintă venituri/cheltuieli efective).
+    const chitanteReale = operatiuni.filter((op) => op.tip === "incasare" && contById[op.contId]?.clasa !== "viramente");
+    const opReale = operatiuni.filter((op) => op.tip === "plata" && contById[op.contId]?.clasa !== "viramente");
+    if (chitanteReale.length > 0 && opReale.length > 0) {
+      const ultimaChitanta = chitanteReale.reduce((max, op) => (op.data > max ? op.data : max), chitanteReale[0].data);
+      const ultimulOP = opReale.reduce((max, op) => (op.data > max ? op.data : max), opReale[0].data);
+      const decalajZile = Math.round((new Date(ultimulOP) - new Date(ultimaChitanta)) / (1000 * 60 * 60 * 24));
+      if (decalajZile > 30) {
+        alerteSold.push(
+          `Ultima plată introdusă e din ${fmtDataJurnal(ultimulOP)}, dar ultima încasare din ${fmtDataJurnal(ultimaChitanta)} — un decalaj de ${decalajZile} zile. Dacă mai ai încasări neintroduse pentru această perioadă, soldurile de Casă/Bancă afișate acum pot fi nesigure.`
+        );
+      } else if (decalajZile < -30) {
+        alerteSold.push(
+          `Ultima încasare introdusă e din ${fmtDataJurnal(ultimaChitanta)}, dar ultima plată din ${fmtDataJurnal(ultimulOP)} — un decalaj de ${-decalajZile} zile. Dacă mai ai plăți neintroduse pentru această perioadă, soldurile de Casă/Bancă afișate acum pot fi nesigure.`
+        );
+      }
+    }
+
     // Scadența depozitelor bancare — notată opțional la deschidere, ca "[scadent: AAAA-LL-ZZ]" în
     // explicație — alertă dacă termenul e depășit sau se apropie (în următoarele 14 zile).
     const alerteDepozite = [];
