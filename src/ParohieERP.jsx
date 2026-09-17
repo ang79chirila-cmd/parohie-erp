@@ -8725,7 +8725,17 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const ultimaSerieNumarChitanta = useMemo(() => {
     const cuIdentificare = state.operatiuni.filter((op) => op.tip === "incasare" && op.serie && op.numarIdentificare);
     if (cuIdentificare.length === 0) return null;
-    return cuIdentificare.reduce((max, op) => (op.an > max.an || (op.an === max.an && op.nr > max.nr) ? op : max));
+    const rezultat = cuIdentificare.reduce((max, op) => (op.an > max.an || (op.an === max.an && op.nr > max.nr) ? op : max));
+    // TEMPORAR — diagnostic pentru bug-ul cu numărul de serie sugerat greșit la Pangar.
+    if (typeof window !== "undefined") {
+      const top5 = [...cuIdentificare].sort((a, b) => (b.an - a.an) || (b.nr - a.nr)).slice(0, 5);
+      console.log(
+        "[DEBUG ultimaSerieNumarChitanta] top 5 candidați (an,nr,serie,numarIdentificare,documentId):",
+        top5.map((op) => `an=${op.an} nr=${op.nr} serie=${op.serie} numar=${op.numarIdentificare} doc=${op.documentId}`),
+        "\n[DEBUG] ALES de reduce:", `an=${rezultat.an} nr=${rezultat.nr} serie=${rezultat.serie} numar=${rezultat.numarIdentificare} doc=${rezultat.documentId}`
+      );
+    }
+    return rezultat;
   }, [state.operatiuni]);
   const [editReceptieFor, setEditReceptieFor] = useState(null);
   const [editVanzareFor, setEditVanzareFor] = useState(null);
