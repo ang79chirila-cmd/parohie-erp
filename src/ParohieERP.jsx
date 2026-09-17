@@ -9159,11 +9159,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     if (typeof window !== "undefined" && anPangar === 2025) {
       const nrDeUrmarit = [2, 3, 4, 9, 14, 15];
       for (const nrTest of nrDeUrmarit) {
-        const candidati = state.operatiuni.filter((op) => op.nr === nrTest && op.an === 2025);
-        console.log(
-          `[DEBUG nr=${nrTest}] total candidați (orice tip) cu nr+an potrivite: ${candidati.length}`,
-          candidati.map((op) => ({ tip: op.tip, tert: op.tert, serie: op.serie, contId: op.contId, documentId: op.documentId }))
-        );
+        const candidatiIncasare = state.operatiuni.filter((op) => op.tip === "incasare" && op.nr === nrTest && op.an === 2025);
+        const rezumat = candidatiIncasare
+          .map((op, i) => `  linia ${i}: tert="${op.tert}" serie="${op.serie}" contId="${op.contId}" documentId="${op.documentId}"`)
+          .join("\n");
+        console.log(`[DEBUG nr=${nrTest}] candidați tip=incasare: ${candidatiIncasare.length}\n${rezumat || "  (niciunul)"}`);
       }
     }
     const iesiri = state.miscariStoc.filter((m) => {
