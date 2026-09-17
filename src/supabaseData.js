@@ -200,6 +200,7 @@ const TIP_DOCUMENT_SUPABASE = {
   nrcd: "nrcd",
   bonConsum: "bon_consum",
   procesVerbal: "proces_verbal_inventariere",
+  facturaFurnizor: "factura_furnizor",
 };
 const TIP_OPERATIUNE_LOCAL = {
   ...Object.fromEntries(Object.entries(TIP_DOCUMENT_SUPABASE).map(([k, v]) => [v, k])),
@@ -1596,6 +1597,157 @@ export async function marcheazaNRCDAchitat(documentId) {
   if (error) throw error;
 }
 
+// Factură furnizor GENERALĂ (fără legătură cu Pangar) — analog cu receptioneazaPangar, dar fără
+// nicio mișcare de stoc/articole: utilizatorul alege direct articolul bugetar pe fiecare linie
+// (ca la un Ordin de plată obișnuit), nu o categorie Pangar care se rezolvă mai târziu la un cont
+// de achiziție. Devine o datorie neachitată dacă nu se plătește pe loc — vizibilă separat, prin
+// getDatoriiFurnizoriGenerale (mai jos), NU prin getDatoriiFurnizori (care rămâne strict Pangar/NRCD).
+// `linii` = [{ contId, suma, explicatie? }, ...].
+export async function creeazaFacturaFurnizor(parohieId, { linii, data, furnizor, nrFactura, plataAcum, modPlata, dataScadenta }) {
+  const sumaTotala = linii.reduce((s, l) => s + Number(l.suma), 0);
+
+  const rezultatFactura = await salveazaDocument(parohieId, {
+    tip: "facturaFurnizor",
+    data,
+    furnizor,
+    nrFactura,
+    dataScadenta: plataAcum ? null : dataScadenta,
+    status: plataAcum ? "achitata" : "neachitata",
+    linii: linii.map((l) => ({ contId: l.contId, suma: l.suma, explicatie: l.explicatie || null })),
+  });
+  const facturaDocId = rezultatFactura.documentId;
+
+  let operatiuniPlata = [];
+  let nrOP = null;
+  let renumerotariPlata = [];
+  if (plataAcum) {
+    const liniiPlata = linii.map((l) => ({
+      contId: l.contId,
+      suma: l.suma,
+      modPlata,
+      explicatie: `Plată factură ${nrFactura} (Factură furnizor nr. ${rezultatFactura.nr}/${rezultatFactura.an})`,
+    }));
+    const rezultatPlata = await salveazaDocument(parohieId, {
+      tip: "plata", data, tert: furnizor, documentSursaId: facturaDocId, linii: liniiPlata,
+    });
+    operatiuniPlata = rezultatPlata.operatiuniNoi;
+    nrOP = rezultatPlata.nr;
+    renumerotariPlata = rezultatPlata.renumerotari || [];
+  }
+
+  return {
+    nrFacturaFurnizor: rezultatFactura.nr,
+    anFacturaFurnizor: rezultatFactura.an,
+    operatiuniPlata,
+    nrOP,
+    renumerotari: [...(rezultatFactura.renumerotari || []), ...renumerotariPlata],
+    datorieNoua: !plataAcum
+      ? {
+          tipDatorie: "generala",
+          furnizor,
+          suma: sumaTotala,
+          nrFactura,
+          nrFacturaFurnizor: rezultatFactura.nr,
+          anFacturaFurnizor: rezultatFactura.an,
+          documentId: facturaDocId,
+          dataFactura: data,
+          dataScadenta,
+          status: "neachitata",
+          sumaAchitata: 0,
+          sumaRamasa: sumaTotala,
+          platiExistente: [],
+          liniiAchizitie: linii.map((l) => ({ contId: l.contId, suma: Number(l.suma) })),
+        }
+      : null,
+  };
+}
+
+// Toate facturile generale de furnizor încă neachitate — analog cu getDatoriiFurnizori, dar citind
+// direct din linii_document (contId + sumă), fără niciun join către stoc/articole_pangar, fiindcă
+// o factură generală n-are nicio mișcare de stoc asociată.
+export async function getDatoriiFurnizoriGenerale(parohieId) {
+  const { data: docs, error } = await supabase
+    .from("documente")
+    .select("*")
+    .eq("parohie_id", parohieId)
+    .eq("tip", "factura_furnizor")
+    .eq("status", "neachitata");
+  if (error) throw error;
+  if (!docs || docs.length === 0) return [];
+
+  const docIds = docs.map((d) => d.id);
+  const { data: linii, error: errLinii } = await supabase
+    .from("linii_document")
+    .select("*")
+    .in("document_id", docIds);
+  if (errLinii) throw errLinii;
+
+  // Plăți parțiale existente — Ordine de plată deja emise, legate de aceste facturi prin
+  // document_sursa_id. Identic ca mecanism cu getDatoriiFurnizori (vezi comentariul de-acolo).
+  const { data: platiDocs, error: errPD } = await supabase
+    .from("documente")
+    .select("id, nr, an, data, document_sursa_id")
+    .eq("tip", "ordin_plata")
+    .in("document_sursa_id", docIds);
+  if (errPD) throw errPD;
+
+  let liniiPlatiById = {};
+  if (platiDocs && platiDocs.length > 0) {
+    const platiIds = platiDocs.map((p) => p.id);
+    const { data: liniiPlati, error: errLP } = await supabase
+      .from("linii_document")
+      .select("document_id, cont_id, suma, mod_plata")
+      .in("document_id", platiIds);
+    if (errLP) throw errLP;
+    for (const l of liniiPlati || []) {
+      (liniiPlatiById[l.document_id] ||= []).push(l);
+    }
+  }
+
+  const platiPeFactura = {};
+  for (const p of platiDocs || []) {
+    const liniiP = liniiPlatiById[p.id] || [];
+    const sumaOP = liniiP.reduce((s, l) => s + Number(l.suma), 0);
+    const sumePeMod = {};
+    for (const l of liniiP) sumePeMod[l.mod_plata] = (sumePeMod[l.mod_plata] || 0) + Number(l.suma);
+    const plata = {
+      documentId: p.id,
+      nr: p.nr,
+      an: p.an,
+      data: p.data,
+      moduri: Object.entries(sumePeMod).map(([modPlata, suma]) => ({ modPlata, suma })),
+      suma: sumaOP,
+      liniiPeCont: liniiP.map((l) => ({ contId: l.cont_id, suma: Number(l.suma) })),
+    };
+    (platiPeFactura[p.document_sursa_id] ||= []).push(plata);
+  }
+
+  return docs.map((d) => {
+    const liniiDoc = (linii || []).filter((l) => l.document_id === d.id);
+    const suma = liniiDoc.reduce((s, l) => s + Number(l.suma), 0);
+    const platiExistente = platiPeFactura[d.id] || [];
+    const sumaAchitata = platiExistente.reduce((s, p) => s + p.suma, 0);
+    const sumaRamasa = Math.round((suma - sumaAchitata) * 100) / 100;
+    return {
+      tipDatorie: "generala",
+      id: d.id,
+      documentId: d.id,
+      furnizor: d.furnizor,
+      suma,
+      sumaAchitata,
+      sumaRamasa,
+      platiExistente,
+      liniiAchizitie: liniiDoc.map((l) => ({ contId: l.cont_id, suma: Number(l.suma) })),
+      nrFactura: d.nr_factura,
+      nrFacturaFurnizor: d.nr,
+      anFacturaFurnizor: d.an,
+      dataFactura: d.data,
+      dataScadenta: d.data_scadenta,
+      status: d.status,
+    };
+  });
+}
+
 // Comisioane bancare — vezi comisioane_bancare_pending. Un comision se înregistrează individual,
 // în momentul plății care l-a generat, dar NU intră în acel Ordin de plată — rămâne separat,
 // "neconsolidat", până la finalul lunii, când toate comisioanele lunii sunt adunate într-un singur
@@ -1755,7 +1907,8 @@ export async function getParteneri(parohieId) {
   }));
 }
 
-// Creează un partener nou — toate câmpurile sunt obligatorii (validate deja de formular).
+// Creează un partener nou — doar denumirea e obligatorie; restul câmpurilor pot rămâne goale
+// (null) și se completează ulterior, din nomenclatorul de Parteneri (editeazaPartener, mai jos).
 export async function creeazaPartener(parohieId, { denumire, cuiCif, adresa, iban, email, telefon, reprezentantLegal, functie }) {
   const { data, error } = await supabase
     .from("parteneri")
@@ -1770,6 +1923,37 @@ export async function creeazaPartener(parohieId, { denumire, cuiCif, adresa, iba
     id: data.id, denumire: data.denumire, cuiCif: data.cui_cif, adresa: data.adresa, iban: data.iban,
     email: data.email, telefon: data.telefon, reprezentantLegal: data.reprezentant_legal, functie: data.functie,
   };
+}
+
+// Editează un partener existent — parteneriId identifică rândul; câmpurile nefurnizate rămân
+// neschimbate (nu se pierde nimic dacă formularul trimite doar un subset). Documentele deja emise
+// (chitanțe, OP-uri) rețin denumirea partenerului ca text simplu, la momentul emiterii — NU o
+// referință vie către acest rând — deci editarea unui partener nu modifică retroactiv nimic din
+// istoricul deja emis, doar sugestiile viitoare de completare automată.
+export async function editeazaPartener(parteneriId, { denumire, cuiCif, adresa, iban, email, telefon, reprezentantLegal, functie }) {
+  const { data, error } = await supabase
+    .from("parteneri")
+    .update({
+      denumire, cui_cif: cuiCif, adresa, iban, email, telefon,
+      reprezentant_legal: reprezentantLegal, functie,
+    })
+    .eq("id", parteneriId)
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id, denumire: data.denumire, cuiCif: data.cui_cif, adresa: data.adresa, iban: data.iban,
+    email: data.email, telefon: data.telefon, reprezentantLegal: data.reprezentant_legal, functie: data.functie,
+  };
+}
+
+// Șterge un partener din nomenclator — sigur de făcut oricând, fiindcă documentele deja emise nu
+// au o legătură (foreign key) către acest rând, ci păstrează denumirea ca text simplu (vezi
+// comentariul de la editeazaPartener). Ștergerea afectează doar sugestiile viitoare de
+// completare automată, nu istoricul.
+export async function stergePartener(parteneriId) {
+  const { error } = await supabase.from("parteneri").delete().eq("id", parteneriId);
+  if (error) throw error;
 }
 
 // Migrare unică: dacă parohia nu are încă niciun produs în Supabase, transferă nomenclatorul
