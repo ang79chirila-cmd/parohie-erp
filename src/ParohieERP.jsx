@@ -7461,7 +7461,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
           <SelectorPartener
             id="chitanta" label="Denumire partener (donator/terț, opțional — poate rămâne anonim)"
             value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
-            sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
+            sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet pangar", ...donatoriIstorici])]}
             operatiuni={operatiuni}
           />
         )}
@@ -9155,6 +9155,17 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   }, [receptiiAnFiltrate, sortColoanaIntrari, sortDirectieIntrari, state.articole]);
 
   const vanzariAnFiltrate = useMemo(() => {
+    // TEMPORAR — diagnostic pentru bug-ul cu Terț/Serie goale la anumite chitanțe Pangar.
+    if (typeof window !== "undefined" && anPangar === 2025) {
+      const nrDeUrmarit = [2, 3, 4, 9, 14, 15];
+      for (const nrTest of nrDeUrmarit) {
+        const candidati = state.operatiuni.filter((op) => op.nr === nrTest && op.an === 2025);
+        console.log(
+          `[DEBUG nr=${nrTest}] total candidați (orice tip) cu nr+an potrivite: ${candidati.length}`,
+          candidati.map((op) => ({ tip: op.tip, tert: op.tert, serie: op.serie, contId: op.contId, documentId: op.documentId }))
+        );
+      }
+    }
     const iesiri = state.miscariStoc.filter((m) => {
       if (m.tip !== "iesire" || !m.nrChitanta || m.anChitanta !== anPangar) return false;
       if (dataStartIesiri && m.data < dataStartIesiri) return false;
@@ -11169,7 +11180,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, partene
     ? ultimaChitantaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
-  const [tert, setTert] = useState("Comitet Pangar");
+  const [tert, setTert] = useState("Comitet pangar");
   const [modPlata, setModPlata] = useState("numerar");
   const [linii, setLinii] = useState([{ id: uid(), bazaCod: "", cantitate: "" }]);
   const [error, setError] = useState("");
@@ -11340,7 +11351,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, partene
         <SelectorPartener
           id="vanzare-pangar" label="Cumpărător (opțional)"
           value={tert} onChange={setTert} parteneri={parteneri} onCreatPartener={onCreatPartener} strict={false}
-          sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet Pangar", ...donatoriIstorici])]}
+          sugestiiSuplimentare={[...new Set(["Diverși enoriași/credincioși", "Comitet pangar", ...donatoriIstorici])]}
           operatiuni={operatiuni}
         />
 
