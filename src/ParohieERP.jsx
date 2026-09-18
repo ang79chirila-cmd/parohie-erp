@@ -149,9 +149,27 @@ const yearOf = (dateStr) => Number(dateStr.slice(0, 4));
 // nu strice ce înseamnă "precedentul". Folosit ca bază pentru data implicită a unui document nou
 // (continuă cronologic de la precedentul, nu de la data de azi) și pentru continuarea Serie+Număr.
 function ultimulDocumentDeTip(operatiuni, tip) {
-  const relevante = operatiuni.filter((op) => op.tip === tip);
+  const relevante = operatiuni.filter((op) => op.tip === tip && op.contId !== "581" && op.contId !== "5081");
   if (relevante.length === 0) return null;
   return relevante.reduce((max, op) => (op.an > max.an || (op.an === max.an && op.nr > max.nr) ? op : max));
+}
+
+// Avertisment simetric, la nivel de formular (nu doar pasiv pe Tabloul de bord — cerut explicit,
+// ca utilizatorul să vadă riscul chiar în momentul în care îl creează, nu abia mai târziu): dacă
+// un document nou (chitanță SAU Ordin de plată) e datat la mai mult de PRAG_ZILE zile după ultimul
+// document de tipul OPUS deja înregistrat, soldurile de Casă/Bancă riscă să fie nesigure (încasări
+// sau plăți încă neintroduse pentru acea perioadă). Neblocant — doar informează, nu împiedică
+// salvarea. `tipNou`: "incasare" (dintr-o Chitanță nouă) sau "plata" (dintr-un Ordin de plată nou).
+const PRAG_ZILE_DECALAJ_INCASARI_PLATI = 30;
+function calculeazaAvertismentDecalaj(operatiuni, dataNoua, tipNou) {
+  const tipOpus = tipNou === "incasare" ? "plata" : "incasare";
+  const ultimulOpus = ultimulDocumentDeTip(operatiuni, tipOpus);
+  if (!ultimulOpus || !dataNoua) return null;
+  const decalajZile = Math.round((new Date(dataNoua) - new Date(ultimulOpus.data)) / (1000 * 60 * 60 * 24));
+  if (decalajZile <= PRAG_ZILE_DECALAJ_INCASARI_PLATI) return null;
+  const etichetaOpus = tipOpus === "incasare" ? "încasare" : "plată";
+  const etichetaLipsa = tipOpus === "incasare" ? "încasări" : "plăți";
+  return `Acest document e datat la ${decalajZile} zile după ultima ${etichetaOpus} înregistrată (${fmtDataJurnal(ultimulOpus.data)}). Dacă mai ai ${etichetaLipsa} neintroduse din acea perioadă, soldurile de Casă/Bancă afișate acum pot fi nesigure.`;
 }
 
 // Nomenclator oficial de articole bugetare (BVC), furnizat de parohie — 83 de articole,
@@ -1922,15 +1940,16 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
   );
 }
 
-function Modal({ title, onClose, children, wide, className = "" }) {
+function Modal({ title, onClose, children, wide, className = "", culoareFundal = "#FAF8F3" }) {
   const maxWidthCls = wide === "xl" ? "max-w-5xl" : wide ? "max-w-2xl" : "max-w-md";
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose || undefined}>
       <div
-        className={`bg-[#FAF8F3] rounded-lg shadow-xl w-full ${maxWidthCls} max-h-[90vh] overflow-y-auto ${className}`}
+        className={`rounded-lg shadow-xl w-full ${maxWidthCls} max-h-[90vh] overflow-y-auto ${className}`}
+        style={{ backgroundColor: culoareFundal }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 bg-[#FAF8F3]">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0" style={{ backgroundColor: culoareFundal }}>
           <h3 className="font-serif text-lg text-[#1F3864]">{title}</h3>
           {onClose && (
             <button onClick={onClose} className="text-stone-400 hover:text-stone-700">
@@ -7303,6 +7322,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
     ? ultimaChitantaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
+  const avertismentDecalaj = useMemo(() => calculeazaAvertismentDecalaj(operatiuni, data, "incasare"), [operatiuni, data]);
   const [modPlataImplicit, setModPlataImplicit] = useState("numerar"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
   const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "numerar" }]);
@@ -7398,7 +7418,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
   }
 
   return (
-    <Modal title="Emitere document nou" onClose={onClose} wide className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
+    <Modal title="Emitere document nou" onClose={onClose} wide culoareFundal="#F0FDF4" className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
       <div className="flex flex-col gap-3">
         <DocumentHeader tip="Chitanță" nr={previewNr} an={an} />
         <p className="text-xs text-stone-500">
@@ -7524,6 +7544,13 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
           <span className="font-serif text-lg text-[#1F3864] tabular-nums">{fmt(totalGeneral)} lei</span>
         </Card>
 
+        {avertismentDecalaj && (
+          <Card className="p-3 bg-amber-50 border-amber-300 text-xs text-amber-800 flex items-start gap-2">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>{avertismentDecalaj}</span>
+          </Card>
+        )}
+
         {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
 
         <div className="flex justify-end gap-2 mt-2">
@@ -7542,6 +7569,7 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
     ? ultimulOPEmis.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
+  const avertismentDecalaj = useMemo(() => calculeazaAvertismentDecalaj(operatiuni, data, "plata"), [operatiuni, data]);
   const [modPlataImplicit, setModPlataImplicit] = useState("transfer"); // valoare implicită pentru linii noi
   const [tert, setTert] = useState("");
   const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "transfer", ajustare106: false }]);
@@ -7660,7 +7688,7 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   }
 
   return (
-    <Modal title="Emitere document nou" onClose={onClose} wide className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
+    <Modal title="Emitere document nou" onClose={onClose} wide culoareFundal="#EFF6FF" className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
       <div className="flex flex-col gap-3">
         <DocumentHeader tip="Ordin de plată" nr={previewNr} an={an} />
         <p className="text-xs text-stone-500">
@@ -7772,6 +7800,13 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
             </div>
           )}
         </Card>
+
+        {avertismentDecalaj && (
+          <Card className="p-3 bg-amber-50 border-amber-300 text-xs text-amber-800 flex items-start gap-2">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>{avertismentDecalaj}</span>
+          </Card>
+        )}
 
         {totalBanca > 0 && (
           <Field label="Comision bancar la această plată (opțional, RON)">
@@ -10653,7 +10688,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
   }
 
   return (
-    <Modal title={`Modifică vânzarea — chitanță nr. ${vanzare.nrChitanta}/${vanzare.anChitanta}`} onClose={onClose} wide>
+    <Modal title={`Modifică vânzarea — chitanță nr. ${vanzare.nrChitanta}/${vanzare.anChitanta}`} onClose={onClose} wide culoareFundal="#F0FDF4">
       <div className="flex flex-col gap-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Data">
@@ -11288,7 +11323,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, partene
   }
 
   return (
-    <Modal title="Emitere document nou" onClose={onClose} wide>
+    <Modal title="Emitere document nou" onClose={onClose} wide culoareFundal="#F0FDF4">
       <div className="flex flex-col gap-3">
         <DocumentHeader tip="Chitanță" nr={previewNr} an={an} />
         <p className="text-xs text-stone-500">
