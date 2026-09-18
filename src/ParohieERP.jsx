@@ -1941,15 +1941,85 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
 }
 
 function Modal({ title, onClose, children, wide, className = "", culoareFundal = "#FAF8F3" }) {
-  const maxWidthCls = wide === "xl" ? "max-w-5xl" : wide ? "max-w-2xl" : "max-w-md";
+  const largimeInitiala = wide === "xl" ? 1024 : wide ? 672 : 448;
+  const containerRef = useRef(null);
+  // null = poziția/dimensiunea implicită (centrat, înălțime automată) — se "fixează" abia la
+  // prima mutare/redimensionare cerută de utilizator, ca fereastra să pornească exact ca înainte.
+  const [pozitie, setPozitie] = useState(null); // { top, left } în pixeli, relativ la fereastra browserului
+  const [inaltime, setInaltime] = useState(null); // pixeli — null = auto (crește cu conținutul, ca acum)
+  const [largime, setLargime] = useState(largimeInitiala);
+  const dragRef = useRef(null);
+  const resizeRef = useRef(null);
+
+  useEffect(() => {
+    function inTimpulMutarii(e) {
+      if (!dragRef.current) return;
+      setPozitie({
+        top: Math.max(0, dragRef.current.startTop + (e.clientY - dragRef.current.startY)),
+        left: Math.max(0, dragRef.current.startLeft + (e.clientX - dragRef.current.startX)),
+      });
+    }
+    function opresteMutarea() {
+      dragRef.current = null;
+    }
+    function inTimpulRedimensionarii(e) {
+      if (!resizeRef.current) return;
+      setLargime(Math.max(320, resizeRef.current.startWidth + (e.clientX - resizeRef.current.startX)));
+      setInaltime(Math.max(160, resizeRef.current.startHeight + (e.clientY - resizeRef.current.startY)));
+    }
+    function opresteRedimensionarea() {
+      resizeRef.current = null;
+    }
+    document.addEventListener("mousemove", inTimpulMutarii);
+    document.addEventListener("mouseup", opresteMutarea);
+    document.addEventListener("mousemove", inTimpulRedimensionarii);
+    document.addEventListener("mouseup", opresteRedimensionarea);
+    return () => {
+      document.removeEventListener("mousemove", inTimpulMutarii);
+      document.removeEventListener("mouseup", opresteMutarea);
+      document.removeEventListener("mousemove", inTimpulRedimensionarii);
+      document.removeEventListener("mouseup", opresteRedimensionarea);
+    };
+  }, []);
+
+  function porniMutarea(e) {
+    if (e.target.closest("button")) return; // nu porni drag dacă s-a apăsat butonul de închidere
+    const rect = containerRef.current.getBoundingClientRect();
+    dragRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      startTop: pozitie ? pozitie.top : rect.top,
+      startLeft: pozitie ? pozitie.left : rect.left,
+    };
+  }
+
+  function porniRedimensionarea(e) {
+    e.stopPropagation();
+    const rect = containerRef.current.getBoundingClientRect();
+    resizeRef.current = { startX: e.clientX, startY: e.clientY, startWidth: rect.width, startHeight: rect.height };
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose || undefined}>
+    <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose || undefined}>
       <div
-        className={`rounded-lg shadow-xl w-full ${maxWidthCls} max-h-[90vh] overflow-y-auto ${className}`}
-        style={{ backgroundColor: culoareFundal }}
+        ref={containerRef}
+        className={`rounded-lg shadow-xl overflow-y-auto absolute flex flex-col ${className}`}
+        style={{
+          backgroundColor: culoareFundal,
+          width: largime,
+          height: inaltime || undefined,
+          maxHeight: "90vh",
+          maxWidth: "calc(100vw - 16px)",
+          top: pozitie ? pozitie.top : "50%",
+          left: pozitie ? pozitie.left : "50%",
+          transform: pozitie ? "none" : "translate(-50%, -50%)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0" style={{ backgroundColor: culoareFundal }}>
+        <div
+          className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 cursor-move select-none flex-shrink-0"
+          style={{ backgroundColor: culoareFundal }}
+          onMouseDown={porniMutarea}
+        >
           <h3 className="font-serif text-lg text-[#1F3864]">{title}</h3>
           {onClose && (
             <button onClick={onClose} className="text-stone-400 hover:text-stone-700">
@@ -1957,7 +2027,13 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
             </button>
           )}
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5 overflow-y-auto flex-1">{children}</div>
+        <div
+          onMouseDown={porniRedimensionarea}
+          title="Trage pentru a redimensiona"
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
+          style={{ background: "linear-gradient(135deg, transparent 50%, #a8a29e 50%)", borderBottomRightRadius: "0.5rem" }}
+        />
       </div>
     </div>
   );
@@ -4104,6 +4180,35 @@ export default function ParohieERP() {
     setTab(tabId);
     setActiuneInitiala(actiune);
   }
+
+  // Taste rapide pentru cele mai folosite ferestre de introducere — Alt+literă, active de
+  // oriunde din aplicație. Dezactivate cât timp focusul e pe un câmp de text/listă (input,
+  // textarea, select) — altfel ar intra în conflict cu AltGr, folosit pe layout-ul românesc
+  // pentru diacritice (ă, â, î, ș, ț), care pe multe sisteme trimite altKey=true.
+  useEffect(() => {
+    function peApasareTasta(e) {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const elFocalizat = document.activeElement;
+      const inCampText = elFocalizat && ["INPUT", "TEXTAREA", "SELECT"].includes(elFocalizat.tagName);
+      if (inCampText) return;
+      const harta = {
+        c: ["operatiuni", "chitanta"],
+        o: ["operatiuni", "op"],
+        v: ["pangar", "vanzare"],
+        f: ["operatiuni", "facturaFurnizor"],
+        n: ["pangar", "receptieNRCD"],
+        t: ["operatiuni", "transferCasaBanca"],
+        r: ["operatiuni", "reconciliere"],
+      };
+      const tinta = harta[e.key.toLowerCase()];
+      if (!tinta) return;
+      e.preventDefault();
+      navigheazaCuActiune(tinta[0], tinta[1]);
+    }
+    window.addEventListener("keydown", peApasareTasta);
+    return () => window.removeEventListener("keydown", peApasareTasta);
+  }, []);
+
   const [receptieRapidaArticolId, setReceptieRapidaArticolId] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
