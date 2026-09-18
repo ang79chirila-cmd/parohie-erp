@@ -5613,6 +5613,10 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
     ? Object.fromEntries(datorie.liniiAchizitie.map((l) => [l.contId, { achizitie: l.contId }]))
     : CATEGORII_PANGAR;
 
+  if (!esteFacturaGenerala && (!datorie.liniiAchizitie || datorie.liniiAchizitie.length === 0)) {
+    throw new Error("Nu s-a găsit nicio linie de achiziție pentru această datorie, în starea curentă a paginii — reîncarcă pagina (Ctrl+Shift+R) și încearcă din nou achitarea.");
+  }
+
   // Restul rămas pe fiecare categorie bugetară, după plățile parțiale deja făcute pe această
   // factură — necesar ca o achitare parțială nouă să distribuie corect suma introdusă (nu
   // suma totală inițială a categoriei, care poate fi deja parțial acoperită).
@@ -5624,6 +5628,18 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
     categorieBVCFallback: datorie.categorieBVC,
     sumaRamasaCurenta,
   });
+
+  // Fiecare linie trebuie să aibă un cont de achiziție rezolvat — dacă vreo categorie a produsului
+  // (categorie_bvc) nu se regăsește în CATEGORII_PANGAR, contul ar rezulta gol, iar baza de date
+  // ar refuza corect salvarea (constrângerea chk_cont_id_null_only_zero_suma) — dar cu o eroare
+  // tehnică brută, greu de înțeles. O prindem aici, cu numele exact al categoriei problematice.
+  const liniiFaraCont = liniiCuRest.filter((l) => !l.contId);
+  if (liniiFaraCont.length > 0) {
+    const categoriiProblema = [...new Set(
+      liniiAchizitiePentruCalcul.filter((l) => !categoriiPangarPentruCalcul[l.categorieBVC]?.achizitie).map((l) => l.categorieBVC)
+    )];
+    throw new Error(`Categoria de produs „${categoriiProblema.join(", ")}" nu are un cont de achiziție configurat în aplicație — contactează dezvoltatorul înainte de a continua achitarea.`);
+  }
 
   const explicatie = esteFacturaGenerala
     ? `Achitare factură ${datorie.nrFactura} (Factură furnizor nr. ${datorie.nrFacturaFurnizor}/${datorie.anFacturaFurnizor || yearOf(datorie.dataFactura)})${esteIntegrala ? "" : " — plată parțială"}`
