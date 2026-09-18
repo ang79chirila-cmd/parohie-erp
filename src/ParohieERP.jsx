@@ -1260,11 +1260,11 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
           </div>
           <table className="w-full text-sm mt-2">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-1">Perioadă</th>
-                <th className="px-3 py-1 text-right">Membri</th>
-                {organismActiv !== "comitet" && <th className="px-3 py-1 text-right">Procese-verbale</th>}
-                <th className="px-3 py-1"></th>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                <th className="px-3 py-1 font-bold">Perioadă</th>
+                <th className="px-3 py-1 text-right font-bold">Membri</th>
+                {organismActiv !== "comitet" && <th className="px-3 py-1 text-right font-bold">Procese-verbale</th>}
+                <th className="px-3 py-1 font-bold"></th>
               </tr>
             </thead>
             <tbody>
@@ -1320,12 +1320,12 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
             </div>
             <table className="w-full text-sm mt-2">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                  <th className="px-3 py-1">Nume și prenume</th>
-                  <th className="px-3 py-1">Adresă</th>
-                  <th className="px-3 py-1">Telefon</th>
-                  <th className="px-3 py-1">E-mail</th>
-                  <th className="px-3 py-1"></th>
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                  <th className="px-3 py-1 font-bold">Nume și prenume</th>
+                  <th className="px-3 py-1 font-bold">Adresă</th>
+                  <th className="px-3 py-1 font-bold">Telefon</th>
+                  <th className="px-3 py-1 font-bold">E-mail</th>
+                  <th className="px-3 py-1 font-bold"></th>
                 </tr>
               </thead>
               <tbody>
@@ -1369,11 +1369,11 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
               </div>
               <table className="w-full text-sm mt-2">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                    <th className="px-3 py-1">Data</th>
-                    <th className="px-3 py-1">Ordine de zi</th>
-                    <th className="px-3 py-1">Decizii</th>
-                    <th className="px-3 py-1"></th>
+                  <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                    <th className="px-3 py-1 font-bold">Data</th>
+                    <th className="px-3 py-1 font-bold">Ordine de zi</th>
+                    <th className="px-3 py-1 font-bold">Decizii</th>
+                    <th className="px-3 py-1 font-bold"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1763,13 +1763,13 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
   const listaId = `sugestii-col-${cheie}`;
   const activ = sortColoana === cheie;
   return (
-    <th className={className || "px-2 py-1 align-bottom"}>
+    <th className={className || "px-2 py-1 align-bottom font-bold"}>
       <div className="flex flex-col gap-1">
         {onSort ? (
           <button
             type="button"
             onClick={() => onSort(cheie)}
-            className={`inline-flex items-center gap-1 text-left hover:text-stone-700 select-none font-medium ${activ ? "text-stone-800" : ""}`}
+            className={`inline-flex items-center gap-1 text-left hover:text-stone-700 select-none font-bold ${activ ? "text-stone-800" : ""}`}
           >
             <span className="break-words">{eticheta}</span>
             <span className="inline-flex flex-col leading-none -space-y-0.5">
@@ -1778,7 +1778,7 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
             </span>
           </button>
         ) : (
-          <span className="font-medium break-words">{eticheta}</span>
+          <span className="font-bold break-words">{eticheta}</span>
         )}
         <input
           list={listaId}
@@ -1801,11 +1801,11 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
 function AntetSortabil({ eticheta, coloana, sortColoana, sortDirectie, onSort, className }) {
   const activ = sortColoana === coloana;
   return (
-    <th className={className || "px-3 py-1"}>
+    <th className={className || "px-3 py-1 font-bold"}>
       <button
         type="button"
         onClick={() => onSort(coloana)}
-        className={`inline-flex items-center gap-1 hover:text-stone-700 select-none ${activ ? "text-stone-800" : ""}`}
+        className={`inline-flex items-center gap-1 hover:text-stone-700 select-none font-bold ${activ ? "text-stone-800" : ""}`}
       >
         <span>{eticheta}</span>
         <span className="inline-flex flex-col leading-none -space-y-0.5">
@@ -5898,12 +5898,12 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-2 py-1">Furnizor</th>
-                <th className="px-2 py-1">Factură</th>
-                <th className="px-2 py-1 text-right">Sumă</th>
-                <th className="px-2 py-1 text-right">Vechime</th>
-                <th className="px-2 py-1"></th>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                <th className="px-2 py-1 font-bold">Furnizor</th>
+                <th className="px-2 py-1 font-bold">Factură</th>
+                <th className="px-2 py-1 text-right font-bold">Sumă</th>
+                <th className="px-2 py-1 text-right font-bold">Vechime</th>
+                <th className="px-2 py-1 font-bold"></th>
               </tr>
             </thead>
             <tbody>
@@ -6722,21 +6722,21 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         </div>
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabel} className="sticky z-20 bg-white" style={{ top: inaltimeBaraCautare }}>
-            <tr className="text-left uppercase tracking-wide text-stone-500">
-              <th className="px-1.5 py-1 font-medium max-w-[46px] min-w-[46px]">Nr. crt.</th>
-              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2 py-1 align-bottom max-w-[128px] min-w-[128px]" />
-              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1 align-bottom max-w-[132px] min-w-[132px]" />
-              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1 align-bottom max-w-[132px] min-w-[132px]" />
+            <tr className="text-left uppercase tracking-wide text-stone-500 font-bold">
+              <th className="px-1.5 py-1 font-bold max-w-[52px] min-w-[52px]">Nr. crt.</th>
+              <AntetFiltrabil cheie="data" eticheta="Data operațiunii" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("data")} className="px-2 py-1 align-bottom max-w-[136px] min-w-[136px]" />
+              <AntetFiltrabil cheie="nrChitanta" eticheta="Nr. chitanță" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrChitanta")} className="px-2.5 py-1 align-bottom max-w-[140px] min-w-[140px]" />
+              <AntetFiltrabil cheie="nrOP" eticheta="Nr. OP" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("nrOP")} className="px-2.5 py-1 align-bottom max-w-[140px] min-w-[140px]" />
               <AntetFiltrabil cheie="cont" eticheta="Art. bug. nr." filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("cont")} className="px-2.5 py-1 align-bottom" />
               <AntetFiltrabil cheie="partener" eticheta="Denumire partener" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("partener")} className="px-2.5 py-1 align-bottom max-w-[260px]" />
               <AntetFiltrabil cheie="explicatie" eticheta="Explicație" filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("explicatie")} className="px-2.5 py-1 align-bottom max-w-[440px]" />
               <AntetFiltrabil cheie="incasare" eticheta={<>Încasare<br />(lei)</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("incasare")} className="px-2 py-1 align-bottom text-right max-w-[104px] min-w-[104px]" />
               <AntetFiltrabil cheie="plata" eticheta={<>Plată<br />(lei)</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("plata")} className="px-2 py-1 align-bottom text-right max-w-[104px] min-w-[104px]" />
               <AntetFiltrabil cheie="sursa" eticheta={<>Sursa/<br />Destinație</>} filtre={filtreColoane} setFiltre={setFiltreColoane} sugestii={sugestiiPentru("sursa")} className="px-2 py-1 align-bottom max-w-[116px] min-w-[116px]" />
-              <th className="px-2.5 py-1 text-right font-medium">Sold final</th>
-              <th className="px-2.5 py-1 text-right font-medium">Sold „Bancă”</th>
-              <th className="px-2.5 py-1 text-right font-medium">Sold „Casă”</th>
-              {soldDepozitAn !== 0 && <th className="px-2.5 py-1 text-right font-medium">Sold „Depozit”</th>}
+              <th className="px-2.5 py-1 text-right font-bold">Sold final</th>
+              <th className="px-2.5 py-1 text-right font-bold">Sold „Bancă”</th>
+              <th className="px-2.5 py-1 text-right font-bold">Sold „Casă”</th>
+              {soldDepozitAn !== 0 && <th className="px-2.5 py-1 text-right font-bold">Sold „Depozit”</th>}
             </tr>
           </thead>
           <tbody>
@@ -6759,14 +6759,14 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
             )}
             {afisate.map((r) => (
               <tr key={r.op.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-1.5 py-1 tabular-nums text-stone-500 max-w-[46px] min-w-[46px]">{r.nrCrt}</td>
+                <td className="px-1.5 py-1 tabular-nums text-stone-500 max-w-[52px] min-w-[52px]">{r.nrCrt}</td>
                 <td className="px-2.5 py-1 tabular-nums leading-tight max-w-[115px] min-w-[115px]">
                   <div className="flex flex-col">
                     <span>{r.op.data.slice(8, 10)}/{r.op.data.slice(5, 7)}</span>
                     <span className="text-stone-400">{r.op.data.slice(0, 4)}</span>
                   </div>
                 </td>
-                <td className="px-2.5 py-1 tabular-nums max-w-[132px] min-w-[132px]">
+                <td className="px-2.5 py-1 tabular-nums max-w-[140px] min-w-[140px]">
                   {r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -6782,7 +6782,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                     </div>
                   ) : "—"}
                 </td>
-                <td className="px-2.5 py-1 tabular-nums max-w-[132px] min-w-[132px]">
+                <td className="px-2.5 py-1 tabular-nums max-w-[140px] min-w-[140px]">
                   {r.op.tip === "plata" && r.cont?.clasa !== "viramente" ? (
                     <div className="flex flex-col">
                       <button
@@ -8036,12 +8036,12 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
         <div className="overflow-x-auto max-h-[60vh]">
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200 sticky top-0 bg-white">
-                <th className="px-2 py-1">Data</th>
-                <th className="px-2 py-1">Cont</th>
-                <th className="px-2 py-1">Explicație</th>
-                <th className="px-2 py-1 text-right">Sumă</th>
-                <th className="px-2 py-1"></th>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200 sticky top-0 bg-white">
+                <th className="px-2 py-1 font-bold">Data</th>
+                <th className="px-2 py-1 font-bold">Cont</th>
+                <th className="px-2 py-1 font-bold">Explicație</th>
+                <th className="px-2 py-1 text-right font-bold">Sumă</th>
+                <th className="px-2 py-1 font-bold"></th>
               </tr>
             </thead>
             <tbody>
@@ -8240,13 +8240,13 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
               <AntetSortabil eticheta="Simbol" coloana="simbol" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} />
               <AntetSortabil eticheta="Denumire" coloana="denumire" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} />
               <AntetSortabil eticheta="Clasă" coloana="clasa" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} />
               <AntetSortabil eticheta="Rulaj încasări" coloana="incasari" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Rulaj plăți" coloana="plati" sortColoana={sortColoanaConturi} sortDirectie={sortDirectieConturi} onSort={sorteazaConturi} className="px-3 py-2 text-right" />
-              <th className="px-3 py-1"></th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -8454,13 +8454,13 @@ function ParteneriTab({ state, setState, parohieId, permisiuni, setTab }) {
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
               <AntetSortabil eticheta="Denumire" coloana="denumire" sortColoana={sortColoanaParteneri} sortDirectie={sortDirectieParteneri} onSort={sorteazaParteneri} />
               <AntetSortabil eticheta="CUI/CIF" coloana="cuiCif" sortColoana={sortColoanaParteneri} sortDirectie={sortDirectieParteneri} onSort={sorteazaParteneri} />
               <AntetSortabil eticheta="Telefon" coloana="telefon" sortColoana={sortColoanaParteneri} sortDirectie={sortDirectieParteneri} onSort={sorteazaParteneri} />
               <AntetSortabil eticheta="Email" coloana="email" sortColoana={sortColoanaParteneri} sortDirectie={sortDirectieParteneri} onSort={sorteazaParteneri} />
               <AntetSortabil eticheta="Reprezentant legal" coloana="reprezentantLegal" sortColoana={sortColoanaParteneri} sortDirectie={sortDirectieParteneri} onSort={sorteazaParteneri} />
-              <th className="px-3 py-1"></th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -9643,13 +9643,13 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               <div ref={refSubantetSectiune} className="px-3 pt-3 pb-2 text-xs uppercase tracking-wide text-stone-500 font-medium sticky top-0 z-20 bg-white">Stocuri (vedere agregată pe produs, FIFO)</div>
               <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
                 <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
-                  <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+                  <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold">
                     <AntetFiltrabil cheie="produs" eticheta="Produs" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("produs")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="stoc" eticheta="Cantitate stoc" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stoc")} className="px-3 py-1 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="valoare" eticheta="Valoare stoc (la preț vânzare)" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("valoare")} className="px-3 py-1 align-bottom text-right" sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="coduri" eticheta="Coduri active" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("coduri")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
                     <AntetFiltrabil cheie="stare" eticheta="Stare" filtre={filtrePangar} setFiltre={setFiltrePangar} sugestii={sugestiiPangar("stare")} sortColoana={sortColoanaStocuri} sortDirectie={sortDirectieStocuri} onSort={onSortStocuri} />
-                    <th className="px-3 py-1"></th>
+                    <th className="px-3 py-1 font-bold"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -9707,7 +9707,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           </div>
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold">
                 <AntetSortabil eticheta="Denumire produs" coloana="denumire" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} />
                 <AntetSortabil eticheta="Cod (nomenclator)" coloana="cod" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} />
                 <AntetSortabil eticheta="Cost unitar" coloana="pretAchizitie" sortColoana={sortColoanaNomenclator} sortDirectie={sortDirectieNomenclator} onSort={sorteazaNomenclator} className="px-3 py-2 text-right" />
@@ -9787,8 +9787,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         </div>
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
-              <th className="px-3 py-1">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold">
+              <th className="px-3 py-1 font-bold">
                 <input
                   type="checkbox"
                   checked={receptiiAnFiltrate.length > 0 && selectieIntrari.size === receptiiAnFiltrate.length}
@@ -9802,7 +9802,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               <AntetSortabil eticheta="Valoare" coloana="valoare" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Furnizor" coloana="furnizor" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
               <AntetSortabil eticheta="Factură" coloana="factura" sortColoana={sortColoanaIntrari} sortDirectie={sortDirectieIntrari} onSort={sorteazaIntrari} />
-              <th className="px-3 py-1"></th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -9961,8 +9961,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         </div>
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
           <thead ref={refCapTabelPangar} className="sticky z-20 bg-white" style={{ top: inaltimeSubantetSectiune }}>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
-              <th className="px-3 py-1">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold">
+              <th className="px-3 py-1 font-bold">
                 <input
                   type="checkbox"
                   checked={vanzariAnFiltrate.length > 0 && selectieIesiri.size === vanzariAnFiltrate.length}
@@ -9975,7 +9975,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               <AntetSortabil eticheta="Cantitate" coloana="cantitate" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Valoare" coloana="valoare" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} className="px-3 py-2 text-right" />
               <AntetSortabil eticheta="Terț" coloana="tert" sortColoana={sortColoanaIesiri} sortDirectie={sortDirectieIesiri} onSort={sorteazaIesiri} />
-              <th className="px-3 py-1"></th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -10509,12 +10509,12 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
         <Card className="overflow-x-auto">
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-1">Cod</th>
-                <th className="px-3 py-1">Denumire</th>
-                <th className="px-3 py-1 text-right">Cantitate</th>
-                <th className="px-3 py-1">Data</th>
-                <th className="px-3 py-1"></th>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                <th className="px-3 py-1 font-bold">Cod</th>
+                <th className="px-3 py-1 font-bold">Denumire</th>
+                <th className="px-3 py-1 text-right font-bold">Cantitate</th>
+                <th className="px-3 py-1 font-bold">Data</th>
+                <th className="px-3 py-1 font-bold"></th>
               </tr>
             </thead>
             <tbody>
@@ -10573,11 +10573,11 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
         <Card className="overflow-x-auto">
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-1">Produs</th>
-                <th className="px-3 py-1 text-right">Cantitate</th>
-                <th className="px-3 py-1">Data</th>
-                <th className="px-3 py-1"></th>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                <th className="px-3 py-1 font-bold">Produs</th>
+                <th className="px-3 py-1 text-right font-bold">Cantitate</th>
+                <th className="px-3 py-1 font-bold">Data</th>
+                <th className="px-3 py-1 font-bold"></th>
               </tr>
             </thead>
             <tbody>
@@ -11953,13 +11953,13 @@ function ExecutieBugetara({ conturi, buget, operatiuni, prevederiBugetare, aniDi
       )}
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-            <th className="px-2 py-1">Art. bug. nr.</th>
-            <th className="px-2 py-1">Denumire</th>
-            <th className="px-2 py-1 text-right">Bugetat (lei)</th>
-            <th className="px-2 py-1 text-right">Realizat (lei)</th>
-            <th className="px-2 py-1 text-right">Diferență</th>
-            <th className="px-2 py-1 text-right">% realizare</th>
+          <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+            <th className="px-2 py-1 font-bold">Art. bug. nr.</th>
+            <th className="px-2 py-1 font-bold">Denumire</th>
+            <th className="px-2 py-1 text-right font-bold">Bugetat (lei)</th>
+            <th className="px-2 py-1 text-right font-bold">Realizat (lei)</th>
+            <th className="px-2 py-1 text-right font-bold">Diferență</th>
+            <th className="px-2 py-1 text-right font-bold">% realizare</th>
           </tr>
         </thead>
         <tbody>
@@ -12023,10 +12023,10 @@ function RulajTable({ conturi, rulajPeCont, tip }) {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-          <th className="px-2 py-1">Simbol</th>
-          <th className="px-2 py-1">Denumire</th>
-          <th className="px-2 py-1 text-right">Rulaj (RON)</th>
+        <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+          <th className="px-2 py-1 font-bold">Simbol</th>
+          <th className="px-2 py-1 font-bold">Denumire</th>
+          <th className="px-2 py-1 text-right font-bold">Rulaj (RON)</th>
         </tr>
       </thead>
       <tbody>
@@ -12087,14 +12087,14 @@ function RaportDetaliatPartizi({ titlu, grupuri, parohie }) {
         <Card className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-2 py-1">Art. bugetar nr.</th>
-                <th className="px-2 py-1">Denumire art. bugetar</th>
-                <th className="px-2 py-1">Data operațiunii</th>
-                <th className="px-2 py-1">Denumire partener</th>
-                <th className="px-2 py-1">Explicație</th>
-                <th className="px-2 py-1 text-right">Sumă (lei)</th>
-                <th className="px-2 py-1 text-right">Sold</th>
+              <tr className="text-left uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                <th className="px-2 py-1 font-bold">Art. bugetar nr.</th>
+                <th className="px-2 py-1 font-bold">Denumire art. bugetar</th>
+                <th className="px-2 py-1 font-bold">Data operațiunii</th>
+                <th className="px-2 py-1 font-bold">Denumire partener</th>
+                <th className="px-2 py-1 font-bold">Explicație</th>
+                <th className="px-2 py-1 text-right font-bold">Sumă (lei)</th>
+                <th className="px-2 py-1 text-right font-bold">Sold</th>
               </tr>
             </thead>
             <tbody>
@@ -12965,10 +12965,10 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
               <AntetFiltrabil cheie="articol" eticheta="Articol" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("articol")} />
               <AntetFiltrabil cheie="stoc" eticheta="Stoc curent" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("stoc")} className="px-3 py-1 align-bottom text-right" />
-              <th className="px-3 py-1">Loturi active (FIFO, cel mai vechi primul)</th>
+              <th className="px-3 py-1 font-bold">Loturi active (FIFO, cel mai vechi primul)</th>
             </tr>
           </thead>
           <tbody>
@@ -12996,12 +12996,12 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Data</th>
-              <th className="px-3 py-1">Articol</th>
-              <th className="px-3 py-1 text-right">Cantitate</th>
-              <th className="px-3 py-1 text-right">Cost/unitate</th>
-              <th className="px-3 py-1"></th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-3 py-1 font-bold">Data</th>
+              <th className="px-3 py-1 font-bold">Articol</th>
+              <th className="px-3 py-1 text-right font-bold">Cantitate</th>
+              <th className="px-3 py-1 text-right font-bold">Cost/unitate</th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -13043,13 +13043,13 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Nr.</th>
-              <th className="px-3 py-1">Data</th>
-              <th className="px-3 py-1">Motiv</th>
-              <th className="px-3 py-1">Beneficiar</th>
-              <th className="px-3 py-1 text-right">Valoare</th>
-              <th className="px-3 py-1"></th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-3 py-1 font-bold">Nr.</th>
+              <th className="px-3 py-1 font-bold">Data</th>
+              <th className="px-3 py-1 font-bold">Motiv</th>
+              <th className="px-3 py-1 font-bold">Beneficiar</th>
+              <th className="px-3 py-1 text-right font-bold">Valoare</th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -13098,12 +13098,12 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1">Nr.</th>
-              <th className="px-2 py-1">Data</th>
-              <th className="px-2 py-1">Motiv</th>
-              <th className="px-2 py-1">Beneficiar</th>
-              <th className="px-2 py-1 text-right">Valoare (lei)</th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-2 py-1 font-bold">Nr.</th>
+              <th className="px-2 py-1 font-bold">Data</th>
+              <th className="px-2 py-1 font-bold">Motiv</th>
+              <th className="px-2 py-1 font-bold">Beneficiar</th>
+              <th className="px-2 py-1 text-right font-bold">Valoare (lei)</th>
             </tr>
           </thead>
           <tbody>
@@ -13612,13 +13612,13 @@ function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, on
           <Card className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                  <th className="px-3 py-1">Denumire</th>
-                  <th className="px-3 py-1">U.M.</th>
-                  <th className="px-3 py-1 text-right">Cantitate</th>
-                  <th className="px-3 py-1 text-right">Cost/unitate</th>
-                  <th className="px-3 py-1">Data</th>
-                  <th className="px-3 py-1"></th>
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                  <th className="px-3 py-1 font-bold">Denumire</th>
+                  <th className="px-3 py-1 font-bold">U.M.</th>
+                  <th className="px-3 py-1 text-right font-bold">Cantitate</th>
+                  <th className="px-3 py-1 text-right font-bold">Cost/unitate</th>
+                  <th className="px-3 py-1 font-bold">Data</th>
+                  <th className="px-3 py-1 font-bold"></th>
                 </tr>
               </thead>
               <tbody>
@@ -14003,13 +14003,13 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Denumire</th>
-              <th className="px-3 py-1">Categorie</th>
-              <th className="px-3 py-1">Locație</th>
-              <th className="px-3 py-1 text-right">Valoare</th>
-              <th className="px-3 py-1">Stare</th>
-              <th className="px-3 py-1"></th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-3 py-1 font-bold">Denumire</th>
+              <th className="px-3 py-1 font-bold">Categorie</th>
+              <th className="px-3 py-1 font-bold">Locație</th>
+              <th className="px-3 py-1 text-right font-bold">Valoare</th>
+              <th className="px-3 py-1 font-bold">Stare</th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -14049,11 +14049,11 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
           <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Bunuri casate</div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-                <th className="px-3 py-1">Denumire</th>
-                <th className="px-3 py-1">Data casării</th>
-                <th className="px-3 py-1">Motiv</th>
-                <th className="px-3 py-1">Aprobat de</th>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                <th className="px-3 py-1 font-bold">Denumire</th>
+                <th className="px-3 py-1 font-bold">Data casării</th>
+                <th className="px-3 py-1 font-bold">Motiv</th>
+                <th className="px-3 py-1 font-bold">Aprobat de</th>
               </tr>
             </thead>
             <tbody>
@@ -14076,11 +14076,11 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1">Nr. PV</th>
-              <th className="px-2 py-1">Data</th>
-              <th className="px-2 py-1">Comisie</th>
-              <th className="px-2 py-1 text-right">Bunuri verificate</th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-2 py-1 font-bold">Nr. PV</th>
+              <th className="px-2 py-1 font-bold">Data</th>
+              <th className="px-2 py-1 font-bold">Comisie</th>
+              <th className="px-2 py-1 text-right font-bold">Bunuri verificate</th>
             </tr>
           </thead>
           <tbody>
@@ -14572,10 +14572,10 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Cod parcelă</th>
-              <th className="px-3 py-1">Stare</th>
-              <th className="px-3 py-1"></th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-3 py-1 font-bold">Cod parcelă</th>
+              <th className="px-3 py-1 font-bold">Stare</th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -14610,13 +14610,13 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Loc</th>
-              <th className="px-3 py-1">Concesionar</th>
-              <th className="px-3 py-1">Durată</th>
-              <th className="px-3 py-1">Expiră</th>
-              <th className="px-3 py-1">Stare</th>
-              <th className="px-3 py-1"></th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-3 py-1 font-bold">Loc</th>
+              <th className="px-3 py-1 font-bold">Concesionar</th>
+              <th className="px-3 py-1 font-bold">Durată</th>
+              <th className="px-3 py-1 font-bold">Expiră</th>
+              <th className="px-3 py-1 font-bold">Stare</th>
+              <th className="px-3 py-1 font-bold"></th>
             </tr>
           </thead>
           <tbody>
@@ -14667,12 +14667,12 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-3 py-1">Nume</th>
-              <th className="px-3 py-1">Loc</th>
-              <th className="px-3 py-1">Data decesului</th>
-              <th className="px-3 py-1">Data înhumării</th>
-              <th className="px-3 py-1">Concesionar?</th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-3 py-1 font-bold">Nume</th>
+              <th className="px-3 py-1 font-bold">Loc</th>
+              <th className="px-3 py-1 font-bold">Data decesului</th>
+              <th className="px-3 py-1 font-bold">Data înhumării</th>
+              <th className="px-3 py-1 font-bold">Concesionar?</th>
             </tr>
           </thead>
           <tbody>
@@ -15240,7 +15240,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         />
         <table className="w-full text-sm mt-2 border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-200 [&_td]:border [&_td]:border-stone-100">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold">
               <AntetFiltrabil cheie="nr" eticheta="Nr." filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("nr")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
               <AntetFiltrabil cheie="data" eticheta="Data" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("data")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
               <AntetFiltrabil cheie="partener" eticheta="Expeditor" filtre={filtreColoaneIntrare} setFiltre={setFiltreColoaneIntrare} sugestii={sugestiiIntrare("partener")} sortColoana={sortColoanaIntrare} sortDirectie={sortDirectieIntrare} onSort={onSortIntrare} className="px-3 py-1 align-bottom" />
@@ -15311,7 +15311,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         />
         <table className="w-full text-sm mt-2 border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-200 [&_td]:border [&_td]:border-stone-100">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold">
               <AntetFiltrabil cheie="nr" eticheta="Nr." filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("nr")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
               <AntetFiltrabil cheie="data" eticheta="Data" filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("data")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
               <AntetFiltrabil cheie="partener" eticheta="Destinatar" filtre={filtreColoaneIesire} setFiltre={setFiltreColoaneIesire} sugestii={sugestiiIesire("partener")} sortColoana={sortColoanaIesire} sortDirectie={sortDirectieIesire} onSort={onSortIesire} className="px-3 py-1 align-bottom" />
@@ -15354,7 +15354,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         </div>
         <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-200 [&_td]:border [&_td]:border-stone-100">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold">
               <AntetFiltrabil cheie="denumire" eticheta="Denumire" filtre={filtreColoaneArhiva} setFiltre={setFiltreColoaneArhiva} sugestii={sugestiiArhiva("denumire")} sortColoana={sortColoanaArhiva} sortDirectie={sortDirectieArhiva} onSort={onSortArhiva} className="px-2 py-1 align-bottom" />
               <AntetFiltrabil cheie="categorie" eticheta="Categorie" filtre={filtreColoaneArhiva} setFiltre={setFiltreColoaneArhiva} sugestii={sugestiiArhiva("categorie")} sortColoana={sortColoanaArhiva} sortDirectie={sortDirectieArhiva} onSort={onSortArhiva} className="px-2 py-1 align-bottom" />
               <AntetFiltrabil cheie="an" eticheta="An" filtre={filtreColoaneArhiva} setFiltre={setFiltreColoaneArhiva} sugestii={sugestiiArhiva("an")} sortColoana={sortColoanaArhiva} sortDirectie={sortDirectieArhiva} onSort={onSortArhiva} className="px-2 py-1 align-bottom" />
@@ -16023,7 +16023,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
             </Card>
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left bg-stone-50 text-stone-500"><th className="px-2 py-1">Art. bug. nr.</th><th className="px-2 py-1">Explicație</th><th className="px-2 py-1">Sursă/Destinație</th><th className="px-2 py-1 text-right">Sumă</th></tr>
+                <tr className="text-left bg-stone-50 text-stone-500"><th className="px-2 py-1 font-bold">Art. bug. nr.</th><th className="px-2 py-1 font-bold">Explicație</th><th className="px-2 py-1 font-bold">Sursă/Destinație</th><th className="px-2 py-1 text-right font-bold">Sumă</th></tr>
               </thead>
               <tbody>
                 {docCurent.linii.map((l) => (
@@ -16387,8 +16387,8 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
         {coloaneLinii && Array.isArray(docCurent.linii) && (
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left bg-stone-50 text-stone-500">
-                {coloaneLinii.map((c) => <th key={c.label} className={`px-2 py-1 ${c.right ? "text-right" : ""}`}>{c.label}</th>)}
+              <tr className="text-left bg-stone-50 text-stone-500 font-bold">
+                {coloaneLinii.map((c) => <th key={c.label} className={`px-2 py-1 font-bold ${c.right ? "text-right" : ""}`}>{c.label}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -16499,11 +16499,11 @@ function AuditModal({ jurnalAudit, onClose }) {
         />
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-200">
-              <th className="px-2 py-1">Data</th>
-              <th className="px-2 py-1">Ora</th>
-              <th className="px-2 py-1">Rol</th>
-              <th className="px-2 py-1">Acțiune</th>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+              <th className="px-2 py-1 font-bold">Data</th>
+              <th className="px-2 py-1 font-bold">Ora</th>
+              <th className="px-2 py-1 font-bold">Rol</th>
+              <th className="px-2 py-1 font-bold">Acțiune</th>
             </tr>
           </thead>
           <tbody>
