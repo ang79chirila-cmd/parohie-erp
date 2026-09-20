@@ -15,6 +15,24 @@
 import { supabase } from "./supabaseClient";
 import { ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 
+// PostgREST/Supabase are o limită practică pe lungimea URL-ului unei cereri GET. Un singur
+// `.in(coloana, [...])` cu sute de UUID-uri (36+ caractere fiecare) poate depăși acea limită și
+// eșua cu 400 "Bad Request" — invizibil cu volum mic de date, dar sigur să apară pe măsură ce
+// parohia acumulează sute de documente. Împărțim orice astfel de interogare în loturi mai mici,
+// cerute succesiv, și unim rezultatele — echivalent funcțional cu un singur `.in()` mare, dar
+// niciodată peste limita de lungime a URL-ului.
+async function inLoturi(queryFactory, ids, marimeLot = 150) {
+  if (!ids || ids.length === 0) return [];
+  const rezultate = [];
+  for (let i = 0; i < ids.length; i += marimeLot) {
+    const lot = ids.slice(i, i + marimeLot);
+    const { data, error } = await queryFactory(lot);
+    if (error) throw error;
+    rezultate.push(...(data || []));
+  }
+  return rezultate;
+}
+
 // Formatează o cantitate pentru textul de explicație al unei operațiuni — mereu convertită
 // explicit prin Number() (apără împotriva unei valori care ar ajunge aici ca text brut, de
 // exemplu dintr-o coloană numerică din Postgres serializată cu scală fixă, gen "35.000"), și
@@ -334,14 +352,10 @@ export async function getOperatiuni(parohieId) {
   if (error) throw error;
   if (!documente || documente.length === 0) return [];
 
-  const { data: linii, error: errLinii } = await supabase
-    .from("linii_document")
-    .select("*")
-    .in(
-      "document_id",
-      documente.map((d) => d.id)
-    );
-  if (errLinii) throw errLinii;
+  const linii = await inLoturi(
+    (lot) => supabase.from("linii_document").select("*").in("document_id", lot),
+    documente.map((d) => d.id)
+  );
 
   const operatiuni = [];
   for (const doc of documente) {
@@ -585,8 +599,7 @@ export async function getMiscariStocPangar(parohieId) {
   const docIds = [...new Set(miscari.map((m) => m.document_id).filter(Boolean))];
   let documenteById = {};
   if (docIds.length > 0) {
-    const { data: docs, error: errDocs } = await supabase.from("documente").select("*").in("id", docIds);
-    if (errDocs) throw errDocs;
+    const docs = await inLoturi((lot) => supabase.from("documente").select("*").in("id", lot), docIds);
     documenteById = Object.fromEntries((docs || []).map((d) => [d.id, d]));
   }
 
@@ -1500,38 +1513,30 @@ export async function getDatoriiFurnizori(parohieId) {
   if (!docs || docs.length === 0) return [];
 
   const docIds = docs.map((d) => d.id);
-  const { data: miscari, error: errM } = await supabase
-    .from("miscari_stoc_pangar")
-    .select("*")
-    .in("document_id", docIds);
-  if (errM) throw errM;
+  const miscari = await inLoturi((lot) => supabase.from("miscari_stoc_pangar").select("*").in("document_id", lot), docIds);
 
   const articolIds = [...new Set((miscari || []).map((m) => m.articol_id))];
   let articoleById = {};
   if (articolIds.length > 0) {
-    const { data: articole, error: errA } = await supabase.from("articole_pangar").select("id, pret_achizitie, categorie_bvc").in("id", articolIds);
-    if (errA) throw errA;
+    const articole = await inLoturi((lot) => supabase.from("articole_pangar").select("id, pret_achizitie, categorie_bvc").in("id", lot), articolIds);
     articoleById = Object.fromEntries((articole || []).map((a) => [a.id, a]));
   }
 
   // Plăți parțiale existente — Ordine de plată deja emise, legate de aceste NRCD-uri prin
   // document_sursa_id. Un NRCD poate avea acum 0, 1 sau mai multe OP-uri legate (câte unul per
   // tranșă achitată); suma încă neachitată = valoarea totală a facturii minus totalul lor.
-  const { data: platiDocs, error: errPD } = await supabase
-    .from("documente")
-    .select("id, nr, an, data, document_sursa_id")
-    .eq("tip", "ordin_plata")
-    .in("document_sursa_id", docIds);
-  if (errPD) throw errPD;
+  const platiDocs = await inLoturi(
+    (lot) => supabase.from("documente").select("id, nr, an, data, document_sursa_id").eq("tip", "ordin_plata").in("document_sursa_id", lot),
+    docIds
+  );
 
   let liniiPlatiById = {};
   if (platiDocs && platiDocs.length > 0) {
     const platiIds = platiDocs.map((p) => p.id);
-    const { data: liniiPlati, error: errLP } = await supabase
-      .from("linii_document")
-      .select("document_id, cont_id, suma, mod_plata")
-      .in("document_id", platiIds);
-    if (errLP) throw errLP;
+    const liniiPlati = await inLoturi(
+      (lot) => supabase.from("linii_document").select("document_id, cont_id, suma, mod_plata").in("document_id", lot),
+      platiIds
+    );
     for (const l of liniiPlati || []) {
       (liniiPlatiById[l.document_id] ||= []).push(l);
     }
@@ -1676,29 +1681,22 @@ export async function getDatoriiFurnizoriGenerale(parohieId) {
   if (!docs || docs.length === 0) return [];
 
   const docIds = docs.map((d) => d.id);
-  const { data: linii, error: errLinii } = await supabase
-    .from("linii_document")
-    .select("*")
-    .in("document_id", docIds);
-  if (errLinii) throw errLinii;
+  const linii = await inLoturi((lot) => supabase.from("linii_document").select("*").in("document_id", lot), docIds);
 
   // Plăți parțiale existente — Ordine de plată deja emise, legate de aceste facturi prin
   // document_sursa_id. Identic ca mecanism cu getDatoriiFurnizori (vezi comentariul de-acolo).
-  const { data: platiDocs, error: errPD } = await supabase
-    .from("documente")
-    .select("id, nr, an, data, document_sursa_id")
-    .eq("tip", "ordin_plata")
-    .in("document_sursa_id", docIds);
-  if (errPD) throw errPD;
+  const platiDocs = await inLoturi(
+    (lot) => supabase.from("documente").select("id, nr, an, data, document_sursa_id").eq("tip", "ordin_plata").in("document_sursa_id", lot),
+    docIds
+  );
 
   let liniiPlatiById = {};
   if (platiDocs && platiDocs.length > 0) {
     const platiIds = platiDocs.map((p) => p.id);
-    const { data: liniiPlati, error: errLP } = await supabase
-      .from("linii_document")
-      .select("document_id, cont_id, suma, mod_plata")
-      .in("document_id", platiIds);
-    if (errLP) throw errLP;
+    const liniiPlati = await inLoturi(
+      (lot) => supabase.from("linii_document").select("document_id, cont_id, suma, mod_plata").in("document_id", lot),
+      platiIds
+    );
     for (const l of liniiPlati || []) {
       (liniiPlatiById[l.document_id] ||= []).push(l);
     }
@@ -1812,7 +1810,6 @@ export async function consolideazaComisioaneLuna(parohieId, an, luna, tertBanca)
   if (errC) throw errC;
   if (!comisioane || comisioane.length === 0) return null;
 
-  const ultimaZi = ultimaZiCalendaristica(an, luna);
   const linii = comisioane.map((c) => ({
     contId: "627",
     suma: Number(c.suma),
@@ -1820,13 +1817,66 @@ export async function consolideazaComisioaneLuna(parohieId, an, luna, tertBanca)
     explicatie: `Comision bancar — plată din ${c.data}${c.tert ? ` către ${c.tert}` : ""}`,
   }));
 
-  const rezultat = await salveazaDocument(parohieId, {
-    tip: "plata",
-    data: ultimaZi,
-    tert: tertBanca || "Bancă",
-    modPlata: "transfer",
-    linii,
-  });
+  // Luna asta poate fi fost DEJA consolidată o dată — un comision poate ajunge în coadă ulterior
+  // (ex. debitat de bancă cu câteva zile întârziere față de tranzacția care l-a generat, deja
+  // după ce restul lunii a fost consolidat la o pornire anterioară a aplicației). Dacă există deja
+  // un document pentru (an, lună), adăugăm linia nouă ACOLO, nu creăm un al doilea Ordin de plată
+  // separat pentru aceeași lună — exact bug-ul găsit direct în date (iunie și septembrie 2025
+  // aveau, fiecare, două OP-uri distincte pentru comisioanele aceleiași luni).
+  const { data: existent, error: errExistent } = await supabase
+    .from("comisioane_bancare_pending")
+    .select("document_id_consolidare")
+    .eq("parohie_id", parohieId)
+    .eq("an", an)
+    .eq("luna", luna)
+    .eq("consolidat", true)
+    .not("document_id_consolidare", "is", null)
+    .limit(1)
+    .maybeSingle();
+  if (errExistent) throw errExistent;
+
+  let rezultat;
+  if (existent?.document_id_consolidare) {
+    const { data: docExistent, error: errDoc } = await supabase
+      .from("documente")
+      .select("id, nr, an, data, tert")
+      .eq("id", existent.document_id_consolidare)
+      .single();
+    if (errDoc) throw errDoc;
+
+    const { liniiNoiInserate } = await actualizeazaDocument(
+      docExistent.id,
+      { data: docExistent.data, tert: docExistent.tert, nr: docExistent.nr },
+      linii
+    );
+    const operatiuniNoi = linii.map((l, i) => ({
+      id: liniiNoiInserate[i]?.id,
+      tip: "plata",
+      contId: l.contId,
+      data: docExistent.data,
+      suma: l.suma,
+      modPlata: l.modPlata,
+      tert: docExistent.tert,
+      explicatie: l.explicatie,
+      nr: docExistent.nr,
+      an: docExistent.an,
+      ajustare106: false,
+      esteExcedentReportat: false,
+      documentId: docExistent.id,
+      serie: null,
+      numarIdentificare: null,
+    }));
+    rezultat = { operatiuniNoi, nr: docExistent.nr, an: docExistent.an, documentId: docExistent.id, renumerotari: [] };
+  } else {
+    const ultimaZi = ultimaZiCalendaristica(an, luna);
+    rezultat = await salveazaDocument(parohieId, {
+      tip: "plata",
+      data: ultimaZi,
+      tert: tertBanca || "Bancă",
+      modPlata: "transfer",
+      linii,
+    });
+  }
 
   const { error: errUpd } = await supabase
     .from("comisioane_bancare_pending")
