@@ -10,13 +10,13 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, creeazaFacturaFurnizor, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, creeazaFacturaFurnizor, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import {
   LayoutDashboard, BookOpen, Landmark, Candy, FileBarChart, Plus,
   ArrowDownCircle, ArrowUpCircle, AlertTriangle, ArrowLeftRight,
-  Trash2, X, Church, Lock, User, Users, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil,
+  Trash2, X, Church, Lock, User, Users, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil, Minus, Copy,
   Download, ChevronDown, FileText, FileSpreadsheet, FileCode, Building2, Boxes, Archive, ClipboardCheck, MapPin, Mail,
   Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload, Settings, Calendar,
 } from "lucide-react";
@@ -262,7 +262,7 @@ function seedAccounts() {
     { id: "672.01.05", simbol: "672.01.05", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — plăți cu alte destinații, eparhii, sinistrați", clasa: "cheltuiala" },
     { id: "672.01.06", simbol: "672.01.06", denumire: "Cheltuieli excepționale privind operațiunile de capital — sume cuvenite altor unități de cult — plăți pentru Fondul Filantropia", clasa: "cheltuiala" },
     { id: "627.03", simbol: "627.03", denumire: "Alte cheltuieli (din rate, chirii, etc.)", clasa: "cheltuiala" },
-  ];
+  ].sort((a, b) => String(a.simbol).localeCompare(String(b.simbol), undefined, { numeric: true, sensitivity: "base" }));
 }
 
 // Mapare categorie marfă pangar -> tripletul de conturi BVC reale pe care se defalcă
@@ -1123,9 +1123,9 @@ Bărbați de încredere:
 function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
   const [organismActiv, setOrganismActiv] = useState("adunare");
   const [mandatSelectatId, setMandatSelectatId] = useState(null);
-  const [showMandatNou, setShowMandatNou] = useState(false);
-  const [editareMembru, setEditareMembru] = useState(undefined); // undefined = închis, null = nou, obiect = editare
-  const [editarePV, setEditarePV] = useState(undefined);
+  const [instanteMandatNou, setInstanteMandatNou] = useState([]);
+  const [instanteMembru, setInstanteMembru] = useState([]); // [{id, membru}] — membru null = nou, obiect = editare
+  const [instantePV, setInstantePV] = useState([]); // [{id, procesVerbal}]
   const [confirmareStergere, setConfirmareStergere] = useState(null); // { tip: "mandat"|"membru"|"pv", id }
   const [notice, setNotice] = useState(null);
 
@@ -1154,11 +1154,11 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
     [state.proceseVerbaleOrganisme, mandatSelectatId]
   );
 
-  async function salveazaMandatNou({ dataInceput, dataSfarsit }) {
+  async function salveazaMandatNou(instId, { dataInceput, dataSfarsit }) {
     try {
       const rezultat = await creeazaMandatOrganism(parohieId, { tipOrganism: organismActiv, dataInceput, dataSfarsit });
       setState((s) => ({ ...s, mandateOrganisme: [...s.mandateOrganisme, rezultat] }));
-      setShowMandatNou(false);
+      setInstanteMandatNou((l) => l.filter((i) => i.id !== instId));
     } catch (e) {
       setNotice(e.message || "Eroare la salvarea mandatului. Încearcă din nou.");
     }
@@ -1181,7 +1181,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
     }
   }
 
-  async function salveazaMembru(payload) {
+  async function salveazaMembru(editareMembru, payload) {
     if (editareMembru?.id) {
       await actualizeazaMembruOrganism(editareMembru.id, payload);
       setState((s) => ({ ...s, membriOrganisme: s.membriOrganisme.map((m) => (m.id === editareMembru.id ? { ...m, ...payload } : m)) }));
@@ -1189,7 +1189,6 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
       const rezultat = await adaugaMembruOrganism(parohieId, { mandatId: mandatSelectatId, ...payload });
       setState((s) => ({ ...s, membriOrganisme: [...s.membriOrganisme, rezultat] }));
     }
-    setEditareMembru(undefined);
   }
 
   async function stergeMembru(id) {
@@ -1203,7 +1202,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
     }
   }
 
-  async function salveazaPV(payload) {
+  async function salveazaPV(editarePV, payload) {
     if (editarePV?.id) {
       await actualizeazaProcesVerbalOrganism(editarePV.id, payload);
       setState((s) => ({ ...s, proceseVerbaleOrganisme: s.proceseVerbaleOrganisme.map((p) => (p.id === editarePV.id ? { ...p, ...payload } : p)) }));
@@ -1211,7 +1210,6 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
       const rezultat = await adaugaProcesVerbalOrganism(parohieId, { mandatId: mandatSelectatId, ...payload });
       setState((s) => ({ ...s, proceseVerbaleOrganisme: [...s.proceseVerbaleOrganisme, rezultat] }));
     }
-    setEditarePV(undefined);
   }
 
   async function stergePV(id) {
@@ -1255,7 +1253,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
           <div className="flex items-center justify-between px-3 pt-3">
             <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Mandate — {TIP_ORGANISM_LABEL[organismActiv]}</div>
             {!permisiuni.citireOnly && (
-              <Btn variant="primary" onClick={() => setShowMandatNou(true)}><Plus size={14} /> Mandat nou</Btn>
+              <Btn variant="primary" onClick={() => setInstanteMandatNou((l) => [...l, { id: uid() }])}><Plus size={14} /> Mandat nou</Btn>
             )}
           </div>
           <table className="w-full text-sm mt-2">
@@ -1315,7 +1313,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
             <div className="flex items-center justify-between px-3 pt-3">
               <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Componență</div>
               {!permisiuni.citireOnly && (
-                <Btn variant="primary" onClick={() => setEditareMembru(null)}><Plus size={14} /> Membru nou</Btn>
+                <Btn variant="primary" onClick={() => setInstanteMembru((l) => [...l, { id: uid(), membru: null }])}><Plus size={14} /> Membru nou</Btn>
               )}
             </div>
             <table className="w-full text-sm mt-2">
@@ -1338,7 +1336,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
                     <td className="px-3 py-1">
                       {!permisiuni.citireOnly && (
                         <div className="flex gap-1.5 justify-end">
-                          <Btn variant="gold" onClick={() => setEditareMembru(m)}>Modifică</Btn>
+                          <Btn variant="gold" onClick={() => setInstanteMembru((l) => [...l, { id: uid(), membru: m }])}>Modifică</Btn>
                           {confirmareStergere?.tip === "membru" && confirmareStergere.id === m.id ? (
                             <>
                               <Btn variant="danger" onClick={() => stergeMembru(m.id)}>Confirmă</Btn>
@@ -1364,7 +1362,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
               <div className="flex items-center justify-between px-3 pt-3">
                 <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Registru procese-verbale de ședință</div>
                 {!permisiuni.citireOnly && (
-                  <Btn variant="primary" onClick={() => setEditarePV(null)}><Plus size={14} /> Proces-verbal nou</Btn>
+                  <Btn variant="primary" onClick={() => setInstantePV((l) => [...l, { id: uid(), procesVerbal: null }])}><Plus size={14} /> Proces-verbal nou</Btn>
                 )}
               </div>
               <table className="w-full text-sm mt-2">
@@ -1385,7 +1383,7 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
                       <td className="px-3 py-1">
                         {!permisiuni.citireOnly && (
                           <div className="flex gap-1.5 justify-end">
-                            <Btn variant="gold" onClick={() => setEditarePV(p)}>Modifică</Btn>
+                            <Btn variant="gold" onClick={() => setInstantePV((l) => [...l, { id: uid(), procesVerbal: p }])}>Modifică</Btn>
                             {confirmareStergere?.tip === "pv" && confirmareStergere.id === p.id ? (
                               <>
                                 <Btn variant="danger" onClick={() => stergePV(p.id)}>Confirmă</Btn>
@@ -1409,20 +1407,21 @@ function OrganismeParohialeTab({ state, setState, permisiuni, parohieId, actiune
         </>
       )}
 
-      {showMandatNou && (
+      {instanteMandatNou.map((inst) => (
         <MandatOrganismForm
+          key={inst.id}
           organismActiv={organismActiv}
           mandateExistente={mandateOrganismActiv}
-          onClose={() => setShowMandatNou(false)}
-          onSave={salveazaMandatNou}
+          onClose={() => setInstanteMandatNou((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={(payload) => salveazaMandatNou(inst.id, payload)}
         />
-      )}
-      {editareMembru !== undefined && (
-        <MembruOrganismForm membru={editareMembru} onClose={() => setEditareMembru(undefined)} onSave={salveazaMembru} />
-      )}
-      {editarePV !== undefined && (
-        <ProcesVerbalOrganismForm procesVerbal={editarePV} onClose={() => setEditarePV(undefined)} onSave={salveazaPV} />
-      )}
+      ))}
+      {instanteMembru.map((inst) => (
+        <MembruOrganismForm key={inst.id} membru={inst.membru} onClose={() => setInstanteMembru((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await salveazaMembru(inst.membru, payload); setInstanteMembru((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instantePV.map((inst) => (
+        <ProcesVerbalOrganismForm key={inst.id} procesVerbal={inst.procesVerbal} onClose={() => setInstantePV((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await salveazaPV(inst.procesVerbal, payload); setInstantePV((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
     </div>
   );
 }
@@ -1483,6 +1482,7 @@ function MembruOrganismForm({ membru, onClose, onSave }) {
   const [email, setEmail] = useState(membru?.email || "");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   async function submit() {
     if (!nume.trim()) { setError("Numele este obligatoriu."); return; }
@@ -1514,9 +1514,18 @@ function MembruOrganismForm({ membru, onClose, onSave }) {
           </Field>
         </div>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {membru && cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestui membru deja înregistrat?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+          {membru && !cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : membru ? "Da, confirmă modificarea" : "Salvează"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -1529,6 +1538,7 @@ function ProcesVerbalOrganismForm({ procesVerbal, onClose, onSave }) {
   const [decizii, setDecizii] = useState(procesVerbal?.decizii || "");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   function foloseseModelConstituire() {
     setDecizii(MODEL_PV_CONSTITUIRE);
@@ -1565,9 +1575,18 @@ function ProcesVerbalOrganismForm({ procesVerbal, onClose, onSave }) {
           <textarea className={inputCls} rows={10} value={decizii} onChange={(e) => setDecizii(e.target.value)} />
         </Field>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {procesVerbal && cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestui proces-verbal deja înregistrat?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+          {procesVerbal && !cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : procesVerbal ? "Da, confirmă modificarea" : "Salvează"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -1940,16 +1959,122 @@ function BaraCautarePaginare({ cautare, onCautare, pagina, totalPagini, onPagina
   );
 }
 
+// Context comun pentru toate ferestrele deschise simultan — permite ESC să închidă doar
+// fereastra focalizată (nu toate deodată) și aduce automat în față fereastra pe care o apasă
+// utilizatorul, indiferent câte altele sunt deschise în același timp.
+const FereastraContext = React.createContext(null);
+
+function FereastraProvider({ children }) {
+  const [focalizata, setFocalizata] = useState(null);
+  const contorZRef = useRef(100);
+  const urmatorulZIndex = useCallback(() => {
+    contorZRef.current += 1;
+    return contorZRef.current;
+  }, []);
+
+  // Ferestre minimizate — { id: titlu } — ascunse vizual, dar componenta rămâne montată (nu-și
+  // pierde datele deja introduse), reactivabile din bara de jos.
+  const [minimizate, setMinimizate] = useState({});
+  const minimizeaza = useCallback((id, titlu) => {
+    setMinimizate((m) => ({ ...m, [id]: titlu }));
+    setFocalizata((f) => (f === id ? null : f));
+  }, []);
+  const restaureaza = useCallback((id) => {
+    setMinimizate((m) => {
+      const { [id]: _omis, ...rest } = m;
+      return rest;
+    });
+    setFocalizata(id);
+  }, []);
+
+  const valoare = useMemo(
+    () => ({ focalizata, setFocalizata, urmatorulZIndex, minimizate, minimizeaza, restaureaza }),
+    [focalizata, urmatorulZIndex, minimizate, minimizeaza, restaureaza]
+  );
+  const idsMinimizate = Object.keys(minimizate);
+
+  return (
+    <FereastraContext.Provider value={valoare}>
+      {children}
+      {idsMinimizate.length > 0 &&
+        createPortal(
+          <div className="fixed bottom-0 left-0 right-0 z-[999] bg-[#1F3864] border-t border-white/10 px-3 py-1.5 flex items-center gap-2 flex-wrap" style={{ pointerEvents: "auto" }}>
+            {idsMinimizate.map((id) => (
+              <button
+                key={id}
+                onClick={() => restaureaza(id)}
+                className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white text-xs px-2.5 py-1 rounded transition-colors"
+              >
+                <ChevronUp size={12} /> {minimizate[id]}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </FereastraContext.Provider>
+  );
+}
+
 function Modal({ title, onClose, children, wide, className = "", culoareFundal = "#FAF8F3" }) {
   const largimeInitiala = wide === "xl" ? 1024 : wide ? 672 : 448;
   const containerRef = useRef(null);
-  // null = poziția/dimensiunea implicită (centrat, înălțime automată) — se "fixează" abia la
-  // prima mutare/redimensionare cerută de utilizator, ca fereastra să pornească exact ca înainte.
-  const [pozitie, setPozitie] = useState(null); // { top, left } în pixeli, relativ la fereastra browserului
-  const [inaltime, setInaltime] = useState(null); // pixeli — null = auto (crește cu conținutul, ca acum)
+  const idRef = useRef(null);
+  if (!idRef.current) idRef.current = uid();
+
+  const ctxFereastra = useContext(FereastraContext);
+  const [zIndexLocal, setZIndexLocal] = useState(() => (ctxFereastra ? ctxFereastra.urmatorulZIndex() : 100));
+  // Decalaj în cascadă (ca ferestrele noi să nu se deschidă exact una peste alta) — derivat din
+  // zIndex-ul propriu, ca fiecare fereastră nouă să primească automat un decalaj diferit.
+  const [offsetInitial] = useState(() => {
+    const pas = (zIndexLocal % 6) * 28;
+    return { x: pas, y: pas };
+  });
+
+  // null = poziția/dimensiunea implicită (centrat + decalaj în cascadă, înălțime automată) — se
+  // "fixează" abia la prima mutare/redimensionare cerută de utilizator.
+  const [pozitie, setPozitie] = useState(null);
+  const [inaltime, setInaltime] = useState(null);
   const [largime, setLargime] = useState(largimeInitiala);
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
+
+  const esteFocalizata = !ctxFereastra || ctxFereastra.focalizata === idRef.current;
+  const esteMinimizata = !!(ctxFereastra && ctxFereastra.minimizate[idRef.current] !== undefined);
+
+  const minimizeaza = useCallback(() => {
+    if (ctxFereastra) ctxFereastra.minimizeaza(idRef.current, title);
+  }, [ctxFereastra, title]);
+
+  const aduLaFata = useCallback(() => {
+    if (!ctxFereastra) return;
+    if (ctxFereastra.focalizata !== idRef.current) {
+      setZIndexLocal(ctxFereastra.urmatorulZIndex());
+      ctxFereastra.setFocalizata(idRef.current);
+    }
+  }, [ctxFereastra]);
+
+  useEffect(() => {
+    if (ctxFereastra) ctxFereastra.setFocalizata(idRef.current); // focalizată automat la deschidere
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Când fereastra devine focalizată din exterior (ex. restaurată din bara de jos, nu prin click
+  // direct pe ea, care ar trece deja prin aduLaFata), o aducem și vizual în față.
+  const eraFocalizataInainte = useRef(false);
+  useEffect(() => {
+    if (ctxFereastra && esteFocalizata && !eraFocalizataInainte.current) {
+      setZIndexLocal(ctxFereastra.urmatorulZIndex());
+    }
+    eraFocalizataInainte.current = esteFocalizata;
+  }, [esteFocalizata]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ESC — închide DOAR fereastra focalizată, niciodată altele deschise simultan.
+  useEffect(() => {
+    function peTasta(e) {
+      if (e.key === "Escape" && esteFocalizata && onClose) onClose();
+    }
+    window.addEventListener("keydown", peTasta);
+    return () => window.removeEventListener("keydown", peTasta);
+  }, [esteFocalizata, onClose]);
 
   useEffect(() => {
     function inTimpulMutarii(e) {
@@ -1984,6 +2109,7 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
 
   function porniMutarea(e) {
     if (e.target.closest("button")) return; // nu porni drag dacă s-a apăsat butonul de închidere
+    aduLaFata();
     const rect = containerRef.current.getBoundingClientRect();
     dragRef.current = {
       startX: e.clientX, startY: e.clientY,
@@ -1994,12 +2120,17 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
 
   function porniRedimensionarea(e) {
     e.stopPropagation();
+    aduLaFata();
     const rect = containerRef.current.getBoundingClientRect();
     resizeRef.current = { startX: e.clientX, startY: e.clientY, startWidth: rect.width, startHeight: rect.height };
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose || undefined}>
+  const continut = (
+    // Fără fundal întunecat pe tot ecranul — mai multe ferestre pot fi deschise simultan, iar
+    // meniul aplicației trebuie să rămână accesibil (click-abil) în orice moment, indiferent
+    // câte ferestre sunt deschise. Doar fereastra însăși captează click-urile (pointerEvents),
+    // restul zonei "fixed" e complet transparentă la evenimente ale mouse-ului.
+    <div className="fixed inset-0" style={{ zIndex: zIndexLocal, pointerEvents: "none" }}>
       <div
         ref={containerRef}
         className={`rounded-lg shadow-xl overflow-y-auto absolute flex flex-col ${className}`}
@@ -2009,11 +2140,15 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
           height: inaltime || undefined,
           maxHeight: "90vh",
           maxWidth: "calc(100vw - 16px)",
-          top: pozitie ? pozitie.top : "50%",
-          left: pozitie ? pozitie.left : "50%",
+          top: pozitie ? pozitie.top : `calc(50% + ${offsetInitial.y}px)`,
+          left: pozitie ? pozitie.left : `calc(50% + ${offsetInitial.x}px)`,
           transform: pozitie ? "none" : "translate(-50%, -50%)",
+          pointerEvents: "auto",
+          boxShadow: esteFocalizata
+            ? "0 25px 50px -12px rgba(0,0,0,0.45), 0 0 0 1px rgba(31,56,100,0.15)"
+            : "0 10px 20px -8px rgba(0,0,0,0.3)",
         }}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={aduLaFata}
       >
         <div
           className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 cursor-move select-none flex-shrink-0"
@@ -2021,11 +2156,18 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
           onMouseDown={porniMutarea}
         >
           <h3 className="font-serif text-lg text-[#1F3864]">{title}</h3>
-          {onClose && (
-            <button onClick={onClose} className="text-stone-400 hover:text-stone-700">
-              <X size={18} />
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {ctxFereastra && (
+              <button onClick={minimizeaza} title="Minimizează" className="text-stone-400 hover:text-stone-700 p-0.5">
+                <Minus size={16} />
+              </button>
+            )}
+            {onClose && (
+              <button onClick={onClose} className="text-stone-400 hover:text-stone-700 p-0.5">
+                <X size={18} />
+              </button>
+            )}
+          </div>
         </div>
         <div className="p-5 overflow-y-auto flex-1">{children}</div>
         <div
@@ -2037,7 +2179,17 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
       </div>
     </div>
   );
+
+  // Minimizată — nu randăm fereastra plutitoare deloc (rămâne doar pastila din bara de jos),
+  // dar componenta-formular (ex. ChitantaForm) rămâne montată mai departe, cu toate datele deja
+  // introduse intacte — minimizarea nu e o închidere, doar o ascundere vizuală temporară.
+  if (esteMinimizata) return null;
+
+  // Portal direct în <body> — fereastra rămâne vizibilă chiar dacă tab-ul din care a fost
+  // deschisă devine ascuns (display:none) în urma comutării pe alt tab din meniu.
+  return typeof document !== "undefined" ? createPortal(continut, document.body) : continut;
 }
+
 
 /* ------------------------------ Export rapoarte (PDF / XLSX / XML) -------------------------------- */
 
@@ -2820,7 +2972,7 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   {
     const latimePaginaTotal = doc.internal.pageSize.getWidth();
     const inaltimePagina = doc.internal.pageSize.getHeight();
-    const latimeLogo = Math.min(90, latimePaginaTotal - 2 * MARGINE);
+    const latimeLogo = latimePaginaTotal - 2 * MARGINE;
     const inaltimeLogo = latimeLogo * (101 / 1200); // păstrează raportul real al imaginii (1200×101)
     const xLogo = (latimePaginaTotal - latimeLogo) / 2;
     const yLogo = Math.max(yDupaTabel + 10, inaltimePagina - 22 - inaltimeLogo);
@@ -4371,7 +4523,10 @@ export default function ParohieERP() {
             const persistat = dateLocaleSupabase.conturi || s.conturi;
             const idsPersistate = new Set(persistat.map((c) => c.id));
             const lipsa = seedAccounts().filter((c) => !idsPersistate.has(c.id));
-            return lipsa.length > 0 ? [...persistat, ...lipsa] : persistat;
+            const combinat = lipsa.length > 0 ? [...persistat, ...lipsa] : persistat;
+            return [...combinat].sort((a, b) =>
+              String(a.simbol).localeCompare(String(b.simbol), undefined, { numeric: true, sensitivity: "base" })
+            );
           })(),
           contoare: dateLocaleSupabase.contoare || s.contoare,
           articoleConsumIntern: dateLocaleSupabase.articoleConsumIntern || s.articoleConsumIntern,
@@ -4826,7 +4981,7 @@ export default function ParohieERP() {
             {
               label: "Chitanță", icon: FileText,
               sub: [
-                ...(!permisiuni.citireOnly ? [{ label: "Chitanță nouă", icon: Plus, onClick: () => navigheazaCuActiune("operatiuni", "chitanta") }] : []),
+                ...(!permisiuni.citireOnly ? [{ label: "Chitanță nouă (Alt+C)", icon: Plus, onClick: () => navigheazaCuActiune("operatiuni", "chitanta") }] : []),
                 { label: "Chitanțe emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "chitanteEmise") },
               ],
             },
@@ -4838,19 +4993,19 @@ export default function ParohieERP() {
             {
               label: "Ordin de plată", icon: FileText,
               sub: [
-                ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP ? [{ label: "Ordin de plată nou", icon: Plus, onClick: () => navigheazaCuActiune("operatiuni", "op") }] : []),
+                ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP ? [{ label: "Ordin de plată nou (Alt+O)", icon: Plus, onClick: () => navigheazaCuActiune("operatiuni", "op") }] : []),
                 { label: "Ordine de plată emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "opEmise") },
               ],
             },
             ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP
-              ? [{ label: "Facturi furnizori", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "facturaFurnizor") }]
+              ? [{ label: "Facturi furnizori (Alt+F)", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "facturaFurnizor") }]
               : []),
           ],
         },
         {
           label: "Transferuri interne", icon: ArrowLeftRight,
           sub: [
-            ...(!permisiuni.citireOnly ? [{ label: "Transfer Casă → Bancă", icon: ArrowDownCircle, onClick: () => navigheazaCuActiune("operatiuni", "transferCasaBanca") }] : []),
+            ...(!permisiuni.citireOnly ? [{ label: "Transfer Casă → Bancă (Alt+T)", icon: ArrowDownCircle, onClick: () => navigheazaCuActiune("operatiuni", "transferCasaBanca") }] : []),
             ...(!permisiuni.citireOnly ? [{ label: "Transfer Bancă → Casă", icon: ArrowUpCircle, onClick: () => navigheazaCuActiune("operatiuni", "transferBancaCasa") }] : []),
             ...(!permisiuni.citireOnly ? [{ label: "Constituire Depozit Bancar", icon: Landmark, onClick: () => navigheazaCuActiune("operatiuni", "constituireDepozit") }] : []),
             ...(!permisiuni.citireOnly ? [{ label: "Închidere Depozit Bancar", icon: Landmark, onClick: () => navigheazaCuActiune("operatiuni", "inchidereDepozit") }] : []),
@@ -4858,7 +5013,7 @@ export default function ParohieERP() {
             ...(!permisiuni.citireOnly ? [{ label: "Editare/Ștergere transferuri interne", icon: Pencil, onClick: () => navigheazaCuActiune("operatiuni", "editareViramente") }] : []),
           ],
         },
-        { label: "Reconciliere bancară", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("operatiuni", "reconciliere") },
+        { label: "Reconciliere bancară (Alt+R)", icon: ClipboardCheck, onClick: () => navigheazaCuActiune("operatiuni", "reconciliere") },
         { label: "Articole bugetare", icon: Landmark, onClick: () => setTab("conturi") },
         { label: "Parteneri", icon: Users, onClick: () => setTab("parteneri") },
       ],
@@ -4870,7 +5025,7 @@ export default function ParohieERP() {
         {
           label: "Intrări", icon: ArrowDownCircle,
           sub: [
-            ...(!permisiuni.citireOnly ? [{ label: "Creează intrare (NRCD)", icon: Plus, onClick: () => navigheazaCuActiune("pangar", "receptieNRCD") }] : []),
+            ...(!permisiuni.citireOnly ? [{ label: "Creează intrare (NRCD) (Alt+N)", icon: Plus, onClick: () => navigheazaCuActiune("pangar", "receptieNRCD") }] : []),
             ...(!permisiuni.citireOnly ? [{ label: "Stoc inițial", icon: Boxes, onClick: () => navigheazaCuActiune("pangar", "stocInitial") }] : []),
             { label: "Tablou intrări", icon: FileBarChart, onClick: () => navigheazaCuActiune("pangar", "tabloulIntrari") },
           ],
@@ -4878,7 +5033,7 @@ export default function ParohieERP() {
         {
           label: "Ieșiri", icon: ArrowUpCircle,
           sub: [
-            ...(!permisiuni.citireOnly ? [{ label: "Creează vânzare", icon: Plus, onClick: () => navigheazaCuActiune("pangar", "vanzare") }] : []),
+            ...(!permisiuni.citireOnly ? [{ label: "Creează vânzare (Alt+V)", icon: Plus, onClick: () => navigheazaCuActiune("pangar", "vanzare") }] : []),
             { label: "Tablou vânzări", icon: FileBarChart, onClick: () => navigheazaCuActiune("pangar", "tabloulVanzari") },
           ],
         },
@@ -5057,6 +5212,7 @@ export default function ParohieERP() {
   }
 
   return (
+    <FereastraProvider>
     <div className="h-screen bg-[#FAF8F3] text-stone-800 flex flex-col font-sans overflow-hidden">
       {/* Bară principală de navigare — două rânduri: sus identitatea parohiei + cont, jos navigarea */}
       <header className="bg-[#8A2B29] text-white flex flex-col shrink-0 border-b border-white/10">
@@ -5206,7 +5362,7 @@ export default function ParohieERP() {
       {/* Main */}
       <main className="flex-1 overflow-y-auto">
         <div className="w-full px-6 py-6">
-          {tabActiv === "dashboard" && (
+          <div style={{ display: tabActiv === "dashboard" ? undefined : "none" }}>
             <Dashboard
               state={state}
               setState={setState}
@@ -5240,19 +5396,19 @@ export default function ParohieERP() {
                 },
               }}
             />
-          )}
-          {tabActiv === "operatiuni" && <OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={tabActiv === "operatiuni" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} />}
-          {tabActiv === "conturi" && <ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} />}
-          {tabActiv === "parteneri" && <ParteneriTab state={state} setState={setState} parohieId={contActiv.parohieId} permisiuni={permisiuni} setTab={setTab} />}
-          {tabActiv === "pangar" && <PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={tabActiv === "pangar" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anPangar={anSelectatGlobal} setAnPangar={setAnSelectatGlobal} />}
-          {tabActiv === "consumintern" && <ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "consumintern" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anConsumIntern={anSelectatGlobal} setAnConsumIntern={setAnSelectatGlobal} />}
-          {tabActiv === "patrimoniu" && <PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "patrimoniu" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "cimitir" && <CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "cimitir" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "corespondenta" && <CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "corespondenta" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "rapoarte" && <RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={tabActiv === "rapoarte" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} />}
-          {tabActiv === "organisme" && <OrganismeParohialeTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={tabActiv === "organisme" ? actiuneInitiala : null} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} />}
-          {tabActiv === "profil" && <ProfilParohieTab state={state} setState={setState} />}
-          {tabActiv === "import" && <ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} />}
+          </div>
+          <div style={{ display: tabActiv === "operatiuni" ? undefined : "none" }}><OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} /></div>
+          <div style={{ display: tabActiv === "conturi" ? undefined : "none" }}><ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} /></div>
+          <div style={{ display: tabActiv === "parteneri" ? undefined : "none" }}><ParteneriTab state={state} setState={setState} parohieId={contActiv.parohieId} permisiuni={permisiuni} setTab={setTab} /></div>
+          <div style={{ display: tabActiv === "pangar" ? undefined : "none" }}><PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anPangar={anSelectatGlobal} setAnPangar={setAnSelectatGlobal} /></div>
+          <div style={{ display: tabActiv === "consumintern" ? undefined : "none" }}><ConsumInternTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anConsumIntern={anSelectatGlobal} setAnConsumIntern={setAnSelectatGlobal} /></div>
+          <div style={{ display: tabActiv === "patrimoniu" ? undefined : "none" }}><PatrimoniuTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} /></div>
+          <div style={{ display: tabActiv === "cimitir" ? undefined : "none" }}><CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} /></div>
+          <div style={{ display: tabActiv === "corespondenta" ? undefined : "none" }}><CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} /></div>
+          <div style={{ display: tabActiv === "rapoarte" ? undefined : "none" }}><RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} /></div>
+          <div style={{ display: tabActiv === "organisme" ? undefined : "none" }}><OrganismeParohialeTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} /></div>
+          <div style={{ display: tabActiv === "profil" ? undefined : "none" }}><ProfilParohieTab state={state} setState={setState} /></div>
+          <div style={{ display: tabActiv === "import" ? undefined : "none" }}><ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} /></div>
         </div>
       </main>
 
@@ -5336,6 +5492,7 @@ export default function ParohieERP() {
         />
       )}
     </div>
+    </FereastraProvider>
   );
 }
 
@@ -5805,7 +5962,7 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
 
 function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permisiuni, parohieId, prevederiInfo, inchidereInfo, anTablou, setAnTablou }) {
   const { alerteStoc, alerteSold, alerteDepozite, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
-  const [achitareFor, setAchitareFor] = useState(null);
+  const [instanteAchitare, setInstanteAchitare] = useState([]); // [{id, datorie}]
 
   // Selector de an pentru cardurile Sold/Total — anul selectat e comun tuturor modulelor
   // (anTablou/setAnTablou primite ca props din componenta rădăcină), nu mai e local acestui tab.
@@ -5843,10 +6000,10 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
   }, [state.operatiuni, state.comisioaneBancareNeconsolidate, derived.contById, anTablou, anCurent]);
 
   const excedent = totalVenituri - totalCheltuieli;
-  const [showPrevederiUrmator, setShowPrevederiUrmator] = useState(false);
-  const [showPrevederiPrecedent, setShowPrevederiPrecedent] = useState(false);
-  const [showInchidere, setShowInchidere] = useState(false);
-  const [showInchidereExceptie, setShowInchidereExceptie] = useState(false);
+  const [instantePrevederiUrmator, setInstantePrevederiUrmator] = useState([]);
+  const [instantePrevederiPrecedent, setInstantePrevederiPrecedent] = useState([]);
+  const [instanteInchidere, setInstanteInchidere] = useState([]);
+  const [instanteInchidereExceptie, setInstanteInchidereExceptie] = useState([]);
 
   const anCurentDash = new Date().getFullYear();
   const anPrecedent = anCurentDash - 1;
@@ -5870,8 +6027,8 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
   // documentSursaId — un NRCD poate avea astfel mai multe OP-uri de-a lungul timpului, câte unul
   // per tranșă. NRCD-ul e marcat "achitată" (și dispare din Datorii curente) DOAR când restul
   // ajunge la zero; altfel rămâne în listă, cu restul de plată actualizat.
-  async function achitaDatorie(plati, data) {
-    await achitaDatoriePangar(parohieId, state, setState, achitareFor.id, plati, data);
+  async function achitaDatorie(datorieId, plati, data) {
+    await achitaDatoriePangar(parohieId, state, setState, datorieId, plati, data);
   }
 
   return (
@@ -5925,7 +6082,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
           <span className="text-sm text-[#8a6a2f]">
             Este necesară completarea Prevederilor bugetare pentru anul {prevederiInfo.anUrmator} (fereastra 15.11 – 31.12).
           </span>
-          <Btn variant="gold" onClick={() => setShowPrevederiUrmator(true)}>Completează acum</Btn>
+          <Btn variant="gold" onClick={() => setInstantePrevederiUrmator((l) => [...l, { id: uid() }])}>Completează acum</Btn>
         </Card>
       )}
 
@@ -5946,7 +6103,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
               <Btn
                 variant="gold"
                 disabled={!anReconstituireValid || anReconstituireInchisDefinitiv}
-                onClick={() => setShowPrevederiPrecedent(true)}
+                onClick={() => setInstantePrevederiPrecedent((l) => [...l, { id: uid() }])}
               >
                 Prevederi {anReconstituire}
               </Btn>
@@ -5981,7 +6138,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
                 Când reconstituirea anului {anReconstituire} e completă, îl poți închide (moale, reversibil) oricând, fără
                 să mai aștepți fereastra obișnuită de ianuarie–martie.
               </span>
-              <Btn variant="danger" onClick={() => setShowInchidereExceptie(true)}>
+              <Btn variant="danger" onClick={() => setInstanteInchidereExceptie((l) => [...l, { id: uid() }])}>
                 Închide exercițiul {anReconstituire}
               </Btn>
             </div>
@@ -5995,7 +6152,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
             Este necesară închiderea exercițiului financiar {inchidereInfo.anDeInchis}. Sistemul va închide automat la
             31.03.{inchidereInfo.anDeInchis + 1}, ora 23:59.
           </span>
-          <Btn variant="danger" onClick={() => setShowInchidere(true)}>Închide acum</Btn>
+          <Btn variant="danger" onClick={() => setInstanteInchidere((l) => [...l, { id: uid() }])}>Închide acum</Btn>
         </Card>
       )}
 
@@ -6004,7 +6161,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
           <span className="text-xs text-stone-500">
             Exercițiul financiar {inchidereInfo.anDeInchis} poate fi închis oricând până la 31.03.{inchidereInfo.anDeInchis + 1}.
           </span>
-          <Btn variant="ghost" onClick={() => setShowInchidere(true)}>Închide exercițiul {inchidereInfo.anDeInchis}</Btn>
+          <Btn variant="ghost" onClick={() => setInstanteInchidere((l) => [...l, { id: uid() }])}>Închide exercițiul {inchidereInfo.anDeInchis}</Btn>
         </Card>
       )}
 
@@ -6042,7 +6199,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
                       </span>
                     </td>
                     <td className="px-2 py-1 text-right">
-                      {!permisiuni.citireOnly && <Btn variant="gold" onClick={() => setAchitareFor(d)}>Achită</Btn>}
+                      {!permisiuni.citireOnly && <Btn variant="gold" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie: d }])}>Achită</Btn>}
                     </td>
                   </tr>
                 );
@@ -6091,25 +6248,28 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
         <Card className="p-4 text-sm text-stone-500">Nicio alertă activă în acest moment.</Card>
       )}
 
-      {achitareFor && (
+      {instanteAchitare.map((inst) => (
         <AchitareDatorieModal
-          datorie={achitareFor}
-          onClose={() => setAchitareFor(null)}
-          onSave={async (plati, data) => { await achitaDatorie(plati, data); setAchitareFor(null); }}
+          key={inst.id}
+          datorie={inst.datorie}
+          onClose={() => setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (plati, data) => { await achitaDatorie(inst.datorie.id, plati, data); setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
+      ))}
 
-      {showPrevederiUrmator && (
+      {instantePrevederiUrmator.map((inst) => (
         <PrevederiBugetareForm
+          key={inst.id}
           conturi={state.conturi}
           an={prevederiInfo.anUrmator}
-          onValidate={(linii) => { prevederiInfo.onValidat(linii); setShowPrevederiUrmator(false); }}
-          onClose={() => setShowPrevederiUrmator(false)}
+          onValidate={(linii) => { prevederiInfo.onValidat(linii); setInstantePrevederiUrmator((l) => l.filter((i) => i.id !== inst.id)); }}
+          onClose={() => setInstantePrevederiUrmator((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
 
-      {showPrevederiPrecedent && (
+      {instantePrevederiPrecedent.map((inst) => (
         <PrevederiBugetareForm
+          key={inst.id}
           conturi={state.conturi}
           an={anReconstituire}
           modCorectie
@@ -6124,23 +6284,25 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
                 [anReconstituire]: { validat: true, dataValidare: todayISO(), linii },
               },
             }));
-            setShowPrevederiPrecedent(false);
+            setInstantePrevederiPrecedent((l) => l.filter((i) => i.id !== inst.id));
           }}
-          onClose={() => setShowPrevederiPrecedent(false)}
+          onClose={() => setInstantePrevederiPrecedent((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
 
-      {showInchidere && inchidereInfo && (
+      {inchidereInfo && instanteInchidere.map((inst) => (
         <InchidereExercitiuModal
+          key={inst.id}
           an={inchidereInfo.anDeInchis}
           excedent={soldCasaBancaLaAn(state.operatiuni, inchidereInfo.anDeInchis)}
-          onConfirm={async () => { await inchidereInfo.onInchide(inchidereInfo.anDeInchis); setShowInchidere(false); }}
-          onClose={() => setShowInchidere(false)}
+          onConfirm={async () => { await inchidereInfo.onInchide(inchidereInfo.anDeInchis); setInstanteInchidere((l) => l.filter((i) => i.id !== inst.id)); }}
+          onClose={() => setInstanteInchidere((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
 
-      {showInchidereExceptie && (
+      {instanteInchidereExceptie.map((inst) => (
         <InchidereExercitiuModal
+          key={inst.id}
           an={anReconstituire}
           excedent={soldCasaBancaLaAn(state.operatiuni, anReconstituire)}
           onConfirm={async () => {
@@ -6152,11 +6314,11 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
               const operatiuniFinale = [...operatiuni.filter((op) => !idsAtinse.has(op.id)), ...rezultat.operatiuniActualizate];
               return { ...s, operatiuni: operatiuniFinale, exercitiiFinanciare };
             });
-            setShowInchidereExceptie(false);
+            setInstanteInchidereExceptie((l) => l.filter((i) => i.id !== inst.id));
           }}
-          onClose={() => setShowInchidereExceptie(false)}
+          onClose={() => setInstanteInchidereExceptie((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
     </div>
   );
 }
@@ -6358,14 +6520,13 @@ function fmtDataJurnal(iso) {
 }
 
 function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener, actiuneInitiala, onConsumaActiuneInitiala, anSelectat, setAnSelectat }) {
-  const [showChitanta, setShowChitanta] = useState(false);
-  const [showOP, setShowOP] = useState(false);
-  const [showFacturaFurnizor, setShowFacturaFurnizor] = useState(false);
-  const [showTransfer, setShowTransfer] = useState(false);
-  const [directieTransferInitiala, setDirectieTransferInitiala] = useState("casa-banca");
-  const [showEditareViramente, setShowEditareViramente] = useState(false);
-  const [editareViramentFor, setEditareViramentFor] = useState(null); // perechea în curs de editare | null
-  const [showReconciliere, setShowReconciliere] = useState(false);
+  const [instanteChitanta, setInstanteChitanta] = useState([]);
+  const [instanteOP, setInstanteOP] = useState([]);
+  const [instanteFacturaFurnizor, setInstanteFacturaFurnizor] = useState([]);
+  const [instanteTransfer, setInstanteTransfer] = useState([]); // [{id, directieInitiala}]
+  const [instanteEditareViramente, setInstanteEditareViramente] = useState([]);
+  const [instanteEditareViramentFor, setInstanteEditareViramentFor] = useState([]); // [{id, perechea}]
+  const [instanteReconciliere, setInstanteReconciliere] = useState([]);
   const [browseTip, setBrowseTip] = useState(null); // null | "incasare" | "plata"
 
   // Capul de tabel fix ("freeze header") — antetul paginii, bara de căutare, capul de tabel și
@@ -6379,18 +6540,18 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   // cerută, indiferent dacă utilizatorul tocmai a navigat aici sau era deja pe acest tab.
   useEffect(() => {
     if (!actiuneInitiala) return;
-    if (actiuneInitiala === "chitanta") setShowChitanta(true);
-    else if (actiuneInitiala === "op") setShowOP(true);
-    else if (actiuneInitiala === "facturaFurnizor") setShowFacturaFurnizor(true);
-    else if (actiuneInitiala === "transfer") { setDirectieTransferInitiala("casa-banca"); setShowTransfer(true); }
-    else if (actiuneInitiala === "transferCasaBanca") { setDirectieTransferInitiala("casa-banca"); setShowTransfer(true); }
-    else if (actiuneInitiala === "transferBancaCasa") { setDirectieTransferInitiala("banca-casa"); setShowTransfer(true); }
-    else if (actiuneInitiala === "constituireDepozit") { setDirectieTransferInitiala("deschidere-depozit"); setShowTransfer(true); }
-    else if (actiuneInitiala === "inchidereDepozit") { setDirectieTransferInitiala("inchidere-depozit"); setShowTransfer(true); }
-    else if (actiuneInitiala === "editareViramente") setShowEditareViramente(true);
+    if (actiuneInitiala === "chitanta") setInstanteChitanta((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "op") setInstanteOP((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "facturaFurnizor") setInstanteFacturaFurnizor((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "transfer") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "casa-banca" }]);
+    else if (actiuneInitiala === "transferCasaBanca") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "casa-banca" }]);
+    else if (actiuneInitiala === "transferBancaCasa") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "banca-casa" }]);
+    else if (actiuneInitiala === "constituireDepozit") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "deschidere-depozit" }]);
+    else if (actiuneInitiala === "inchidereDepozit") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "inchidere-depozit" }]);
+    else if (actiuneInitiala === "editareViramente") setInstanteEditareViramente((l) => [...l, { id: uid() }]);
     else if (actiuneInitiala === "chitanteEmise") setBrowseTip("incasare");
     else if (actiuneInitiala === "opEmise") setBrowseTip("plata");
-    else if (actiuneInitiala === "reconciliere") setShowReconciliere(true);
+    else if (actiuneInitiala === "reconciliere") setInstanteReconciliere((l) => [...l, { id: uid() }]);
     else if (actiuneInitiala === "registrulViramente") genereazaRegistrulViramente();
     onConsumaActiuneInitiala();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6958,8 +7119,9 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       </Card>
       </ScrollOrizontalSus>
 
-      {showChitanta && (
+      {instanteChitanta.map((inst) => (
         <ChitantaForm
+          key={inst.id}
           conturi={state.conturi}
           exercitiiFinanciare={state.exercitiiFinanciare}
           operatiuni={state.operatiuni}
@@ -6968,16 +7130,18 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           onCreatPartener={onCreatPartener}
           donatoriIstorici={donatoriIstorici}
           ultimaSerieNumar={ultimaSerieNumarChitanta}
-          onClose={() => setShowChitanta(false)}
+          initial={inst.initial}
+          onClose={() => setInstanteChitanta((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (payload) => {
             await addChitanta(payload);
-            setShowChitanta(false);
+            setInstanteChitanta((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
-      )}
+      ))}
 
-      {showOP && (
+      {instanteOP.map((inst) => (
         <OrdinPlataForm
+          key={inst.id}
           conturi={state.conturi}
           derived={derived}
           exercitiiFinanciare={state.exercitiiFinanciare}
@@ -6987,62 +7151,67 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           onCreatPartener={onCreatPartener}
           eparhie={state.parohie?.eparhie}
           protoierie={state.parohie?.protoierie}
-          onClose={() => setShowOP(false)}
+          initial={inst.initial}
+          onClose={() => setInstanteOP((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (payload) => {
             await addOrdinPlata(payload);
-            setShowOP(false);
+            setInstanteOP((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
-      )}
+      ))}
 
-      {showFacturaFurnizor && (
+      {instanteFacturaFurnizor.map((inst) => (
         <FacturaFurnizorForm
+          key={inst.id}
           conturi={state.conturi}
           anImplicit={anSelectat}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           operatiuni={state.operatiuni}
-          onClose={() => setShowFacturaFurnizor(false)}
+          onClose={() => setInstanteFacturaFurnizor((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (linii, opts) => {
             await addFacturaFurnizor(linii, opts);
-            setShowFacturaFurnizor(false);
+            setInstanteFacturaFurnizor((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
-      )}
+      ))}
 
-      {showTransfer && (
+      {instanteTransfer.map((inst) => (
         <TransferForm
+          key={inst.id}
           conturi={state.conturi}
           operatiuni={state.operatiuni}
-          directieInitiala={directieTransferInitiala}
-          onClose={() => setShowTransfer(false)}
+          directieInitiala={inst.directieInitiala}
+          onClose={() => setInstanteTransfer((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (ops) => {
             await salveazaTransfer(ops);
-            setShowTransfer(false);
+            setInstanteTransfer((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
-      )}
+      ))}
 
-      {showReconciliere && (
-        <ReconciliereBancaraForm operatiuni={state.operatiuni} onClose={() => setShowReconciliere(false)} />
-      )}
+      {instanteReconciliere.map((inst) => (
+        <ReconciliereBancaraForm key={inst.id} operatiuni={state.operatiuni} onClose={() => setInstanteReconciliere((l) => l.filter((i) => i.id !== inst.id))} />
+      ))}
 
-      {showEditareViramente && (
+      {instanteEditareViramente.map((inst) => (
         <EditareViramenteModal
+          key={inst.id}
           perechi={perechiViramente}
           permisiuni={permisiuni}
-          onModifica={(p) => setEditareViramentFor(p)}
+          onModifica={(p) => setInstanteEditareViramentFor((l) => [...l, { id: uid(), perechea: p }])}
           onSterge={async (p) => { await stergePerecheVirament(p); }}
-          onClose={() => setShowEditareViramente(false)}
+          onClose={() => setInstanteEditareViramente((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
-      {editareViramentFor && (
+      ))}
+      {instanteEditareViramentFor.map((inst) => (
         <PerecheViramentEditForm
-          perechea={editareViramentFor}
-          onClose={() => setEditareViramentFor(null)}
-          onSave={async (opts) => { await editeazaTransfer(editareViramentFor, opts); setEditareViramentFor(null); }}
+          key={inst.id}
+          perechea={inst.perechea}
+          onClose={() => setInstanteEditareViramentFor((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (opts) => { await editeazaTransfer(inst.perechea, opts); setInstanteEditareViramentFor((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
+      ))}
 
       {browseTip && (
         <DocumentBrowserModal
@@ -7061,6 +7230,10 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           saltInitialNr={browseSaltNr}
+          onDuplica={(initial) => {
+            if (browseTip === "incasare") setInstanteChitanta((l) => [...l, { id: uid(), initial }]);
+            else setInstanteOP((l) => [...l, { id: uid(), initial }]);
+          }}
           onClose={() => { setBrowseTip(null); setBrowseSaltNr(null); }}
         />
       )}
@@ -7432,7 +7605,7 @@ function PrevederiBugetareForm({ conturi, an, obligatoriu, modCorectie, liniiIni
   );
 }
 
-function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
+function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, initial, onClose, onSave }) {
   // Dacă userul lucra pe un an anterior (reconstituire) în Registru Jurnal, formularul pornește
   // cu 1 ianuarie din acel an, nu cu data de azi — altfel prima dată implicită "trăgea" documentul
   // spre anul curent, indiferent pe ce an lucra efectiv userul. Dar dacă există deja o chitanță
@@ -7445,8 +7618,15 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
   const [data, setData] = useState(dataImplicita);
   const avertismentDecalaj = useMemo(() => calculeazaAvertismentDecalaj(operatiuni, data, "incasare"), [operatiuni, data]);
   const [modPlataImplicit, setModPlataImplicit] = useState("numerar"); // valoare implicită pentru linii noi
-  const [tert, setTert] = useState("");
-  const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "numerar" }]);
+  // La duplicare (pornind de la o tranzacție existentă), terțul și liniile bugetare se preiau ca
+  // punct de plecare — data rămâne cea implicită (azi/continuarea firească), nu data documentului
+  // original, iar sumele/liniile rămân complet editabile înainte de salvare.
+  const [tert, setTert] = useState(initial?.tert || "");
+  const [linii, setLinii] = useState(
+    initial?.linii?.length
+      ? initial.linii.map((l) => ({ id: uid(), contId: l.contId, suma: String(l.suma), explicatie: l.explicatie || "", modPlata: l.modPlata }))
+      : [{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "numerar" }]
+  );
   const [anulata, setAnulata] = useState(false);
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
@@ -7683,7 +7863,7 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
   );
 }
 
-function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, eparhie, protoierie, onClose, onSave }) {
+function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, eparhie, protoierie, initial, onClose, onSave }) {
   // Aceeași corecție ca la ChitantaForm — vezi explicația de-acolo.
   const ultimulOPEmis = useMemo(() => ultimulDocumentDeTip(operatiuni, "plata"), [operatiuni]);
   const dataImplicita = ultimulOPEmis
@@ -7692,8 +7872,12 @@ function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anI
   const [data, setData] = useState(dataImplicita);
   const avertismentDecalaj = useMemo(() => calculeazaAvertismentDecalaj(operatiuni, data, "plata"), [operatiuni, data]);
   const [modPlataImplicit, setModPlataImplicit] = useState("transfer"); // valoare implicită pentru linii noi
-  const [tert, setTert] = useState("");
-  const [linii, setLinii] = useState([{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "transfer", ajustare106: false }]);
+  const [tert, setTert] = useState(initial?.tert || "");
+  const [linii, setLinii] = useState(
+    initial?.linii?.length
+      ? initial.linii.map((l) => ({ id: uid(), contId: l.contId, suma: String(l.suma), explicatie: l.explicatie || "", modPlata: l.modPlata, ajustare106: !!l.ajustare106 }))
+      : [{ id: uid(), contId: "", suma: "", explicatie: "", modPlata: "transfer", ajustare106: false }]
+  );
   const [comisionBancar, setComisionBancar] = useState("");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
@@ -8091,6 +8275,7 @@ function PerecheViramentEditForm({ perechea, onClose, onSave }) {
   const [explicatie, setExplicatie] = useState(opReferinta.explicatie || "");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   async function submit() {
     const sumaNum = Number(suma);
@@ -8134,9 +8319,18 @@ function PerecheViramentEditForm({ perechea, onClose, onSave }) {
           șterge acest transfer și creează unul nou, corect.
         </p>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestui transfer deja înregistrat?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+          {!cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -8278,12 +8472,18 @@ function ReconciliereBancaraForm({ operatiuni, onClose }) {
 /* ------------------------------ Conturi BVC -------------------------------- */
 
 function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
+  const [instanteForm, setInstanteForm] = useState([]);
+  const [instanteEditing, setInstanteEditing] = useState([]); // [{id, editing}]
   const [deleteError, setDeleteError] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   function addCont(c) {
-    setState((s) => ({ ...s, conturi: [...s.conturi, { ...c, id: c.simbol }] }));
+    setState((s) => ({
+      ...s,
+      conturi: [...s.conturi, { ...c, id: c.simbol }].sort((a, b) =>
+        String(a.simbol).localeCompare(String(b.simbol), undefined, { numeric: true, sensitivity: "base" })
+      ),
+    }));
   }
 
   function updateCont(id, patch) {
@@ -8303,7 +8503,12 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
       setDeleteError(`Contul ${c.simbol} are operațiuni înregistrate — nu poate fi șters, doar redenumit dacă e nevoie.`);
       return;
     }
-    setState((s) => ({ ...s, conturi: s.conturi.filter((x) => x.id !== c.id) }));
+    setDeleteTarget(c);
+  }
+
+  function confirmaStergereCont() {
+    setState((s) => ({ ...s, conturi: s.conturi.filter((x) => x.id !== deleteTarget.id) }));
+    setDeleteTarget(null);
   }
 
   const clasaLabel = { venit: "Venit", cheltuiala: "Cheltuială", viramente: "Viramente interne" };
@@ -8340,7 +8545,7 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
           <h1 className="font-serif text-2xl text-[#1F3864]">Nomenclator articole bugetare</h1>
           <p className="text-sm text-stone-500">Buget de Venituri și Cheltuieli — un singur nomenclator, simbol + denumire.</p>
         </div>
-        <Btn variant="primary" onClick={() => setShowForm(true)} disabled={permisiuni.citireOnly} className={permisiuni.citireOnly ? "hidden" : ""}>
+        <Btn variant="primary" onClick={() => setInstanteForm((l) => [...l, { id: uid() }])} disabled={permisiuni.citireOnly} className={permisiuni.citireOnly ? "hidden" : ""}>
           <Plus size={15} /> Articol bugetar nou
         </Btn>
       </header>
@@ -8387,7 +8592,7 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
                   <td className="px-3 py-1">
                     {!permisiuni.citireOnly && (
                       <div className="flex gap-1 justify-end">
-                        <button title="Editează" onClick={() => setEditing(c)} className="text-stone-400 hover:text-[#1F3864] p-1">
+                        <button title="Editează" onClick={() => setInstanteEditing((l) => [...l, { id: uid(), editing: c }])} className="text-stone-400 hover:text-[#1F3864] p-1">
                           <Pencil size={13} />
                         </button>
                         <button title="Șterge" onClick={() => deleteCont(c)} className="text-stone-300 hover:text-rose-600 p-1">
@@ -8403,27 +8608,44 @@ function ConturiTab({ state, setState, derived, permisiuni, setTab }) {
         </table>
       </Card>
 
-      {showForm && (
+      {instanteForm.map((inst) => (
         <ContForm
+          key={inst.id}
           existente={state.conturi}
-          onClose={() => setShowForm(false)}
+          onClose={() => setInstanteForm((l) => l.filter((i) => i.id !== inst.id))}
           onSave={(c) => {
             addCont(c);
-            setShowForm(false);
+            setInstanteForm((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
-      )}
+      ))}
 
-      {editing && (
+      {instanteEditing.map((inst) => (
         <ContForm
+          key={inst.id}
           existente={state.conturi}
-          editing={editing}
-          onClose={() => setEditing(null)}
+          editing={inst.editing}
+          onClose={() => setInstanteEditing((l) => l.filter((i) => i.id !== inst.id))}
           onSave={(patch) => {
-            updateCont(editing.id, patch);
-            setEditing(null);
+            updateCont(inst.editing.id, patch);
+            setInstanteEditing((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
+      ))}
+
+      {deleteTarget && (
+        <Modal title="Confirmă ștergerea" onClose={() => setDeleteTarget(null)}>
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-stone-600">
+              Ștergi definitiv articolul bugetar <span className="font-medium">{deleteTarget.simbol} — {deleteTarget.denumire}</span>?
+              Nu are nicio operațiune înregistrată, deci ștergerea e sigură.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setDeleteTarget(null)}>Anulează</Btn>
+              <Btn variant="primary" className="bg-rose-600 hover:bg-rose-700" onClick={confirmaStergereCont}>Șterge definitiv</Btn>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -8435,6 +8657,7 @@ function ContForm({ existente, editing, onClose, onSave }) {
   const [clasa, setClasa] = useState(editing?.clasa || "venit");
   const [error, setError] = useState("");
   const isSpecial = editing?.special;
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   function submit() {
     if (!simbol.trim() || !denumire.trim()) {
@@ -8475,9 +8698,18 @@ function ContForm({ existente, editing, onClose, onSave }) {
           </p>
         )}
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {editing && cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestui articol bugetar deja existent?
+          </p>
+        )}
         <div className="flex justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
-          <Btn variant="gold" onClick={submit}>Salvează</Btn>
+          {editing && !cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit}>{editing ? "Da, confirmă modificarea" : "Salvează"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -8487,8 +8719,8 @@ function ContForm({ existente, editing, onClose, onSave }) {
 /* ------------------------------ Pangar -------------------------------- */
 
 function ParteneriTab({ state, setState, parohieId, permisiuni, setTab }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
+  const [instanteForm, setInstanteForm] = useState([]);
+  const [instanteEditing, setInstanteEditing] = useState([]); // [{id, editing}]
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [eroare, setEroare] = useState(null);
   const [seSalveaza, setSeSalveaza] = useState(false);
@@ -8554,7 +8786,7 @@ function ParteneriTab({ state, setState, parohieId, permisiuni, setTab }) {
             Furnizori, instituții, persoane — evidența separată, folosită pentru completarea automată la chitanțe, ordine de plată și facturi de furnizor. Editarea sau ștergerea unui partener nu modifică documentele deja emise (acolo denumirea rămâne fixată ca text, la momentul emiterii).
           </p>
         </div>
-        <Btn variant="primary" onClick={() => setShowForm(true)} disabled={permisiuni.citireOnly} className={permisiuni.citireOnly ? "hidden" : ""}>
+        <Btn variant="primary" onClick={() => setInstanteForm((l) => [...l, { id: uid() }])} disabled={permisiuni.citireOnly} className={permisiuni.citireOnly ? "hidden" : ""}>
           <Plus size={15} /> Partener nou
         </Btn>
       </header>
@@ -8598,7 +8830,7 @@ function ParteneriTab({ state, setState, parohieId, permisiuni, setTab }) {
                 <td className="px-3 py-1">
                   {!permisiuni.citireOnly && (
                     <div className="flex gap-1 justify-end">
-                      <button title="Editează" onClick={() => setEditing(p)} className="text-stone-400 hover:text-[#1F3864] p-1">
+                      <button title="Editează" onClick={() => setInstanteEditing((l) => [...l, { id: uid(), editing: p }])} className="text-stone-400 hover:text-[#1F3864] p-1">
                         <Pencil size={13} />
                       </button>
                       <button title="Șterge" onClick={() => setDeleteTarget(p)} className="text-stone-300 hover:text-rose-600 p-1">
@@ -8613,26 +8845,28 @@ function ParteneriTab({ state, setState, parohieId, permisiuni, setTab }) {
         </table>
       </Card>
 
-      {showForm && (
+      {instanteForm.map((inst) => (
         <PartenerNomenclatorForm
-          onClose={() => setShowForm(false)}
+          key={inst.id}
+          onClose={() => setInstanteForm((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (payload) => {
             await addPartener(payload);
-            setShowForm(false);
+            setInstanteForm((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
-      )}
+      ))}
 
-      {editing && (
+      {instanteEditing.map((inst) => (
         <PartenerNomenclatorForm
-          editing={editing}
-          onClose={() => setEditing(null)}
+          key={inst.id}
+          editing={inst.editing}
+          onClose={() => setInstanteEditing((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (payload) => {
-            await updatePartener(editing.id, payload);
-            setEditing(null);
+            await updatePartener(inst.editing.id, payload);
+            setInstanteEditing((l) => l.filter((i) => i.id !== inst.id));
           }}
         />
-      )}
+      ))}
 
       {deleteTarget && (
         <Modal title="Confirmă ștergerea" onClose={() => setDeleteTarget(null)}>
@@ -8665,6 +8899,7 @@ function PartenerNomenclatorForm({ editing, onClose, onSave }) {
   const [functie, setFunctie] = useState(editing?.functie || "");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   async function salveaza() {
     if (!denumire.trim()) {
@@ -8727,9 +8962,18 @@ function PartenerNomenclatorForm({ editing, onClose, onSave }) {
 
         {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
 
+        {editing && cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestui partener deja înregistrat?
+          </p>
+        )}
         <div className="flex justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
-          <Btn variant="gold" onClick={salveaza} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+          {editing && !cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={salveaza} disabled={salvand}>{salvand ? "Se salvează..." : editing ? "Da, confirmă modificarea" : "Salvează"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -8737,19 +8981,18 @@ function PartenerNomenclatorForm({ editing, onClose, onSave }) {
 }
 
 function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri, onCreatPartener, receptieRapidaArticolId, onConsumatReceptieRapida, actiuneInitiala, onConsumaActiuneInitiala, anPangar, setAnPangar }) {
-  const [showArticol, setShowArticol] = useState(false);
-  const [variantaFor, setVariantaFor] = useState(null);
-  const [showReceptieNRCD, setShowReceptieNRCD] = useState(false);
-  const [liniiReceptiePropuse, setLiniiReceptiePropuse] = useState(null);
+  const [instanteArticol, setInstanteArticol] = useState([]);
+  const [instanteVarianta, setInstanteVarianta] = useState([]); // [{id, variantaDin}]
+  const [instanteReceptieNRCD, setInstanteReceptieNRCD] = useState([]); // [{id, liniiInitiale}]
   const [sectiunePangar, setSectiunePangar] = useState("intrari"); // "intrari" | "iesiri" | "stocuri" | "nomenclator"
   const [modStocuri, setModStocuri] = useState("lista"); // "lista" | "galerie"
-  const [showVanzare, setShowVanzare] = useState(false);
+  const [instanteVanzare, setInstanteVanzare] = useState([]);
   const [notice, setNotice] = useState(null);
-  const [showNRCD, setShowNRCD] = useState(false);
-  const [showVanzariEmise, setShowVanzariEmise] = useState(false);
-  const [showRapoarte, setShowRapoarte] = useState(false);
-  const [showStocInitial, setShowStocInitial] = useState(false);
-  const [achitareFor, setAchitareFor] = useState(null); // datoria (NRCD) în curs de achitare, din Tablou intrări | null
+  const [instanteNRCD, setInstanteNRCD] = useState([]);
+  const [instanteVanzariEmise, setInstanteVanzariEmise] = useState([]);
+  const [instanteRapoarte, setInstanteRapoarte] = useState([]);
+  const [instanteStocInitial, setInstanteStocInitial] = useState([]);
+  const [instanteAchitare, setInstanteAchitare] = useState([]); // [{id, datorie}] — datoriile (NRCD) în curs de achitare, din Tablou intrări
 
   // Capul de tabel fix ("freeze header"), la fel ca la Registrul Jurnal — antetul paginii, bara
   // de navigare între secțiuni (Intrări/Ieșiri/Stocuri/Nomenclator), sub-antetul propriu al
@@ -8844,13 +9087,13 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal.
   useEffect(() => {
     if (!actiuneInitiala) return;
-    if (actiuneInitiala === "receptieNRCD") setShowReceptieNRCD(true);
-    else if (actiuneInitiala === "vanzare") setShowVanzare(true);
-    else if (actiuneInitiala === "stocInitial") setShowStocInitial(true);
-    else if (actiuneInitiala === "produsNou") setShowArticol(true);
-    else if (actiuneInitiala === "rapoarte") setShowRapoarte(true);
-    else if (actiuneInitiala === "nrcd") setShowNRCD(true);
-    else if (actiuneInitiala === "vanzariEmise") setShowVanzariEmise(true);
+    if (actiuneInitiala === "receptieNRCD") setInstanteReceptieNRCD((l) => [...l, { id: uid(), liniiInitiale: null }]);
+    else if (actiuneInitiala === "vanzare") setInstanteVanzare((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "stocInitial") setInstanteStocInitial((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "produsNou") setInstanteArticol((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "rapoarte") setInstanteRapoarte((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "nrcd") setInstanteNRCD((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "vanzariEmise") setInstanteVanzariEmise((l) => [...l, { id: uid() }]);
     else if (actiuneInitiala === "tabloulIntrari") setSectiunePangar("intrari");
     else if (actiuneInitiala === "tabloulVanzari") setSectiunePangar("iesiri");
     else if (actiuneInitiala === "stocuri") setSectiunePangar("stocuri");
@@ -8863,8 +9106,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // deschidem direct formularul de recepție NRCD, cu articolul deja selectat pe prima linie.
   useEffect(() => {
     if (!receptieRapidaArticolId) return;
-    setLiniiReceptiePropuse([{ id: uid(), articolId: receptieRapidaArticolId, cantitate: "" }]);
-    setShowReceptieNRCD(true);
+    setInstanteReceptieNRCD((l) => [...l, { id: uid(), liniiInitiale: [{ id: uid(), articolId: receptieRapidaArticolId, cantitate: "" }] }]);
     onConsumatReceptieRapida();
   }, [receptieRapidaArticolId]);
   // Aceeași sursă de sugestii ca la Chitanța generală — orice nume folosit vreodată la o
@@ -8883,8 +9125,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     if (cuIdentificare.length === 0) return null;
     return cuIdentificare.reduce((max, op) => (op.an > max.an || (op.an === max.an && op.nr > max.nr) ? op : max));
   }, [state.operatiuni]);
-  const [editReceptieFor, setEditReceptieFor] = useState(null);
-  const [editVanzareFor, setEditVanzareFor] = useState(null);
+  const [instanteEditReceptie, setInstanteEditReceptie] = useState([]); // [{id, miscare}]
+  const [instanteEditVanzare, setInstanteEditVanzare] = useState([]); // [{id, vanzare}]
   const [confirmareStergereVanzare, setConfirmareStergereVanzare] = useState(null); // { nrChitanta, anChitanta } | null
   const [confirmareStergereReceptie, setConfirmareStergereReceptie] = useState(null); // documentId | null
 
@@ -8988,6 +9230,21 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Modificare recepție NRCD nr. ${miscare.nrNRCD}/${anNou}`),
       };
     });
+  }
+
+  // Adaugă un produs nou pe un NRCD deja emis, cu ocazia editării — un cod suplimentar pe
+  // aceeași factură, distinct de linia inițial recepționată.
+  async function adaugaLinieReceptie(documentId, articolId, cantitate) {
+    const rezultat = await adaugaLinieReceptiePangar(documentId, { articolId, cantitate, categoriiPangar: CATEGORII_PANGAR });
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => (a.id === rezultat.articolPatch.id ? { ...a, ...rezultat.articolPatch } : a)),
+      miscariStoc: [...s.miscariStoc, rezultat.miscareNoua],
+      datoriiFurnizori: (s.datoriiFurnizori || []).map((d) =>
+        d.documentId === documentId ? { ...d, ...rezultat.datorieActualizata } : d
+      ),
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Adăugare produs nou pe NRCD nr. ${rezultat.miscareNoua.nrNRCD} — ${cantitate} buc.`),
+    }));
   }
 
   // Ștergere recepție NRCD întreagă (documentul + toate liniile lui de stoc). Blocată dacă
@@ -9655,7 +9912,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
               ))}
             </select>
           </div>
-          <Btn variant="ghost" onClick={() => setShowRapoarte(true)}>Rapoarte Pangar</Btn>
+          <Btn variant="ghost" onClick={() => setInstanteRapoarte((l) => [...l, { id: uid() }])}>Rapoarte Pangar</Btn>
         </div>
       </header>
 
@@ -9680,8 +9937,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         <Btn variant={sectiunePangar === "nomenclator" ? "primary" : "ghost"} onClick={() => setSectiunePangar("nomenclator")}>Nomenclator</Btn>
       </div>
 
-      {showRapoarte && (
-        <Modal title={`Rapoarte Pangar — anul ${anPangar}`} onClose={() => setShowRapoarte(false)} wide>
+      {instanteRapoarte.map((inst) => (
+        <Modal key={inst.id} title={`Rapoarte Pangar — anul ${anPangar}`} onClose={() => setInstanteRapoarte((l) => l.filter((i) => i.id !== inst.id))} wide>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap border-b border-stone-100 pb-3">
               <div>
@@ -9716,7 +9973,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
             </div>
           </div>
         </Modal>
-      )}
+      ))}
 
       {notice && (
         <Card className="p-3 border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
@@ -9793,7 +10050,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                             <td className="px-3 py-1"><span className={`text-xs px-2 py-0.5 rounded-full ${stareCls}`}>{g.stareLabel}</span></td>
                             <td className="px-3 py-1">
                               {!permisiuni.citireOnly && (
-                                <Btn variant="ghost" onClick={() => setVariantaFor(g.coduri[g.coduri.length - 1])}>Preț nou</Btn>
+                                <Btn variant="ghost" onClick={() => setInstanteVarianta((l) => [...l, { id: uid(), variantaDin: g.coduri[g.coduri.length - 1] }])}>Preț nou</Btn>
                               )}
                             </td>
                           </tr>
@@ -9964,14 +10221,14 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                               if (permisiuni.citireOnly) {
                                 return <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitat</span>;
                               }
-                              return <Btn variant="rosu" onClick={() => setAchitareFor(datorie)}>Achită</Btn>;
+                              return <Btn variant="rosu" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie }])}>Achită</Btn>;
                             })()}
                             {anInchisDefinitiv ? (
                               <span className="text-xs text-stone-400">Închis definitiv</span>
                             ) : (
                               !permisiuni.citireOnly && (
                                 <>
-                                  <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
+                                  <Btn variant="gold" onClick={() => setInstanteEditReceptie((l) => [...l, { id: uid(), miscare: m }])}>Modifică</Btn>
                                   {confirmareStergereReceptie === grup.documentId ? (
                                     <>
                                       <Btn variant="danger" onClick={async () => { await stergeReceptie(grup.documentId); setConfirmareStergereReceptie(null); }}>
@@ -10125,7 +10382,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                     ) : (
                       !permisiuni.citireOnly && (
                         <div className="flex gap-1.5 justify-end">
-                          <Btn variant="gold" onClick={() => setEditVanzareFor({ ...v, tert: opChit?.tert || "", modPlata: opChit?.modPlata || "numerar" })}>
+                          <Btn variant="gold" onClick={() => setInstanteEditVanzare((l) => [...l, { id: uid(), vanzare: { ...v, tert: opChit?.tert || "", modPlata: opChit?.modPlata || "numerar" } }])}>
                             Modifică
                           </Btn>
                           {confirmareStergereVanzare?.nrChitanta === v.nrChitanta && confirmareStergereVanzare?.anChitanta === v.anChitanta ? (
@@ -10169,69 +10426,76 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
         </Modal>
       )}
 
-      {showStocInitial && (
-        <StocInitialModal
+      {instanteStocInitial.map((inst) => (
+        <StocInitialModal key={inst.id}
           articole={state.articole}
           miscariStocInitiale={state.miscariStoc.filter((m) => m.tip === "intrare" && !m.documentId).sort((a, b) => (a.data < b.data ? 1 : -1))}
-          onClose={() => setShowStocInitial(false)}
+          onClose={() => setInstanteStocInitial((l) => l.filter((i) => i.id !== inst.id))}
           onAdauga={adaugaStocInitial}
           onModifica={editeazaStocInitial}
           onSterge={stergeStocInitial}
         />
-      )}
+      ))}
 
-      {achitareFor && (
-        <AchitareDatorieModal
-          datorie={achitareFor}
-          onClose={() => setAchitareFor(null)}
-          onSave={async (plati, data) => { await achitaDatoriePangar(parohieId, state, setState, achitareFor.id, plati, data); setAchitareFor(null); }}
+      {instanteAchitare.map((inst) => (
+        <AchitareDatorieModal key={inst.id}
+          datorie={inst.datorie}
+          onClose={() => setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (plati, data) => { await achitaDatoriePangar(parohieId, state, setState, inst.datorie.id, plati, data); setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
+      ))}
 
-      {editReceptieFor && (
-        <ReceptieEditForm
-          miscare={editReceptieFor}
+      {instanteEditReceptie.map((inst) => (
+        <ReceptieEditForm key={inst.id}
+          miscare={inst.miscare}
           articole={state.articole}
-          opLegat={state.operatiuni.find((op) => op.tip === "plata" && op.documentSursaId === editReceptieFor.documentId) || null}
-          onClose={() => setEditReceptieFor(null)}
-          onSave={async (opts) => { await editeazaReceptie(editReceptieFor.id, opts); setEditReceptieFor(null); }}
+          opLegat={state.operatiuni.find((op) => op.tip === "plata" && op.documentSursaId === inst.miscare.documentId) || null}
+          alteLiniiNrcd={state.miscariStoc
+            .filter((m) => m.tip === "intrare" && m.documentId === inst.miscare.documentId && m.id !== inst.miscare.id)
+            .map((m) => ({ articolDenumire: state.articole.find((a) => a.id === m.articolId)?.denumire || m.articolId, cantitate: m.cantitate }))}
+          onAdaugaLinie={(articolIdNou, cant) => adaugaLinieReceptie(inst.miscare.documentId, articolIdNou, cant)}
+          onClose={() => setInstanteEditReceptie((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (opts) => { await editeazaReceptie(inst.miscare.id, opts); setInstanteEditReceptie((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
+      ))}
 
-      {editVanzareFor && (
-        <VanzareEditForm
-          vanzare={editVanzareFor}
+      {instanteEditVanzare.map((inst) => (
+        <VanzareEditForm key={inst.id}
+          vanzare={inst.vanzare}
           grupuri={grupuri}
-          onClose={() => setEditVanzareFor(null)}
-          onSave={async (opts) => { await editeazaVanzare(editVanzareFor.nrChitanta, editVanzareFor.anChitanta, opts); setEditVanzareFor(null); }}
+          onClose={() => setInstanteEditVanzare((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (opts) => { await editeazaVanzare(inst.vanzare.nrChitanta, inst.vanzare.anChitanta, opts); setInstanteEditVanzare((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
+      ))}
 
-      {showArticol && (
-        <ArticolForm onClose={() => setShowArticol(false)} onSave={async (a, foto) => { await addArticol(a, foto); setShowArticol(false); }} />
-      )}
-      {variantaFor && (
+      {instanteArticol.map((inst) => (
+        <ArticolForm key={inst.id} onClose={() => setInstanteArticol((l) => l.filter((i) => i.id !== inst.id))} onSave={async (a, foto) => { await addArticol(a, foto); setInstanteArticol((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteVarianta.map((inst) => (
         <ArticolForm
-          variantaDin={variantaFor}
-          onClose={() => setVariantaFor(null)}
-          onSave={async (a, foto) => { await addArticol(a, foto); setVariantaFor(null); }}
+          key={inst.id}
+          variantaDin={inst.variantaDin}
+          onClose={() => setInstanteVarianta((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (a, foto) => { await addArticol(a, foto); setInstanteVarianta((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {showReceptieNRCD && (
+      ))}
+      {instanteReceptieNRCD.map((inst) => (
         <ReceptieNRCDForm
+          key={inst.id}
           articole={state.articole}
           anImplicit={anPangar}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           furnizoriAutorizati={[state.parohie?.eparhie, state.parohie?.protoierie].filter(Boolean)}
-          liniiInitiale={liniiReceptiePropuse}
+          liniiInitiale={inst.liniiInitiale}
           operatiuni={state.operatiuni}
-          onClose={() => { setShowReceptieNRCD(false); setLiniiReceptiePropuse(null); }}
-          onSave={async (linii, opts) => { await receptieNRCD(linii, opts); setShowReceptieNRCD(false); setLiniiReceptiePropuse(null); }}
+          onClose={() => setInstanteReceptieNRCD((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (linii, opts) => { await receptieNRCD(linii, opts); setInstanteReceptieNRCD((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {showVanzare && (
+      ))}
+      {instanteVanzare.map((inst) => (
         <VanzareMultiplaForm
+          key={inst.id}
           grupuri={grupuri}
           operatiuni={state.operatiuni}
           conturi={state.conturi}
@@ -10240,30 +10504,32 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           onCreatPartener={onCreatPartener}
           donatoriIstorici={donatoriIstorici}
           ultimaSerieNumar={ultimaSerieNumarChitanta}
-          onClose={() => setShowVanzare(false)}
-          onSave={async (linii, data, tert, modPlata, serie, numarIdentificare) => { await vanzareMultipla(linii, data, tert, modPlata, serie, numarIdentificare); setShowVanzare(false); }}
+          onClose={() => setInstanteVanzare((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (linii, data, tert, modPlata, serie, numarIdentificare) => { await vanzareMultipla(linii, data, tert, modPlata, serie, numarIdentificare); setInstanteVanzare((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {showNRCD && (
+      ))}
+      {instanteNRCD.map((inst) => (
         <DocumentBrowserGeneric
+          key={inst.id}
           tipEtichetat="Notă de Recepție și Constatare de Diferențe (NRCD)"
           documente={documenteNRCDToate}
           campuriAntet={campuriAntetNRCD}
           coloaneLinii={coloaneLiniiNRCD}
           parohie={state.parohie}
-          onClose={() => setShowNRCD(false)}
+          onClose={() => setInstanteNRCD((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
-      {showVanzariEmise && (
+      ))}
+      {instanteVanzariEmise.map((inst) => (
         <DocumentBrowserGeneric
+          key={inst.id}
           tipEtichetat="Chitanță — Vânzare Pangar"
           documente={documenteVanzariToate}
           campuriAntet={campuriAntetVanzari}
           coloaneLinii={coloaneLiniiVanzari}
           parohie={state.parohie}
-          onClose={() => setShowVanzariEmise(false)}
+          onClose={() => setInstanteVanzariEmise((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
     </div>
   );
 }
@@ -10439,7 +10705,7 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
   );
 }
 
-function ReceptieEditForm({ miscare, articole, opLegat, onClose, onSave }) {
+function ReceptieEditForm({ miscare, articole, opLegat, alteLiniiNrcd, onAdaugaLinie, onClose, onSave }) {
   const [articolId, setArticolId] = useState(miscare.articolId);
   const [cantitate, setCantitate] = useState(String(miscare.cantitate));
   const [furnizor, setFurnizor] = useState(miscare.furnizor || "");
@@ -10449,9 +10715,36 @@ function ReceptieEditForm({ miscare, articole, opLegat, onClose, onSave }) {
   const [dataScadenta, setDataScadenta] = useState("");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   const articoleSortate = useMemo(() => [...(articole || [])].sort(comparaCategorieSiDenumire), [articole]);
   const articolCurent = articole?.find((a) => a.id === miscare.articolId);
+
+  // Adăugarea unui produs suplimentar pe același NRCD — acțiune independentă, submisă imediat
+  // (nu e legată de "Salvează" al liniei principale, mai sus). Blocată dacă factura are deja o
+  // plată legată, la fel ca editarea liniei principale.
+  const [articolIdNouAdaugat, setArticolIdNouAdaugat] = useState(articoleSortate[0]?.id || "");
+  const [cantitateNoua, setCantitateNoua] = useState("");
+  const [adaugandLinie, setAdaugandLinie] = useState(false);
+  const [erorAdaugare, setErorAdaugare] = useState("");
+  const [confirmareAdaugare, setConfirmareAdaugare] = useState(false);
+
+  async function submitAdaugaLinie() {
+    const cant = Number(cantitateNoua);
+    if (!articolIdNouAdaugat) { setErorAdaugare("Selectați un produs."); return; }
+    if (!cant || cant <= 0) { setErorAdaugare("Introduceți o cantitate validă, mai mare ca 0."); return; }
+    setErorAdaugare("");
+    setAdaugandLinie(true);
+    try {
+      await onAdaugaLinie(articolIdNouAdaugat, cant);
+      setCantitateNoua("");
+      setConfirmareAdaugare(false);
+    } catch (e) {
+      setErorAdaugare(e.message || "Eroare la adăugarea produsului. Încearcă din nou.");
+    } finally {
+      setAdaugandLinie(false);
+    }
+  }
 
   async function submit() {
     const cant = Number(cantitate);
@@ -10524,10 +10817,67 @@ function ReceptieEditForm({ miscare, articole, opLegat, onClose, onSave }) {
           acoperă diferența (adică s-a vândut deja o parte). Statusul de plată (achitată/datorie) rămâne cel
           original, doar suma se actualizează.
         </p>
+
+        {alteLiniiNrcd && alteLiniiNrcd.length > 0 && (
+          <div className="text-xs text-stone-500">
+            <span className="font-medium">Alte produse pe acest NRCD:</span>{" "}
+            {alteLiniiNrcd.map((l) => `${l.articolDenumire} (${l.cantitate} buc.)`).join(", ")}
+          </div>
+        )}
+
+        {onAdaugaLinie && (
+          <Card className="p-3 flex flex-col gap-2 bg-stone-50">
+            <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Adaugă un produs suplimentar pe acest NRCD</div>
+            {opLegat ? (
+              <p className="text-xs text-amber-600">Nu se pot adăuga produse noi — factura are deja o plată legată.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-8">
+                    <Field label="Produs">
+                      <select className={inputCls} value={articolIdNouAdaugat} onChange={(e) => setArticolIdNouAdaugat(e.target.value)}>
+                        {articoleSortate.map((a) => (
+                          <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-4">
+                    <Field label="Cantitate">
+                      <input type="number" className={inputCls} value={cantitateNoua} onChange={(e) => setCantitateNoua(e.target.value)} />
+                    </Field>
+                  </div>
+                </div>
+                {erorAdaugare && <span className="text-rose-600 text-xs">{erorAdaugare}</span>}
+                {confirmareAdaugare && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                    Confirmi adăugarea acestui produs pe factura deja emisă?
+                  </p>
+                )}
+                <div className="flex justify-end">
+                  {!confirmareAdaugare ? (
+                    <Btn variant="ghost" onClick={() => setConfirmareAdaugare(true)}><Plus size={14} /> Adaugă produs</Btn>
+                  ) : (
+                    <Btn variant="gold" onClick={submitAdaugaLinie} disabled={adaugandLinie}>{adaugandLinie ? "Se adaugă..." : "Da, confirmă adăugarea"}</Btn>
+                  )}
+                </div>
+              </>
+            )}
+          </Card>
+        )}
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestei recepții deja înregistrate?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+          {!cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -10771,6 +11121,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
   const [numarIdentificare, setNumarIdentificare] = useState(vanzare.numarIdentificare ? String(vanzare.numarIdentificare) : "");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   const grupuriDisponibile = useMemo(() => grupuri, [grupuri]);
   const grupByBazaCod = useMemo(() => Object.fromEntries(grupuri.map((g) => [g.bazaCod, g])), [grupuri]);
@@ -10878,9 +11229,18 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
           pe aceeași chitanță. Blocată dacă stocul disponibil nu acoperă cantitățile cerute.
         </p>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestei vânzări deja emise?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+          {!cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -12588,25 +12948,26 @@ const MOTIVE_CONSUM = {
 };
 
 function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala, anConsumIntern, setAnConsumIntern }) {
-  const [showArticol, setShowArticol] = useState(false);
-  const [showReceptie, setShowReceptie] = useState(false);
-  const [showBon, setShowBon] = useState(false);
-  const [showBrowserBon, setShowBrowserBon] = useState(false);
-  const [showStocInitial, setShowStocInitial] = useState(false);
-  const [showRapoarte, setShowRapoarte] = useState(false);
+  const [instanteArticol, setInstanteArticol] = useState([]);
+  const [instanteReceptie, setInstanteReceptie] = useState([]);
+  const [instanteBon, setInstanteBon] = useState([]);
+  const [instanteBrowserBon, setInstanteBrowserBon] = useState([]);
+  const [instanteStocInitial, setInstanteStocInitial] = useState([]);
+  const [instanteRapoarte, setInstanteRapoarte] = useState([]);
   const [notice, setNotice] = useState(null);
-  const [editReceptieFor, setEditReceptieFor] = useState(null);
-  const [editBonFor, setEditBonFor] = useState(null);
+  const [instanteEditReceptie, setInstanteEditReceptie] = useState([]); // [{id, miscare}]
+  const [instanteEditBon, setInstanteEditBon] = useState([]); // [{id, bon}]
+  const [confirmareStergereReceptie, setConfirmareStergereReceptie] = useState(null); // miscareId | null
 
   // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/Pangar.
   useEffect(() => {
     if (!actiuneInitiala) return;
-    if (actiuneInitiala === "receptie") setShowReceptie(true);
-    else if (actiuneInitiala === "bon") setShowBon(true);
-    else if (actiuneInitiala === "articolNou") setShowArticol(true);
-    else if (actiuneInitiala === "navigatorBonuri") setShowBrowserBon(true);
-    else if (actiuneInitiala === "stocInitial") setShowStocInitial(true);
-    else if (actiuneInitiala === "rapoarte") setShowRapoarte(true);
+    if (actiuneInitiala === "receptie") setInstanteReceptie((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "bon") setInstanteBon((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "articolNou") setInstanteArticol((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "navigatorBonuri") setInstanteBrowserBon((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "stocInitial") setInstanteStocInitial((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "rapoarte") setInstanteRapoarte((l) => [...l, { id: uid() }]);
     onConsumaActiuneInitiala();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actiuneInitiala]);
@@ -12739,6 +13100,34 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       return {
         ...s, articoleConsumIntern, miscariConsumIntern,
         jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare recepție Consum intern — ${lot.denumire}`),
+      };
+    });
+  }
+
+  // Ștergerea unei recepții — blocată dacă stocul rămas ar deveni negativ (adică s-a consumat
+  // deja mai mult din acest articol decât ar rămâne fără această recepție). Aceeași regulă de
+  // siguranță ca la editare (reducerea cantității la 0 echivalează cu ștergerea completă).
+  function stergeReceptie(miscareId) {
+    setState((s) => {
+      const miscare = s.miscariConsumIntern.find((m) => m.id === miscareId);
+      if (!miscare || miscare.tip !== "intrare") return s;
+      const lot = s.articoleConsumIntern.find((a) => a.id === miscare.articolId);
+      if (!lot) return s;
+      const anMiscare = yearOf(miscare.data);
+      if (s.exercitiiFinanciare?.[anMiscare]?.inchisDefinitiv) {
+        setNotice(`Exercițiul financiar ${anMiscare} este închis definitiv — nu poate fi ștearsă.`);
+        return s;
+      }
+      const consumatDejaDinLot = miscare.cantitate - lot.stoc;
+      if (consumatDejaDinLot > 0) {
+        setNotice(`Nu poți șterge această recepție — s-au consumat deja ${consumatDejaDinLot} ${lot.um} din ea. Redu cantitatea prin „Modifică”, dacă vrei să o corectezi.`);
+        return s;
+      }
+      const articoleConsumIntern = s.articoleConsumIntern.map((a) => (a.id === lot.id ? { ...a, stoc: a.stoc - miscare.cantitate } : a));
+      const miscariConsumIntern = s.miscariConsumIntern.filter((m) => m.id !== miscareId);
+      return {
+        ...s, articoleConsumIntern, miscariConsumIntern,
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Ștergere recepție Consum intern — ${lot.denumire}`),
       };
     });
   }
@@ -13139,7 +13528,21 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                     {anInchisDefinitiv ? (
                       <span className="text-xs text-stone-400">Închis definitiv</span>
                     ) : (
-                      !permisiuni.citireOnly && <Btn variant="gold" onClick={() => setEditReceptieFor(m)}>Modifică</Btn>
+                      !permisiuni.citireOnly && (
+                        <div className="flex gap-1.5 justify-start">
+                          <Btn variant="gold" onClick={() => setInstanteEditReceptie((l) => [...l, { id: uid(), miscare: m }])}>Modifică</Btn>
+                          {confirmareStergereReceptie === m.id ? (
+                            <>
+                              <Btn variant="danger" onClick={() => { stergeReceptie(m.id); setConfirmareStergereReceptie(null); }}>
+                                Confirmă
+                              </Btn>
+                              <Btn variant="ghost" onClick={() => setConfirmareStergereReceptie(null)}>Anulează</Btn>
+                            </>
+                          ) : (
+                            <Btn variant="danger" onClick={() => setConfirmareStergereReceptie(m.id)}>Șterge</Btn>
+                          )}
+                        </div>
+                      )
                     )}
                   </td>
                 </tr>
@@ -13149,14 +13552,15 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         </table>
       </Card>
 
-      {editReceptieFor && (
+      {instanteEditReceptie.map((inst) => (
         <ReceptieConsumEditForm
-          miscare={editReceptieFor}
-          lot={state.articoleConsumIntern.find((a) => a.id === editReceptieFor.articolId)}
-          onClose={() => setEditReceptieFor(null)}
-          onSave={(opts) => { editeazaReceptie(editReceptieFor.id, opts); setEditReceptieFor(null); }}
+          key={inst.id}
+          miscare={inst.miscare}
+          lot={state.articoleConsumIntern.find((a) => a.id === inst.miscare.articolId)}
+          onClose={() => setInstanteEditReceptie((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={(opts) => { editeazaReceptie(inst.miscare.id, opts); setInstanteEditReceptie((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
+      ))}
 
       <Card className="overflow-x-auto">
         <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">
@@ -13188,7 +13592,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                     {anInchisDefinitiv ? (
                       <span className="text-xs text-stone-400">Închis definitiv</span>
                     ) : (
-                      !permisiuni.citireOnly && <Btn variant="gold" onClick={() => setEditBonFor(bon)}>Modifică</Btn>
+                      !permisiuni.citireOnly && <Btn variant="gold" onClick={() => setInstanteEditBon((l) => [...l, { id: uid(), bon }])}>Modifică</Btn>
                     )}
                   </td>
                 </tr>
@@ -13198,14 +13602,15 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         </table>
       </Card>
 
-      {editBonFor && (
+      {instanteEditBon.map((inst) => (
         <BonConsumEditForm
-          bon={editBonFor}
+          key={inst.id}
+          bon={inst.bon}
           grupe={grupeConsumIntern}
-          onClose={() => setEditBonFor(null)}
-          onSave={(opts) => { editeazaBonConsum(editBonFor.id, opts); setEditBonFor(null); }}
+          onClose={() => setInstanteEditBon((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={(opts) => { editeazaBonConsum(inst.bon.id, opts); setInstanteEditBon((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
+      ))}
 
       <Card className="p-4">
         <div className="flex items-center justify-between mb-3">
@@ -13244,29 +13649,31 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         </table>
       </Card>
 
-      {showArticol && (
-        <ArticolConsumInternForm onClose={() => setShowArticol(false)} onSave={(denumire, um) => { addArticol(denumire, um); setShowArticol(false); }} />
-      )}
-      {showReceptie && (
+      {instanteArticol.map((inst) => (
+        <ArticolConsumInternForm key={inst.id} onClose={() => setInstanteArticol((l) => l.filter((i) => i.id !== inst.id))} onSave={(denumire, um) => { addArticol(denumire, um); setInstanteArticol((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteReceptie.map((inst) => (
         <ReceptieConsumInternMultiForm
+          key={inst.id}
           grupe={grupeConsumIntern}
-          onClose={() => setShowReceptie(false)}
-          onSave={async (data, linii) => { await receptieMultipla(data, linii); setShowReceptie(false); }}
+          onClose={() => setInstanteReceptie((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (data, linii) => { await receptieMultipla(data, linii); setInstanteReceptie((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {showStocInitial && (
+      ))}
+      {instanteStocInitial.map((inst) => (
         <StocInitialConsumInternModal
+          key={inst.id}
           grupe={grupeConsumIntern}
           articole={state.articoleConsumIntern}
           miscariStocInitiale={state.miscariConsumIntern.filter((m) => m.stocInitial)}
-          onClose={() => setShowStocInitial(false)}
+          onClose={() => setInstanteStocInitial((l) => l.filter((i) => i.id !== inst.id))}
           onAdauga={async (denumire, um, cantitate, cost, data) => creeazaStocInitialConsumIntern(denumire, um, cantitate, cost, data)}
           onModifica={async (miscareId, opts) => editeazaStocInitialConsumIntern(miscareId, opts)}
           onSterge={async (miscareId) => stergeStocInitialConsumIntern(miscareId)}
         />
-      )}
-      {showRapoarte && (
-        <Modal title={`Rapoarte Consum intern & Filantropie — anul ${anConsumIntern}`} onClose={() => setShowRapoarte(false)} wide>
+      ))}
+      {instanteRapoarte.map((inst) => (
+        <Modal key={inst.id} title={`Rapoarte Consum intern & Filantropie — anul ${anConsumIntern}`} onClose={() => setInstanteRapoarte((l) => l.filter((i) => i.id !== inst.id))} wide>
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2 flex-wrap">
               <Field label="An">
@@ -13309,16 +13716,18 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
             </div>
           </div>
         </Modal>
-      )}
-      {showBon && (
+      ))}
+      {instanteBon.map((inst) => (
         <BonConsumForm
+          key={inst.id}
           grupe={grupeConsumIntern}
-          onClose={() => setShowBon(false)}
-          onSave={async (payload) => { await bonDeConsum(payload); setShowBon(false); }}
+          onClose={() => setInstanteBon((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (payload) => { await bonDeConsum(payload); setInstanteBon((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {showBrowserBon && (
+      ))}
+      {instanteBrowserBon.map((inst) => (
         <DocumentBrowserGeneric
+          key={inst.id}
           tipEtichetat="Bon de consum / protocol"
           documente={[...state.bonuriConsum].sort((a, b) => (a.an !== b.an ? a.an - b.an : a.nr - b.nr))}
           campuriAntet={[
@@ -13332,9 +13741,9 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
             { label: "Valoare (lei)", value: (l) => fmt(l.valoare), right: true, total: true, totalValue: (d) => fmt(d.linii.reduce((s, l) => s + l.valoare, 0)) },
           ]}
           parohie={state.parohie}
-          onClose={() => setShowBrowserBon(false)}
+          onClose={() => setInstanteBrowserBon((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
     </div>
   );
 }
@@ -13376,6 +13785,7 @@ function ReceptieConsumEditForm({ miscare, lot, onClose, onSave }) {
   const [costUnitar, setCostUnitar] = useState(String(miscare.valoareUnitara));
   const [data, setData] = useState(miscare.data);
   const [error, setError] = useState("");
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   function submit() {
     const cant = Number(cantitate);
@@ -13406,9 +13816,18 @@ function ReceptieConsumEditForm({ miscare, lot, onClose, onSave }) {
           Reducerea cantității e blocată dacă s-a consumat deja o parte din acest lot printr-un bon de consum.
         </p>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestei recepții deja înregistrate?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit}>Salvează</Btn>
+          {!cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit}>Da, confirmă modificarea</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -13423,6 +13842,7 @@ function BonConsumEditForm({ bon, grupe, onClose, onSave }) {
     bon.linii.map((l) => ({ id: uid(), denumire: l.denumire, um: grupe.find((g) => g.denumire === l.denumire)?.um || "", cantitate: String(l.cantitate) }))
   );
   const [error, setError] = useState("");
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   const motivInfo = MOTIVE_CONSUM[motiv];
 
@@ -13510,9 +13930,18 @@ function BonConsumEditForm({ bon, grupe, onClose, onSave }) {
           cantități. Blocat integral dacă stocul disponibil nu acoperă noile cantități.
         </p>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestui bon de consum deja emis?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit}>Salvează</Btn>
+          {!cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit}>Da, confirmă modificarea</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -14002,19 +14431,19 @@ function BonConsumForm({ grupe, onClose, onSave }) {
 /* ------------------------------ Inventar & Patrimoniu -------------------------------- */
 
 function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
-  const [showBun, setShowBun] = useState(false);
-  const [casareFor, setCasareFor] = useState(null);
-  const [showInventariere, setShowInventariere] = useState(false);
-  const [verPV, setVerPV] = useState(null);
-  const [editBunFor, setEditBunFor] = useState(null);
+  const [instanteBun, setInstanteBun] = useState([]);
+  const [instanteCasare, setInstanteCasare] = useState([]); // [{id, bun}]
+  const [instanteInventariere, setInstanteInventariere] = useState([]);
+  const [instanteVerPV, setInstanteVerPV] = useState([]);
+  const [instanteEditBun, setInstanteEditBun] = useState([]); // [{id, bun}]
   const [notice, setNotice] = useState(null);
 
   // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/Pangar/Consum intern.
   useEffect(() => {
     if (!actiuneInitiala) return;
-    if (actiuneInitiala === "bunNou") setShowBun(true);
-    else if (actiuneInitiala === "inventariere") setShowInventariere(true);
-    else if (actiuneInitiala === "navigatorPV") setVerPV("browser");
+    if (actiuneInitiala === "bunNou") setInstanteBun((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "inventariere") setInstanteInventariere((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "navigatorPV") setInstanteVerPV((l) => [...l, { id: uid() }]);
     onConsumaActiuneInitiala();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actiuneInitiala]);
@@ -14155,9 +14584,9 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
                 </td>
                 <td className="px-3 py-1 flex gap-2">
                   {!permisiuni.citireOnly && !state.exercitiiFinanciare?.[yearOf(b.dataAchizitie)]?.inchisDefinitiv && (
-                    <Btn variant="gold" onClick={() => setEditBunFor(b)}>Modifică</Btn>
+                    <Btn variant="gold" onClick={() => setInstanteEditBun((l) => [...l, { id: uid(), bun: b }])}>Modifică</Btn>
                   )}
-                  {!permisiuni.citireOnly && <Btn variant="ghost" onClick={() => setCasareFor(b)}>Casează</Btn>}
+                  {!permisiuni.citireOnly && <Btn variant="ghost" onClick={() => setInstanteCasare((l) => [...l, { id: uid(), bun: b }])}>Casează</Btn>}
                 </td>
               </tr>
             ))}
@@ -14220,24 +14649,26 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
         </table>
       </Card>
 
-      {showBun && (
-        <BunPatrimoniuForm onClose={() => setShowBun(false)} onSave={async (payload) => { await addBun(payload); setShowBun(false); }} />
-      )}
-      {editBunFor && (
+      {instanteBun.map((inst) => (
+        <BunPatrimoniuForm key={inst.id} onClose={() => setInstanteBun((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await addBun(payload); setInstanteBun((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteEditBun.map((inst) => (
         <BunPatrimoniuForm
-          initial={editBunFor}
-          onClose={() => setEditBunFor(null)}
-          onSave={async (payload) => { await editeazaBun(editBunFor.id, payload); setEditBunFor(null); }}
+          key={inst.id}
+          initial={inst.bun}
+          onClose={() => setInstanteEditBun((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (payload) => { await editeazaBun(inst.bun.id, payload); setInstanteEditBun((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {casareFor && (
-        <CasareBunModal bun={casareFor} onClose={() => setCasareFor(null)} onSave={async (payload) => { await caseaza(casareFor.id, payload); setCasareFor(null); }} />
-      )}
-      {showInventariere && (
-        <InventariereForm bunuriActive={bunuriActive} onClose={() => setShowInventariere(false)} onSave={async (payload) => { await inventariaza(payload); setShowInventariere(false); }} />
-      )}
-      {verPV === "browser" && (
+      ))}
+      {instanteCasare.map((inst) => (
+        <CasareBunModal key={inst.id} bun={inst.bun} onClose={() => setInstanteCasare((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await caseaza(inst.bun.id, payload); setInstanteCasare((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteInventariere.map((inst) => (
+        <InventariereForm key={inst.id} bunuriActive={bunuriActive} onClose={() => setInstanteInventariere((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await inventariaza(payload); setInstanteInventariere((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteVerPV.map((inst) => (
         <DocumentBrowserGeneric
+          key={inst.id}
           tipEtichetat="Proces-verbal de inventariere"
           documente={inventarieriSortate.map((pv) => ({ ...pv, nr: pv.nrPV }))}
           campuriAntet={[
@@ -14251,9 +14682,9 @@ function PatrimoniuTab({ state, setState, permisiuni, parohieId, actiuneInitiala
             { label: "Valoare (lei)", value: (l) => fmt(l.valoare), right: true, total: true, totalValue: (d) => fmt(d.bunuri.reduce((s, l) => s + l.valoare, 0)) },
           ]}
           parohie={state.parohie}
-          onClose={() => setVerPV(null)}
+          onClose={() => setInstanteVerPV((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
     </div>
   );
 }
@@ -14270,6 +14701,7 @@ function BunPatrimoniuForm({ initial, onClose, onSave }) {
   const [modPlata, setModPlata] = useState("transfer");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   const valoareNum = Number(valoare) || 0;
   const necesitaFoto = valoareNum >= PRAG_BUN_VALOARE_MARE;
@@ -14344,9 +14776,18 @@ function BunPatrimoniuForm({ initial, onClose, onSave }) {
           <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
         {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
+        {initial && cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestui bun de patrimoniu deja înregistrat?
+          </p>
+        )}
         <div className="flex justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : initial ? "Salvează" : "Salvează bunul"}</Btn>
+          {initial && !cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : initial ? "Da, confirmă modificarea" : "Salvează bunul"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -14480,22 +14921,22 @@ function InventariereForm({ bunuriActive, onClose, onSave }) {
 /* ------------------------------ Cimitir Parohial -------------------------------- */
 
 function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
-  const [showLoc, setShowLoc] = useState(false);
-  const [concesioneazaFor, setConcesioneazaFor] = useState(null);
-  const [reinnoiesteFor, setReinnoiesteFor] = useState(null);
-  const [transferaFor, setTransferaFor] = useState(null);
-  const [showPersoana, setShowPersoana] = useState(false);
-  const [showTarife, setShowTarife] = useState(false);
-  const [editConcesiuneFor, setEditConcesiuneFor] = useState(null);
+  const [instanteLoc, setInstanteLoc] = useState([]);
+  const [instanteConcesioneaza, setInstanteConcesioneaza] = useState([]); // [{id, loc}]
+  const [instanteReinnoieste, setInstanteReinnoieste] = useState([]); // [{id, concesiune}]
+  const [instanteTransfera, setInstanteTransfera] = useState([]); // [{id, concesiune}]
+  const [instantePersoana, setInstantePersoana] = useState([]);
+  const [instanteTarife, setInstanteTarife] = useState([]);
+  const [instanteEditConcesiune, setInstanteEditConcesiune] = useState([]); // [{id, concesiune}]
   const [notice, setNotice] = useState(null);
 
   // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la
   // Jurnal/Pangar/Consum intern/Corespondență.
   useEffect(() => {
     if (!actiuneInitiala) return;
-    if (actiuneInitiala === "locNou") setShowLoc(true);
-    else if (actiuneInitiala === "persoanaNoua") setShowPersoana(true);
-    else if (actiuneInitiala === "tarife") setShowTarife(true);
+    if (actiuneInitiala === "locNou") setInstanteLoc((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "persoanaNoua") setInstantePersoana((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "tarife") setInstanteTarife((l) => [...l, { id: uid() }]);
     onConsumaActiuneInitiala();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actiuneInitiala]);
@@ -14665,11 +15106,11 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         </div>
         {!permisiuni.citireOnly && (
           <div className="flex gap-2">
-            <Btn variant="ghost" onClick={() => setShowTarife(true)}>Tarife</Btn>
-            <Btn variant="ghost" onClick={() => setShowPersoana(true)}>
+            <Btn variant="ghost" onClick={() => setInstanteTarife((l) => [...l, { id: uid() }])}>Tarife</Btn>
+            <Btn variant="ghost" onClick={() => setInstantePersoana((l) => [...l, { id: uid() }])}>
               <Plus size={14} /> Persoană înhumată
             </Btn>
-            <Btn variant="primary" onClick={() => setShowLoc(true)}>
+            <Btn variant="primary" onClick={() => setInstanteLoc((l) => [...l, { id: uid() }])}>
               <Plus size={15} /> Loc nou
             </Btn>
           </div>
@@ -14711,7 +15152,7 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
                   <td className="px-3 py-1"><span className={`text-xs px-2 py-0.5 rounded-full ${stareTone}`}>{l.stare}</span></td>
                   <td className="px-3 py-1">
                     {!permisiuni.citireOnly && l.stare === "disponibil" && (
-                      <Btn variant="gold" onClick={() => setConcesioneazaFor(l)}>Concesionează</Btn>
+                      <Btn variant="gold" onClick={() => setInstanteConcesioneaza((li) => [...li, { id: uid(), loc: l }])}>Concesionează</Btn>
                     )}
                   </td>
                 </tr>
@@ -14764,10 +15205,10 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
                           <Btn variant="danger" onClick={async () => { try { await notificaSuccesori(c); } catch (e) { setNotice(e.message || "Eroare la trimiterea notificării. Încearcă din nou."); } }}>Notifică succesorii</Btn>
                         )}
                         {!state.exercitiiFinanciare?.[yearOf(c.istoric[c.istoric.length - 1].data)]?.inchisDefinitiv && (
-                          <Btn variant="gold" onClick={() => setEditConcesiuneFor(c)}>Modifică</Btn>
+                          <Btn variant="gold" onClick={() => setInstanteEditConcesiune((l) => [...l, { id: uid(), concesiune: c }])}>Modifică</Btn>
                         )}
-                        <Btn variant="ghost" onClick={() => setReinnoiesteFor(c)}>Reînnoiește</Btn>
-                        <Btn variant="ghost" onClick={() => setTransferaFor(c)}>Transferă</Btn>
+                        <Btn variant="ghost" onClick={() => setInstanteReinnoieste((l) => [...l, { id: uid(), concesiune: c }])}>Reînnoiește</Btn>
+                        <Btn variant="ghost" onClick={() => setInstanteTransfera((l) => [...l, { id: uid(), concesiune: c }])}>Transferă</Btn>
                       </div>
                     )}
                   </td>
@@ -14818,49 +15259,54 @@ function CimitirTab({ state, setState, permisiuni, parohieId, actiuneInitiala, o
         </table>
       </Card>
 
-      {showLoc && (
-        <LocInhumareForm onClose={() => setShowLoc(false)} onSave={async (cod) => { await addLoc(cod); setShowLoc(false); }} />
-      )}
-      {concesioneazaFor && (
+      {instanteLoc.map((inst) => (
+        <LocInhumareForm key={inst.id} onClose={() => setInstanteLoc((l) => l.filter((i) => i.id !== inst.id))} onSave={async (cod) => { await addLoc(cod); setInstanteLoc((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteConcesioneaza.map((inst) => (
         <ConcesiuneForm
-          loc={concesioneazaFor}
+          key={inst.id}
+          loc={inst.loc}
           tarife={state.tarifeCimitir}
-          onClose={() => setConcesioneazaFor(null)}
-          onSave={async (payload) => { await creeazaConcesiune({ locId: concesioneazaFor.id, ...payload }); setConcesioneazaFor(null); }}
+          onClose={() => setInstanteConcesioneaza((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (payload) => { await creeazaConcesiune({ locId: inst.loc.id, ...payload }); setInstanteConcesioneaza((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {reinnoiesteFor && (
+      ))}
+      {instanteReinnoieste.map((inst) => (
         <ReinnoireConcesiuneForm
-          concesiune={reinnoiesteFor}
-          onClose={() => setReinnoiesteFor(null)}
-          onSave={async (payload) => { await reinnoieste(reinnoiesteFor.id, payload); setReinnoiesteFor(null); }}
+          key={inst.id}
+          concesiune={inst.concesiune}
+          onClose={() => setInstanteReinnoieste((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (payload) => { await reinnoieste(inst.concesiune.id, payload); setInstanteReinnoieste((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {editConcesiuneFor && (
+      ))}
+      {instanteEditConcesiune.map((inst) => (
         <ConcesiuneEditForm
-          concesiune={editConcesiuneFor}
+          key={inst.id}
+          concesiune={inst.concesiune}
           tarifeCimitir={state.tarifeCimitir}
-          onClose={() => setEditConcesiuneFor(null)}
-          onSave={async (payload) => { await editeazaConcesiune(editConcesiuneFor.id, payload); setEditConcesiuneFor(null); }}
+          onClose={() => setInstanteEditConcesiune((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (payload) => { await editeazaConcesiune(inst.concesiune.id, payload); setInstanteEditConcesiune((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {transferaFor && (
+      ))}
+      {instanteTransfera.map((inst) => (
         <TransferConcesiuneForm
-          concesiune={transferaFor}
-          onClose={() => setTransferaFor(null)}
-          onSave={async (payload) => { await transferaConcesiune(transferaFor.id, payload); setTransferaFor(null); }}
+          key={inst.id}
+          concesiune={inst.concesiune}
+          onClose={() => setInstanteTransfera((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (payload) => { await transferaConcesiune(inst.concesiune.id, payload); setInstanteTransfera((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {showPersoana && (
+      ))}
+      {instantePersoana.map((inst) => (
         <PersoanaInhumataForm
+          key={inst.id}
           locuri={state.locuriInhumare.filter((l) => l.stare !== "disponibil")}
-          onClose={() => setShowPersoana(false)}
-          onSave={async (payload) => { await addPersoanaInhumata(payload); setShowPersoana(false); }}
+          onClose={() => setInstantePersoana((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (payload) => { await addPersoanaInhumata(payload); setInstantePersoana((l) => l.filter((i) => i.id !== inst.id)); }}
         />
-      )}
-      {showTarife && (
-        <TarifeCimitirModal tarife={state.tarifeCimitir} onClose={() => setShowTarife(false)} onSave={(tip, val) => actualizeazaTarif(tip, val)} />
-      )}
+      ))}
+      {instanteTarife.map((inst) => (
+        <TarifeCimitirModal key={inst.id} tarife={state.tarifeCimitir} onClose={() => setInstanteTarife((l) => l.filter((i) => i.id !== inst.id))} onSave={(tip, val) => actualizeazaTarif(tip, val)} />
+      ))}
     </div>
   );
 }
@@ -14968,6 +15414,7 @@ function ConcesiuneEditForm({ concesiune, tarifeCimitir, onClose, onSave }) {
   const [dataInceput, setDataInceput] = useState(ultimulEveniment.data);
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
+  const [cerutConfirmare, setCerutConfirmare] = useState(false);
 
   async function submit() {
     if (!concesionar.trim()) { setError("Numele concesionarului este obligatoriu."); return; }
@@ -15010,9 +15457,18 @@ function ConcesiuneEditForm({ concesiune, tarifeCimitir, onClose, onSave }) {
           <input type="number" className={inputCls} value={tarif} onChange={(e) => setTarif(e.target.value)} />
         </Field>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
+        {cerutConfirmare && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            Confirmi modificarea acestei concesiuni deja înregistrate?
+          </p>
+        )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează"}</Btn>
+          {!cerutConfirmare ? (
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+          ) : (
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
+          )}
         </div>
       </div>
     </Modal>
@@ -15196,22 +15652,23 @@ function TarifeCimitirModal({ tarife, onClose, onSave }) {
 const MOD_PRIMIRE = { posta: "Poștă", email: "E-mail", direct: "Depunere directă" };
 
 function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala }) {
-  const [showIntrare, setShowIntrare] = useState(false);
-  const [showIesire, setShowIesire] = useState(false);
-  const [showArhiva, setShowArhiva] = useState(false);
+  const [instanteIntrare, setInstanteIntrare] = useState([]);
+  const [instanteIesire, setInstanteIesire] = useState([]);
+  const [instanteArhiva, setInstanteArhiva] = useState([]);
   const [filtruCategorie, setFiltruCategorie] = useState("");
-  const [browseCoresp, setBrowseCoresp] = useState(null); // null | "intrare" | "iesire"
+  const [instanteBrowseIntrare, setInstanteBrowseIntrare] = useState([]);
+  const [instanteBrowseIesire, setInstanteBrowseIesire] = useState([]);
   const [notice, setNotice] = useState(null);
 
   // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/
   // Pangar/Consum intern.
   useEffect(() => {
     if (!actiuneInitiala) return;
-    if (actiuneInitiala === "intrareNoua") setShowIntrare(true);
-    else if (actiuneInitiala === "iesireNoua") setShowIesire(true);
-    else if (actiuneInitiala === "documentArhivaNou") setShowArhiva(true);
-    else if (actiuneInitiala === "navigatorIntrari") setBrowseCoresp("intrare");
-    else if (actiuneInitiala === "navigatorIesiri") setBrowseCoresp("iesire");
+    if (actiuneInitiala === "intrareNoua") setInstanteIntrare((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "iesireNoua") setInstanteIesire((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "documentArhivaNou") setInstanteArhiva((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "navigatorIntrari") setInstanteBrowseIntrare((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "navigatorIesiri") setInstanteBrowseIesire((l) => [...l, { id: uid() }]);
     onConsumaActiuneInitiala();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actiuneInitiala]);
@@ -15346,9 +15803,9 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         <div className="flex items-center justify-between px-3 pt-3">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Registru corespondență — intrare</div>
           <div className="flex gap-2">
-            <Btn variant="ghost" onClick={() => setBrowseCoresp("intrare")}><FileText size={14} /> Navigator</Btn>
+            <Btn variant="ghost" onClick={() => setInstanteBrowseIntrare((l) => [...l, { id: uid() }])}><FileText size={14} /> Navigator</Btn>
             {!permisiuni.citireOnly && (
-              <Btn variant="primary" onClick={() => setShowIntrare(true)}><Plus size={14} /> Înregistrare nouă</Btn>
+              <Btn variant="primary" onClick={() => setInstanteIntrare((l) => [...l, { id: uid() }])}><Plus size={14} /> Înregistrare nouă</Btn>
             )}
           </div>
         </div>
@@ -15417,9 +15874,9 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         <div className="flex items-center justify-between px-3 pt-3">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Registru corespondență — ieșire</div>
           <div className="flex gap-2">
-            <Btn variant="ghost" onClick={() => setBrowseCoresp("iesire")}><FileText size={14} /> Navigator</Btn>
+            <Btn variant="ghost" onClick={() => setInstanteBrowseIesire((l) => [...l, { id: uid() }])}><FileText size={14} /> Navigator</Btn>
             {!permisiuni.citireOnly && (
-              <Btn variant="primary" onClick={() => setShowIesire(true)}><Plus size={14} /> Înregistrare nouă</Btn>
+              <Btn variant="primary" onClick={() => setInstanteIesire((l) => [...l, { id: uid() }])}><Plus size={14} /> Înregistrare nouă</Btn>
             )}
           </div>
         </div>
@@ -15469,7 +15926,7 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
               {CATEGORII_ARHIVA.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
             {!permisiuni.citireOnly && (
-              <Btn variant="gold" onClick={() => setShowArhiva(true)}><Plus size={14} /> Document nou</Btn>
+              <Btn variant="gold" onClick={() => setInstanteArhiva((l) => [...l, { id: uid() }])}><Plus size={14} /> Document nou</Btn>
             )}
           </div>
         </div>
@@ -15498,17 +15955,18 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
         </table>
       </Card>
 
-      {showIntrare && (
-        <CorespondentaIntrareForm onClose={() => setShowIntrare(false)} onSave={async (payload) => { await addIntrare(payload); setShowIntrare(false); }} />
-      )}
-      {showIesire && (
-        <CorespondentaIesireForm intrari={intrari} onClose={() => setShowIesire(false)} onSave={async (payload) => { await addIesire(payload); setShowIesire(false); }} />
-      )}
-      {showArhiva && (
-        <DocumentArhivaForm onClose={() => setShowArhiva(false)} onSave={async (payload) => { await addDocumentArhiva(payload); setShowArhiva(false); }} />
-      )}
-      {browseCoresp === "intrare" && (
+      {instanteIntrare.map((inst) => (
+        <CorespondentaIntrareForm key={inst.id} onClose={() => setInstanteIntrare((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await addIntrare(payload); setInstanteIntrare((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteIesire.map((inst) => (
+        <CorespondentaIesireForm key={inst.id} intrari={intrari} onClose={() => setInstanteIesire((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await addIesire(payload); setInstanteIesire((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteArhiva.map((inst) => (
+        <DocumentArhivaForm key={inst.id} onClose={() => setInstanteArhiva((l) => l.filter((i) => i.id !== inst.id))} onSave={async (payload) => { await addDocumentArhiva(payload); setInstanteArhiva((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteBrowseIntrare.map((inst) => (
         <DocumentBrowserGeneric
+          key={inst.id}
           tipEtichetat="Corespondență — intrare"
           documente={intrari}
           campuriAntet={[
@@ -15520,11 +15978,12 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
             { label: "Status", value: (d) => (d.status === "rezolvat" ? "Rezolvat" : "În lucru") },
           ]}
           parohie={state.parohie}
-          onClose={() => setBrowseCoresp(null)}
+          onClose={() => setInstanteBrowseIntrare((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
-      {browseCoresp === "iesire" && (
+      ))}
+      {instanteBrowseIesire.map((inst) => (
         <DocumentBrowserGeneric
+          key={inst.id}
           tipEtichetat="Corespondență — ieșire"
           documente={iesiri}
           campuriAntet={[
@@ -15537,9 +15996,9 @@ function CorespondentaTab({ state, setState, permisiuni, parohieId, actiuneIniti
             } },
           ]}
           parohie={state.parohie}
-          onClose={() => setBrowseCoresp(null)}
+          onClose={() => setInstanteBrowseIesire((l) => l.filter((i) => i.id !== inst.id))}
         />
-      )}
+      ))}
     </div>
   );
 }
@@ -15697,7 +16156,7 @@ function DocumentArhivaForm({ onClose, onSave }) {
 
 /* ------------------------------ Navigator documente (Chitanțe / Ordine de plată) -------------------------------- */
 
-function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, parteneri, onCreatPartener, saltInitialNr, onClose }) {
+function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, parteneri, onCreatPartener, saltInitialNr, onDuplica, onClose }) {
   // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
   // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
   // Viramentele interne (581/5081) au propriul bazin de numerotare, izolat, care se poate suprapune
@@ -15732,6 +16191,8 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
   const [idsDeSters, setIdsDeSters] = useState([]);
   const [eroareEdit, setEroareEdit] = useState("");
   const [salvandEdit, setSalvandEdit] = useState(false);
+  const [cerutConfirmareEdit, setCerutConfirmareEdit] = useState(false);
+  const [comisionBancarEdit, setComisionBancarEdit] = useState("");
   const [confirmareExcedent, setConfirmareExcedent] = useState(null); // { excedentVechi, excedentNou } | null
   const [editareVanzarePangar, setEditareVanzarePangar] = useState(false);
 
@@ -15874,6 +16335,8 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     setIdsDeSters([]);
     setConfirmareExcedent(null);
     setEroareEdit("");
+    setCerutConfirmareEdit(false);
+    setComisionBancarEdit("");
     setEditMode(true);
   }
 
@@ -15882,6 +16345,8 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     setIdsDeSters([]);
     setConfirmareExcedent(null);
     setEroareEdit("");
+    setCerutConfirmareEdit(false);
+    setComisionBancarEdit("");
     setEditMode(false);
   }
 
@@ -15919,6 +16384,10 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     }
     if (editData.linii.some((l) => !l.contId || l.suma === "" || Number(l.suma) < 0)) {
       setEroareEdit("Fiecare linie trebuie să aibă un cont și o sumă validă (0 e permis, pentru anularea unei linii deja emise — negativ nu).");
+      return;
+    }
+    if (comisionBancarEdit && (isNaN(Number(comisionBancarEdit)) || Number(comisionBancarEdit) < 0)) {
+      setEroareEdit("Comisionul bancar trebuie să fie un număr valid, mai mare sau egal cu 0.");
       return;
     }
     const anNou = yearOf(editData.data);
@@ -15975,6 +16444,11 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
         liniiNoiInserate = rezultat.liniiNoiInserate;
         renumerotariEditare = rezultat.renumerotari || [];
       }
+      // Comision bancar adăugat cu ocazia acestei editări (opțional) — aceeași logică de
+      // consolidare lunară automată ca la emiterea inițială a unui ordin de plată.
+      if (tip !== "incasare" && Number(comisionBancarEdit) > 0) {
+        await adaugaComisionBancarPending(parohieId, { data: editData.data, suma: Number(comisionBancarEdit), tert: editData.tert, documentIdOrigine: documentId });
+      }
       let excedentActualizat = [];
       if (confirmareExcedent) {
         const rezultatExcedent = await seteazaExcedentReportat(parohieId, anNou + 1, confirmareExcedent.excedentNou);
@@ -16024,6 +16498,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
       setEditData(null);
       setIdsDeSters([]);
       setConfirmareExcedent(null);
+      setComisionBancarEdit("");
     } catch (e) {
       setEroareEdit(e.message || "Eroare la salvarea modificării. Încearcă din nou.");
     } finally {
@@ -16105,18 +16580,29 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
                 ? `Nu poate fi șters — ${motivBlocareStergere}.`
                 : `Editabil cât timp exercițiul ${docCurent.an} nu e închis definitiv (până la 31.12.${docCurent.an + 1}).`}
             </span>
-            {!permisiuni.citireOnly && !anInchisDefinitiv && (
-              <div className="flex gap-2">
-                <Btn variant="gold" onClick={() => (miscariPangarLegate.length > 0 ? setEditareVanzarePangar(true) : intraInEditare())}>Modifică</Btn>
+            <div className="flex gap-2">
+              {!permisiuni.citireOnly && onDuplica && (
                 <Btn
-                  variant="danger"
-                  onClick={() => { setEroareStergere(""); setConfirmareStergere(true); }}
-                  disabled={!!motivBlocareStergere}
+                  variant="ghost"
+                  onClick={() => onDuplica({ tert: docCurent.tert, linii: docCurent.linii })}
+                  title="Creează un document nou, pornind de la datele acestuia"
                 >
-                  Șterge
+                  <Copy size={14} /> Duplică
                 </Btn>
-              </div>
-            )}
+              )}
+              {!permisiuni.citireOnly && !anInchisDefinitiv && (
+                <>
+                  <Btn variant="gold" onClick={() => (miscariPangarLegate.length > 0 ? setEditareVanzarePangar(true) : intraInEditare())}>Modifică</Btn>
+                  <Btn
+                    variant="danger"
+                    onClick={() => { setEroareStergere(""); setConfirmareStergere(true); }}
+                    disabled={!!motivBlocareStergere}
+                  >
+                    Șterge
+                  </Btn>
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -16285,10 +16771,32 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
                 <Plus size={14} /> Adaugă articol bugetar
               </Btn>
             </div>
+            {tip !== "incasare" && editData.linii.some((l) => l.modPlata === "transfer") && (
+              <Field label="Comision bancar la această plată (opțional, RON)">
+                <input
+                  type="number" step="0.01" min="0" className={inputCls}
+                  value={comisionBancarEdit} onChange={(e) => setComisionBancarEdit(e.target.value)}
+                  placeholder="0,00"
+                />
+                <span className="text-xs text-stone-400">
+                  Nu se adaugă la suma către {editData.tert || "partener"} — se reține separat și se consolidează automat
+                  într-un singur document, la finalul lunii.
+                </span>
+              </Field>
+            )}
             {eroareEdit && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroareEdit}</span>}
+            {cerutConfirmareEdit && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Confirmi modificarea acestui document deja emis?
+              </p>
+            )}
             <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
               <Btn variant="ghost" onClick={renuntaEditare} disabled={salvandEdit}>Renunță</Btn>
-              <Btn variant="gold" onClick={salveazaEditare} disabled={salvandEdit}>{salvandEdit ? "Se salvează..." : "Salvează"}</Btn>
+              {!cerutConfirmareEdit ? (
+                <Btn variant="gold" onClick={() => setCerutConfirmareEdit(true)}>Salvează</Btn>
+              ) : (
+                <Btn variant="gold" onClick={salveazaEditare} disabled={salvandEdit}>{salvandEdit ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
+              )}
             </div>
           </Card>
         )}
@@ -16311,6 +16819,14 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
         {modSelectie && (
           <Card className="p-3 max-h-40 overflow-y-auto">
             <div className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-xs font-bold border-b border-stone-200 pb-1 mb-1">
+                <input
+                  type="checkbox"
+                  checked={documente.length > 0 && selectie.size === documente.length}
+                  onChange={(e) => setSelectie(e.target.checked ? new Set(documente.map((d) => `${d.an}-${d.nr}`)) : new Set())}
+                />
+                Selectează tot / deselectează tot
+              </label>
               {documente.map((d) => {
                 const key = `${d.an}-${d.nr}`;
                 return (
@@ -16539,6 +17055,14 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
         {modSelectie && (
           <Card className="p-3 max-h-40 overflow-y-auto">
             <div className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-xs font-bold border-b border-stone-200 pb-1 mb-1">
+                <input
+                  type="checkbox"
+                  checked={documente.length > 0 && selectie.size === documente.length}
+                  onChange={(e) => setSelectie(e.target.checked ? new Set(documente.map((d) => `${d.an}-${d.nr}`)) : new Set())}
+                />
+                Selectează tot / deselectează tot
+              </label>
               {documente.map((d) => {
                 const key = `${d.an}-${d.nr}`;
                 return (

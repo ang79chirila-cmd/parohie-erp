@@ -1047,6 +1047,86 @@ export async function editeazaReceptiePangar(miscareId, { data, cantitate, furni
   };
 }
 
+// Adaugă un produs NOU pe un NRCD deja emis (aceeași factură, un cod suplimentar), cu ocazia
+// editării recepției. Aceeași blocare ca la editarea unei linii existente: dacă NRCD-ul are deja
+// o plată legată (parțială sau integrală), operația e refuzată — factura nu se mai poate modifica
+// retroactiv o dată achitată.
+export async function adaugaLinieReceptiePangar(documentId, { articolId, cantitate, categoriiPangar }) {
+  const { data: platiLegate, error: errPlati } = await supabase
+    .from("documente")
+    .select("id, nr, an")
+    .eq("document_sursa_id", documentId)
+    .eq("tip", "ordin_plata");
+  if (errPlati) throw errPlati;
+  if (platiLegate && platiLegate.length > 0) {
+    const listaOP = platiLegate.map((op) => `nr. ${op.nr}/${op.an}`).join(", ");
+    throw new Error(`Această recepție are deja plăți înregistrate (Ordin de plată ${listaOP}) — nu poate primi linii noi.`);
+  }
+
+  const { data: nrcdDoc, error: errNrcd } = await supabase.from("documente").select("*").eq("id", documentId).single();
+  if (errNrcd) throw errNrcd;
+  if (nrcdDoc.tip !== "nrcd") throw new Error("Documentul indicat nu este un NRCD.");
+
+  const { data: art, error: errArt } = await supabase.from("articole_pangar").select("*").eq("id", articolId).single();
+  if (errArt) throw errArt;
+
+  const stocNou = Number(art.stoc) + cantitate;
+  const { error: errUpdArt } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", art.id);
+  if (errUpdArt) throw errUpdArt;
+
+  const valoareTotala = cantitate * Number(art.pret_vanzare);
+  const { data: miscareInserata, error: errMiscare } = await supabase
+    .from("miscari_stoc_pangar")
+    .insert({
+      parohie_id: nrcdDoc.parohie_id, articol_id: art.id, tip: "intrare", data: nrcdDoc.data, cantitate,
+      valoare_unitara: art.pret_vanzare, valoare_totala: valoareTotala, document_id: documentId,
+    })
+    .select()
+    .single();
+  if (errMiscare) throw errMiscare;
+
+  // Recalculăm datoria totală din TOATE mișcările NRCD-ului (linia nou-adăugată inclusă),
+  // exact ca la editarea unei linii existente — un NRCD poate avea produse din mai multe
+  // categorii BVC, fiecare cu propriul cont de achiziție.
+  const { data: toateMiscarileNrcd, error: errToate } = await supabase
+    .from("miscari_stoc_pangar")
+    .select("*")
+    .eq("document_id", documentId)
+    .eq("tip", "intrare");
+  if (errToate) throw errToate;
+
+  const idsArticoleNrcd = [...new Set(toateMiscarileNrcd.map((m) => m.articol_id))];
+  const { data: articoleNrcd, error: errArtNrcd } = await supabase.from("articole_pangar").select("id, categorie_bvc, pret_achizitie").in("id", idsArticoleNrcd);
+  if (errArtNrcd) throw errArtNrcd;
+  const articolNrcdById = Object.fromEntries(articoleNrcd.map((a) => [a.id, a]));
+
+  const sumePeCategorie = {};
+  let valoareAchizitieTotalaNrcd = 0;
+  for (const m of toateMiscarileNrcd) {
+    const artM = articolNrcdById[m.articol_id];
+    if (!artM) continue;
+    const valoare = Number(m.cantitate) * Number(artM.pret_achizitie);
+    valoareAchizitieTotalaNrcd += valoare;
+    sumePeCategorie[artM.categorie_bvc] = (sumePeCategorie[artM.categorie_bvc] || 0) + valoare;
+  }
+
+  const datorieActualizata = {
+    suma: valoareAchizitieTotalaNrcd,
+    liniiAchizitie: Object.entries(sumePeCategorie).map(([categorieBVC, suma]) => ({ categorieBVC, suma })),
+  };
+
+  return {
+    articolPatch: { id: art.id, stoc: stocNou, stocReferinta: stocNou },
+    miscareNoua: {
+      id: miscareInserata.id, data: nrcdDoc.data, tip: "intrare", articolId: art.id, cantitate,
+      valoareUnitara: Number(art.pret_vanzare), valoareTotala, nrNRCD: nrcdDoc.nr,
+      furnizor: nrcdDoc.furnizor, nrFactura: nrcdDoc.nr_factura, valoareAchizitie: cantitate * Number(art.pret_achizitie),
+      documentId,
+    },
+    datorieActualizata,
+  };
+}
+
 // Șterge o recepție NRCD întreagă (documentul + toate liniile lui de stoc — un NRCD poate avea
 // mai multe produse pe aceeași factură). Restituie stocul consumat pe fiecare cod atins, ca la
 // stergeVanzarePangar, dar cu validare ÎNAINTE de orice scriere: dacă pe vreun cod s-a vândut deja
