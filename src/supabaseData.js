@@ -644,6 +644,58 @@ export async function getMiscariStocPangar(parohieId) {
   });
 }
 
+// Nomenclatorul de Consum intern (protocol/filantropie/uz liturgic) — structură analoagă
+// articole_pangar, dar fără preț de vânzare (nu se vinde niciodată) și cu marcajul explicit
+// "este_vin" (vezi ArticolForm/ArticolConsumInternForm din ParohieERP.jsx pentru explicația
+// completă a regulii de an obligatoriu doar pentru vin și calendare).
+export async function getArticoleConsumIntern(parohieId) {
+  const { data, error } = await supabase.from("articole_consum_intern").select("*").eq("parohie_id", parohieId).order("seq");
+  if (error) throw error;
+  return (data || []).map((a) => ({
+    id: a.id, seq: a.seq, denumire: a.denumire, um: a.um,
+    costUnitar: Number(a.cost_unitar), stoc: Number(a.stoc),
+    an: a.an != null ? Number(a.an) : null, esteVin: !!a.este_vin,
+  }));
+}
+
+// Mișcările de Consum intern — intrări (recepții, legate sau nu de un document real — vezi
+// receptioneazaFacturaMixta pentru cele legate de o factură mixtă cu Pangar) și ieșiri
+// (bonuri de consum, tip document "bon_consum" — fără nicio linie financiară, doar evidență;
+// vezi explicația completă din ParohieERP.jsx, secțiunea bonDeConsum, despre decizia B).
+export async function getMiscariConsumIntern(parohieId) {
+  const { data: miscari, error } = await supabase.from("miscari_consum_intern").select("*").eq("parohie_id", parohieId);
+  if (error) throw error;
+  if (!miscari || miscari.length === 0) return [];
+
+  const docIds = [...new Set(miscari.map((m) => m.document_id).filter(Boolean))];
+  let documenteById = {};
+  if (docIds.length > 0) {
+    const docs = await inLoturi((lot) => supabase.from("documente").select("*").in("id", lot), docIds);
+    documenteById = Object.fromEntries((docs || []).map((d) => [d.id, d]));
+  }
+
+  return miscari.map((m) => {
+    const doc = m.document_id ? documenteById[m.document_id] : null;
+    const base = {
+      id: m.id, data: m.data, tip: m.tip, articolId: m.articol_id,
+      cantitate: Number(m.cantitate), valoareUnitara: Number(m.valoare_unitara), valoareTotala: Number(m.valoare_totala),
+      documentId: m.document_id, motiv: m.motiv || null, stocInitial: !!m.stoc_initial,
+    };
+    if (m.tip === "intrare") {
+      return {
+        ...base,
+        nrNRCD: doc?.nr ?? null,
+        furnizor: doc?.furnizor ?? (m.stoc_initial ? "Stoc inițial" : null),
+        nrFactura: doc?.nr_factura ?? null,
+      };
+    }
+    if (m.tip === "iesire" && doc) {
+      return { ...base, nrBon: doc.nr, anBon: doc.an, beneficiar: doc.tert || "" };
+    }
+    return base;
+  });
+}
+
 // Creează un cod nou de produs (produs nou, sau variantă de preț a unuia existent — codul e
 // imutabil odată creat, exact ca modelul local). Stocul pornește mereu de la 0.
 // Universal valabil: după crearea produsului pentru parohia curentă, e propagat automat (via
@@ -913,11 +965,49 @@ export async function receptioneazaFacturaMixta(parohieId, { liniiPangar, liniiC
   }
 
   let valoareAchizitieConsumIntern = 0;
-  for (const l of liniiConsumInternSigure) {
-    const valoare = Number(l.cantitate) * Number(l.costUnitar);
-    valoareAchizitieConsumIntern += valoare;
-    const contIdAchizitie = categoriiAchizitie[l.motiv]?.achizitie;
-    if (contIdAchizitie) sumePeContAchizitie[contIdAchizitie] = (sumePeContAchizitie[contIdAchizitie] || 0) + valoare;
+  const articoleConsumInternNoi = [];
+  const miscariConsumInternNoi = [];
+  if (liniiConsumInternSigure.length > 0) {
+    const { data: maxRand } = await supabase
+      .from("articole_consum_intern")
+      .select("seq")
+      .eq("parohie_id", parohieId)
+      .order("seq", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    let seqConsumIntern = maxRand?.seq || 0;
+
+    for (const l of liniiConsumInternSigure) {
+      const valoare = Number(l.cantitate) * Number(l.costUnitar);
+      valoareAchizitieConsumIntern += valoare;
+      const contIdAchizitie = categoriiAchizitie[l.motiv]?.achizitie;
+      if (contIdAchizitie) sumePeContAchizitie[contIdAchizitie] = (sumePeContAchizitie[contIdAchizitie] || 0) + valoare;
+
+      seqConsumIntern += 1;
+      const { data: articolNou, error: errAC } = await supabase
+        .from("articole_consum_intern")
+        .insert({ parohie_id: parohieId, seq: seqConsumIntern, denumire: l.denumire, um: l.um, cost_unitar: l.costUnitar, stoc: l.cantitate, an: l.an || null, este_vin: !!l.esteVin })
+        .select()
+        .single();
+      if (errAC) throw errAC;
+
+      const { data: miscareC, error: errMC } = await supabase
+        .from("miscari_consum_intern")
+        .insert({
+          parohie_id: parohieId, articol_id: articolNou.id, tip: "intrare", data, cantitate: l.cantitate,
+          valoare_unitara: l.costUnitar, valoare_totala: valoare, document_id: nrcdDocId, motiv: l.motiv, stoc_initial: false,
+        })
+        .select()
+        .single();
+      if (errMC) throw errMC;
+
+      articoleConsumInternNoi.push({ id: articolNou.id, seq: seqConsumIntern, denumire: l.denumire, um: l.um, costUnitar: Number(l.costUnitar), stoc: Number(l.cantitate), an: l.an || null, esteVin: !!l.esteVin });
+      miscariConsumInternNoi.push({
+        id: miscareC.id, data, tip: "intrare", articolId: articolNou.id, cantitate: Number(l.cantitate),
+        valoareUnitara: Number(l.costUnitar), valoareTotala: valoare, documentId: nrcdDocId, motiv: l.motiv,
+        nrNRCD: rezultatNrcd.nr, furnizor, nrFactura,
+      });
+    }
   }
 
   let operatiuniPlata = [];
@@ -946,6 +1036,8 @@ export async function receptioneazaFacturaMixta(parohieId, { liniiPangar, liniiC
       return { id: a.id, stoc: stocNou, stocReferinta: stocNou };
     }),
     miscariNoi,
+    articoleConsumInternNoi,
+    miscariConsumInternNoi,
     operatiuniPlata,
     nrOP,
     renumerotari: [...(rezultatNrcd.renumerotari || []), ...renumerotariPlata],
@@ -1407,6 +1499,411 @@ export async function stergeStocInitialPangar(miscareId) {
   if (errDel) throw errDel;
 
   return { articolActualizat: { id: articol.id, stoc: stocNou, stocReferinta: stocNou } };
+}
+
+// ============================================================================
+// CONSUM INTERN — protocol / filantropie / uz liturgic intern. Structură analoagă Pangarului,
+// dar fără preț de vânzare (nu se vinde niciodată) și fără urmărire de marjă. Fiecare "produs"
+// e de fapt un LOT propriu (nu un cod fix, unic, ca la Pangar) — o recepție nouă creează
+// întotdeauna un articol nou, chiar dacă denumirea+UM+an coincid cu unul existent; gruparea lor
+// vizuală (același produs, mai multe loturi FIFO) se face client-side, în ParohieERP.jsx.
+// ============================================================================
+
+// Declară un produs nou în nomenclator, fără stoc — util ca sugestie viitoare la recepție,
+// înainte să existe efectiv vreo cantitate primită.
+export async function creeazaArticolConsumIntern(parohieId, { denumire, um, an, esteVin }) {
+  const { data: maxRand } = await supabase
+    .from("articole_consum_intern")
+    .select("seq")
+    .eq("parohie_id", parohieId)
+    .order("seq", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const seq = (maxRand?.seq || 0) + 1;
+
+  const { data, error } = await supabase
+    .from("articole_consum_intern")
+    .insert({ parohie_id: parohieId, seq, denumire, um, cost_unitar: 0, stoc: 0, an: an || null, este_vin: !!esteVin })
+    .select()
+    .single();
+  if (error) throw error;
+
+  return { id: data.id, seq: data.seq, denumire: data.denumire, um: data.um, costUnitar: 0, stoc: 0, an: data.an != null ? Number(data.an) : null, esteVin: !!data.este_vin };
+}
+
+// Recepție cu linii multiple — fiecare linie devine un articol (lot) NOU, fără document asociat
+// (nu generează datorie către furnizor — pentru asta, vezi receptioneazaFacturaMixta, care leagă
+// liniile de Consum intern de un NRCD real, alături de eventuale linii de Pangar pe aceeași
+// factură). Folosită la recepții simple, deja achitate sau fără urmărire de datorie.
+export async function receptieMultiplaConsumIntern(parohieId, { data, linii }) {
+  const { data: maxRand } = await supabase
+    .from("articole_consum_intern")
+    .select("seq")
+    .eq("parohie_id", parohieId)
+    .order("seq", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  let seq = maxRand?.seq || 0;
+
+  const articoleNoi = [];
+  const miscariNoi = [];
+  for (const l of linii) {
+    seq += 1;
+    const { data: articolNou, error: errA } = await supabase
+      .from("articole_consum_intern")
+      .insert({ parohie_id: parohieId, seq, denumire: l.denumire, um: l.um, cost_unitar: l.cost, stoc: l.cantitate, an: l.an || null, este_vin: !!l.esteVin })
+      .select()
+      .single();
+    if (errA) throw errA;
+
+    const valoareTotala = Number(l.cantitate) * Number(l.cost);
+    const { data: miscareNoua, error: errM } = await supabase
+      .from("miscari_consum_intern")
+      .insert({
+        parohie_id: parohieId, articol_id: articolNou.id, tip: "intrare", data, cantitate: l.cantitate,
+        valoare_unitara: l.cost, valoare_totala: valoareTotala, document_id: null, motiv: null, stoc_initial: false,
+      })
+      .select()
+      .single();
+    if (errM) throw errM;
+
+    articoleNoi.push({ id: articolNou.id, seq, denumire: l.denumire, um: l.um, costUnitar: Number(l.cost), stoc: Number(l.cantitate), an: l.an || null, esteVin: !!l.esteVin });
+    miscariNoi.push({
+      id: miscareNoua.id, data, tip: "intrare", articolId: articolNou.id, cantitate: Number(l.cantitate),
+      valoareUnitara: Number(l.cost), valoareTotala, documentId: null, motiv: null, stocInitial: false, furnizor: null, nrNRCD: null, nrFactura: null,
+    });
+  }
+  return { articoleNoi, miscariNoi };
+}
+
+// Editează o recepție simplă existentă (fără document asociat — nici stoc inițial, nici legată
+// de o factură). Blocată dacă s-a consumat deja o parte din lotul respectiv.
+export async function editeazaReceptieConsumIntern(miscareId, { cantitate, cost, data }) {
+  const { data: miscare, error: errM } = await supabase.from("miscari_consum_intern").select("*").eq("id", miscareId).single();
+  if (errM) throw errM;
+  if (miscare.tip !== "intrare" || miscare.document_id || miscare.stoc_initial) {
+    throw new Error("Această mișcare nu este o recepție simplă editabilă pe acest formular.");
+  }
+
+  const { data: articol, error: errA } = await supabase.from("articole_consum_intern").select("*").eq("id", miscare.articol_id).single();
+  if (errA) throw errA;
+
+  const consumatDejaDinLot = Number(miscare.cantitate) - Number(articol.stoc);
+  if (Number(cantitate) < consumatDejaDinLot) {
+    throw new Error(`Nu poți reduce cantitatea sub ce s-a consumat deja din acest lot (${consumatDejaDinLot} ${articol.um}).`);
+  }
+  const stocNou = Number(cantitate) - consumatDejaDinLot;
+
+  const { error: errUpdArt } = await supabase.from("articole_consum_intern").update({ stoc: stocNou, cost_unitar: cost }).eq("id", articol.id);
+  if (errUpdArt) throw errUpdArt;
+
+  const valoareTotala = Number(cantitate) * Number(cost);
+  const { error: errUpdM } = await supabase
+    .from("miscari_consum_intern")
+    .update({ data, cantitate, valoare_unitara: cost, valoare_totala: valoareTotala })
+    .eq("id", miscareId);
+  if (errUpdM) throw errUpdM;
+
+  return { articolPatch: { id: articol.id, stoc: stocNou, costUnitar: Number(cost) } };
+}
+
+// Șterge o recepție simplă existentă (fără document asociat). Blocată dacă s-a consumat deja
+// ceva din lotul respectiv.
+export async function stergeReceptieConsumIntern(miscareId) {
+  const { data: miscare, error: errM } = await supabase.from("miscari_consum_intern").select("*").eq("id", miscareId).single();
+  if (errM) throw errM;
+  if (miscare.tip !== "intrare" || miscare.document_id || miscare.stoc_initial) {
+    throw new Error("Această mișcare nu este o recepție simplă ce poate fi ștearsă pe acest formular.");
+  }
+
+  const { data: articol, error: errA } = await supabase.from("articole_consum_intern").select("*").eq("id", miscare.articol_id).single();
+  if (errA) throw errA;
+
+  const consumatDejaDinLot = Number(miscare.cantitate) - Number(articol.stoc);
+  if (consumatDejaDinLot > 0) {
+    throw new Error(`Nu poți șterge această recepție — s-au consumat deja ${consumatDejaDinLot} ${articol.um} din ea.`);
+  }
+
+  const { error: errDelM } = await supabase.from("miscari_consum_intern").delete().eq("id", miscareId);
+  if (errDelM) throw errDelM;
+
+  return { articolIdSters: articol.id };
+}
+
+// Stoc inițial — intrare de stoc FĂRĂ document asociat, marcată explicit prin stoc_initial=true
+// (distinctă de o recepție simplă fără document, care rămâne stoc_initial=false) — creează un
+// lot NOU, exact ca o recepție, dar folosită o singură dată, la pornirea evidenței.
+export async function creeazaStocInitialConsumIntern(parohieId, { denumire, um, cantitate, cost, data, an }) {
+  const { data: maxRand } = await supabase
+    .from("articole_consum_intern")
+    .select("seq")
+    .eq("parohie_id", parohieId)
+    .order("seq", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const seq = (maxRand?.seq || 0) + 1;
+
+  const { data: articolNou, error: errA } = await supabase
+    .from("articole_consum_intern")
+    .insert({ parohie_id: parohieId, seq, denumire, um, cost_unitar: cost, stoc: cantitate, an: an || null, este_vin: false })
+    .select()
+    .single();
+  if (errA) throw errA;
+
+  const valoareTotala = Number(cantitate) * Number(cost);
+  const { data: miscareNoua, error: errM } = await supabase
+    .from("miscari_consum_intern")
+    .insert({
+      parohie_id: parohieId, articol_id: articolNou.id, tip: "intrare", data, cantitate,
+      valoare_unitara: cost, valoare_totala: valoareTotala, document_id: null, motiv: null, stoc_initial: true,
+    })
+    .select()
+    .single();
+  if (errM) throw errM;
+
+  return {
+    articolNou: { id: articolNou.id, seq, denumire, um, costUnitar: Number(cost), stoc: Number(cantitate), an: an || null, esteVin: false },
+    miscareNoua: {
+      id: miscareNoua.id, data, tip: "intrare", articolId: articolNou.id, cantitate: Number(cantitate),
+      valoareUnitara: Number(cost), valoareTotala, documentId: null, stocInitial: true, furnizor: "Stoc inițial",
+    },
+  };
+}
+
+export async function editeazaStocInitialConsumIntern(miscareId, { cantitate, cost, data }) {
+  const { data: miscare, error: errM } = await supabase.from("miscari_consum_intern").select("*").eq("id", miscareId).single();
+  if (errM) throw errM;
+  if (!miscare.stoc_initial) throw new Error("Această mișcare nu este un stoc inițial editabil pe acest formular.");
+
+  const { data: articol, error: errA } = await supabase.from("articole_consum_intern").select("*").eq("id", miscare.articol_id).single();
+  if (errA) throw errA;
+
+  const delta = Number(cantitate) - Number(miscare.cantitate);
+  const stocNou = Number(articol.stoc) + delta;
+  if (stocNou < 0) {
+    throw new Error(`Nu poți reduce cantitatea sub ce s-a consumat deja din acest lot (stoc curent: ${articol.stoc}, reducere cerută: ${-delta}).`);
+  }
+
+  const { error: errUpdArt } = await supabase.from("articole_consum_intern").update({ stoc: stocNou, cost_unitar: cost }).eq("id", articol.id);
+  if (errUpdArt) throw errUpdArt;
+
+  const valoareTotala = Number(cantitate) * Number(cost);
+  const { error: errUpdM } = await supabase
+    .from("miscari_consum_intern")
+    .update({ data, cantitate, valoare_unitara: cost, valoare_totala: valoareTotala })
+    .eq("id", miscareId);
+  if (errUpdM) throw errUpdM;
+
+  return { articolPatch: { id: articol.id, stoc: stocNou, costUnitar: Number(cost) } };
+}
+
+export async function stergeStocInitialConsumIntern(miscareId) {
+  const { data: miscare, error: errM } = await supabase.from("miscari_consum_intern").select("*").eq("id", miscareId).single();
+  if (errM) throw errM;
+  if (!miscare.stoc_initial) throw new Error("Această mișcare nu este un stoc inițial ce poate fi șters pe acest formular.");
+
+  const { data: articol, error: errA } = await supabase.from("articole_consum_intern").select("*").eq("id", miscare.articol_id).single();
+  if (errA) throw errA;
+
+  const stocNou = Number(articol.stoc) - Number(miscare.cantitate);
+  if (stocNou < 0) {
+    throw new Error(`Nu poți șterge acest stoc inițial — s-a consumat deja mai mult decât ar rămâne.`);
+  }
+
+  const { error: errUpdArt } = await supabase.from("articole_consum_intern").update({ stoc: stocNou }).eq("id", articol.id);
+  if (errUpdArt) throw errUpdArt;
+
+  const { error: errDel } = await supabase.from("miscari_consum_intern").delete().eq("id", miscareId);
+  if (errDel) throw errDel;
+
+  return { articolPatch: { id: articol.id, stoc: stocNou } };
+}
+
+// Bon de consum — ieșire FIFO din stoc, cu evidență informativă (motiv, beneficiar), FĂRĂ
+// impact bugetar propriu (decizia B — cheltuiala se recunoaște o singură dată, la achiziție;
+// vezi receptioneazaFacturaMixta). Devine un document real (tip "bon_consum"), numerotat prin
+// mecanismul atomic obișnuit — dar fără nicio linie financiară (linii: []).
+export async function bonDeConsumConsumIntern(parohieId, { data, motiv, beneficiar, linii }) {
+  const rezultatDoc = await salveazaDocument(parohieId, { tip: "bonConsum", data, tert: beneficiar || null, linii: [] });
+  const documentId = rezultatDoc.documentId;
+
+  const idsArticole = [...new Set(linii.map((l) => l.articolId).filter(Boolean))];
+  const { data: articoleImplicate, error: errArt } = await supabase.from("articole_consum_intern").select("*").in("id", idsArticole.length ? idsArticole : ["00000000-0000-0000-0000-000000000000"]);
+  if (errArt) throw errArt;
+
+  // Reconstituim loturile disponibile per (denumire, um, an), FIFO pe seq — exact ca la
+  // consumul din stoc obișnuit.
+  const { data: toateArticolele, error: errToate } = await supabase.from("articole_consum_intern").select("*").eq("parohie_id", parohieId);
+  if (errToate) throw errToate;
+
+  const articolePatch = [];
+  const miscariNoi = [];
+  let totalValoare = 0;
+  const liniiRezultat = [];
+
+  for (const l of linii) {
+    let ramas = Number(l.cantitate) || 0;
+    if (ramas <= 0) continue;
+    const loturi = toateArticolele
+      .filter((a) => a.denumire === l.denumire && a.um === l.um && (a.an ?? null) === (l.an ?? null) && Number(a.stoc) > 0)
+      .sort((a, b) => a.seq - b.seq);
+    for (const lot of loturi) {
+      if (ramas <= 0) break;
+      const cantDinLot = Math.min(Number(lot.stoc), ramas);
+      ramas -= cantDinLot;
+      const valoare = cantDinLot * Number(lot.cost_unitar);
+      const stocNouLot = Number(lot.stoc) - cantDinLot;
+
+      const { error: errUpd } = await supabase.from("articole_consum_intern").update({ stoc: stocNouLot }).eq("id", lot.id);
+      if (errUpd) throw errUpd;
+      articolePatch.push({ id: lot.id, stoc: stocNouLot });
+      lot.stoc = stocNouLot; // actualizăm local, pentru loturile următoare din aceeași buclă
+
+      const { data: miscareNoua, error: errM } = await supabase
+        .from("miscari_consum_intern")
+        .insert({
+          parohie_id: parohieId, articol_id: lot.id, tip: "iesire", data, cantitate: cantDinLot,
+          valoare_unitara: lot.cost_unitar, valoare_totala: valoare, document_id: documentId, motiv, stoc_initial: false,
+        })
+        .select()
+        .single();
+      if (errM) throw errM;
+
+      miscariNoi.push({
+        id: miscareNoua.id, data, tip: "iesire", articolId: lot.id, cantitate: cantDinLot,
+        valoareUnitara: Number(lot.cost_unitar), valoareTotala: valoare, documentId, motiv, nrBon: rezultatDoc.nr, anBon: rezultatDoc.an, beneficiar: beneficiar || "",
+      });
+      totalValoare += valoare;
+      liniiRezultat.push({ articolId: lot.id, denumire: l.denumire, cantitate: cantDinLot, valoare });
+    }
+    if (ramas > 0.0001) {
+      throw new Error(`Stoc insuficient pentru „${l.denumire}”${l.an ? ` (${l.an})` : ""} — a mai rămas de acoperit ${ramas} ${l.um}.`);
+    }
+  }
+
+  return {
+    bon: { id: documentId, nr: rezultatDoc.nr, an: rezultatDoc.an, data, motiv, beneficiar: beneficiar || "", linii: liniiRezultat, totalValoare },
+    articolePatch, miscariNoi, renumerotari: rezultatDoc.renumerotari || [],
+  };
+}
+
+// Editează un bon de consum existent — restituie loturile consumate de versiunea veche, verifică
+// disponibilul, apoi reface FIFO cu noile linii/motiv/dată, PĂSTRÂND același document (nr/an).
+export async function editeazaBonConsumConsumIntern(documentId, { data, motiv, beneficiar, linii }) {
+  const { data: miscariVechi, error: errMV } = await supabase.from("miscari_consum_intern").select("*").eq("document_id", documentId).eq("tip", "iesire");
+  if (errMV) throw errMV;
+
+  const idsArticoleVechi = [...new Set(miscariVechi.map((m) => m.articol_id))];
+  const { data: articoleVechi, error: errAV } = await supabase.from("articole_consum_intern").select("*").in("id", idsArticoleVechi.length ? idsArticoleVechi : ["00000000-0000-0000-0000-000000000000"]);
+  if (errAV) throw errAV;
+  const articolById = Object.fromEntries((articoleVechi || []).map((a) => [a.id, a]));
+
+  // Restituim (local, în memorie) stocul consumat de versiunea veche, ca simulare pentru
+  // verificarea disponibilului — scrierea reală se face abia după ce știm că totul e valid.
+  const stocSimulat = Object.fromEntries((articoleVechi || []).map((a) => [a.id, Number(a.stoc)]));
+  for (const m of miscariVechi) stocSimulat[m.articol_id] = (stocSimulat[m.articol_id] || 0) + Number(m.cantitate);
+
+  const { data: toateArticolele, error: errToate } = await supabase.from("articole_consum_intern").select("*").eq("parohie_id", articoleVechi[0]?.parohie_id || null);
+  if (errToate) throw errToate;
+  for (const a of toateArticolele) if (stocSimulat[a.id] === undefined) stocSimulat[a.id] = Number(a.stoc);
+
+  for (const l of linii) {
+    const disponibil = toateArticolele
+      .filter((a) => a.denumire === l.denumire && a.um === l.um && (a.an ?? null) === (l.an ?? null))
+      .reduce((sum, a) => sum + (stocSimulat[a.id] ?? Number(a.stoc)), 0);
+    if (Number(l.cantitate) > disponibil) {
+      throw new Error(`Stoc insuficient pentru „${l.denumire}”${l.an ? ` (${l.an})` : ""} — disponibil: ${disponibil} ${l.um}.`);
+    }
+  }
+
+  // Validare confirmată — restituim efectiv stocul vechilor mișcări, le ștergem.
+  for (const m of miscariVechi) {
+    const art = articolById[m.articol_id];
+    const stocNou = Number(art.stoc) + Number(m.cantitate);
+    const { error: errRest } = await supabase.from("articole_consum_intern").update({ stoc: stocNou }).eq("id", art.id);
+    if (errRest) throw errRest;
+    art.stoc = stocNou;
+  }
+  const { error: errDelM } = await supabase.from("miscari_consum_intern").delete().eq("document_id", documentId).eq("tip", "iesire");
+  if (errDelM) throw errDelM;
+
+  const { data: articoleActualizate, error: errAA } = await supabase.from("articole_consum_intern").select("*").eq("parohie_id", articoleVechi[0]?.parohie_id);
+  if (errAA) throw errAA;
+
+  const articolePatch = [];
+  const miscariNoi = [];
+  const liniiRezultat = [];
+  for (const l of linii) {
+    let ramas = Number(l.cantitate) || 0;
+    if (ramas <= 0) continue;
+    const loturi = articoleActualizate
+      .filter((a) => a.denumire === l.denumire && a.um === l.um && (a.an ?? null) === (l.an ?? null) && Number(a.stoc) > 0)
+      .sort((a, b) => a.seq - b.seq);
+    for (const lot of loturi) {
+      if (ramas <= 0) break;
+      const cantDinLot = Math.min(Number(lot.stoc), ramas);
+      ramas -= cantDinLot;
+      const valoare = cantDinLot * Number(lot.cost_unitar);
+      const stocNouLot = Number(lot.stoc) - cantDinLot;
+
+      const { error: errUpd } = await supabase.from("articole_consum_intern").update({ stoc: stocNouLot }).eq("id", lot.id);
+      if (errUpd) throw errUpd;
+      articolePatch.push({ id: lot.id, stoc: stocNouLot });
+      lot.stoc = stocNouLot;
+
+      const { data: miscareNoua, error: errM } = await supabase
+        .from("miscari_consum_intern")
+        .insert({
+          parohie_id: articoleVechi[0].parohie_id, articol_id: lot.id, tip: "iesire", data, cantitate: cantDinLot,
+          valoare_unitara: lot.cost_unitar, valoare_totala: valoare, document_id: documentId, motiv, stoc_initial: false,
+        })
+        .select()
+        .single();
+      if (errM) throw errM;
+      miscariNoi.push({ id: miscareNoua.id, data, tip: "iesire", articolId: lot.id, cantitate: cantDinLot, valoareUnitara: Number(lot.cost_unitar), valoareTotala: valoare, documentId, motiv });
+      liniiRezultat.push({ articolId: lot.id, denumire: l.denumire, cantitate: cantDinLot, valoare });
+    }
+  }
+
+  const { error: errUpdDoc } = await supabase.from("documente").update({ data, tert: beneficiar || null }).eq("id", documentId);
+  if (errUpdDoc) throw errUpdDoc;
+
+  return { articolePatch, miscariNoiIesire: miscariNoi, idsMiscariSterse: miscariVechi.map((m) => m.id), liniiRezultat };
+}
+
+// Bonurile de consum sunt documente reale (tip "bon_consum"), fără nicio linie financiară —
+// reconstituim forma așteptată de interfață (nr/an/dată/motiv/beneficiar/linii) din documente +
+// mișcările de tip "iesire" legate de fiecare. Motivul, deși comun tuturor liniilor unui bon,
+// nu are un loc propriu pe `documente` (tabelă generică) — se citește de pe prima mișcare legată.
+export async function getBonuriConsum(parohieId) {
+  const { data: documenteBon, error: errDoc } = await supabase
+    .from("documente")
+    .select("id, nr, an, data, tert")
+    .eq("parohie_id", parohieId)
+    .eq("tip", "bon_consum");
+  if (errDoc) throw errDoc;
+  if (!documenteBon || documenteBon.length === 0) return [];
+
+  const docIds = documenteBon.map((d) => d.id);
+  const miscari = await inLoturi((lot) => supabase.from("miscari_consum_intern").select("*").in("document_id", lot).eq("tip", "iesire"), docIds);
+
+  const articolIds = [...new Set((miscari || []).map((m) => m.articol_id))];
+  const { data: articole, error: errArt } = await supabase
+    .from("articole_consum_intern")
+    .select("id, denumire")
+    .in("id", articolIds.length ? articolIds : ["00000000-0000-0000-0000-000000000000"]);
+  if (errArt) throw errArt;
+  const denumireById = Object.fromEntries((articole || []).map((a) => [a.id, a.denumire]));
+
+  return documenteBon.map((d) => {
+    const liniiDoc = (miscari || []).filter((m) => m.document_id === d.id);
+    return {
+      id: d.id, nr: d.nr, an: d.an, data: d.data,
+      motiv: liniiDoc[0]?.motiv || null,
+      beneficiar: d.tert || "",
+      linii: liniiDoc.map((m) => ({ articolId: m.articol_id, denumire: denumireById[m.articol_id] || "", cantitate: Number(m.cantitate), valoare: Number(m.valoare_totala) })),
+    };
+  });
 }
 
 // Editează o vânzare FIFO existentă — restituie stocul din consumul vechi, verifică stocul
