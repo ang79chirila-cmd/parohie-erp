@@ -835,6 +835,123 @@ export async function receptioneazaPangar(parohieId, { linii, data, furnizor, nr
   };
 }
 
+// Factură de achiziție MIXTĂ — pe aceeași factură pot exista atât produse destinate vânzării la
+// Pangar (intră normal în gestiunea Pangar, FIFO, cu miscari_stoc_pangar), cât și produse destinate
+// consumului intern (protocol, filantropie etc.) — acestea NU au tabelă proprie în Supabase încă,
+// rămân gestionate local (vezi ConsumInternTab), dar sunt legate de ACELAȘI document NRCD real,
+// creat aici, ca datoria către furnizor să fie urmărită unitar, indiferent de destinația liniilor.
+// `liniiPangar` = [{ articolId, cantitate }, ...] (poate fi gol — factură doar pentru consum intern).
+// `liniiConsumIntern` = [{ denumire, um, cantitate, costUnitar, motiv }, ...] (poate fi gol).
+// `categoriiAchizitie` = CATEGORII_PANGAR + traducerea motivelor de Consum intern (vezi
+// MOTIVE_CA_CATEGORII_ACHIZITIE în ParohieERP.jsx) — folosită DOAR pentru calculul liniilor de
+// plată imediată (plataAcum); liniile de Consum intern nu ating nicio tabelă Supabase aici.
+export async function receptioneazaFacturaMixta(parohieId, { liniiPangar, liniiConsumIntern, data, furnizor, nrFactura, plataAcum, modPlata, dataScadenta, categoriiAchizitie }) {
+  const liniiPangarSigure = liniiPangar || [];
+  const liniiConsumInternSigure = liniiConsumIntern || [];
+
+  let articoleCurente = [];
+  let articolById = {};
+  if (liniiPangarSigure.length > 0) {
+    const articolIds = liniiPangarSigure.map((l) => l.articolId);
+    const { data: articole, error: errArt } = await supabase.from("articole_pangar").select("*").in("id", articolIds);
+    if (errArt) throw errArt;
+    if (!articole || articole.length !== articolIds.length) {
+      throw new Error("Unul dintre produsele de Pangar selectate nu a fost găsit în nomenclator.");
+    }
+    articoleCurente = articole;
+    articolById = Object.fromEntries(articole.map((a) => [a.id, a]));
+  }
+
+  const rezultatNrcd = await salveazaDocument(parohieId, {
+    tip: "nrcd",
+    data,
+    furnizor,
+    nrFactura,
+    dataScadenta: plataAcum ? null : dataScadenta,
+    status: plataAcum ? "achitata" : "neachitata",
+    linii: [],
+  });
+  const nrcdDocId = rezultatNrcd.documentId;
+
+  const miscariNoi = [];
+  let valoareAchizitiePangar = 0;
+  const sumePeContAchizitie = {}; // contId achiziție -> sumă (Pangar + Consum intern, combinate)
+
+  for (const l of liniiPangarSigure) {
+    const art = articolById[l.articolId];
+    const stocNou = Number(art.stoc) + l.cantitate;
+    const { error: errUpdate } = await supabase
+      .from("articole_pangar")
+      .update({ stoc: stocNou, stoc_referinta: stocNou })
+      .eq("id", art.id);
+    if (errUpdate) throw errUpdate;
+
+    const valoareTotala = l.cantitate * Number(art.pret_vanzare);
+    const { data: miscareInserata, error: errMiscare } = await supabase
+      .from("miscari_stoc_pangar")
+      .insert({
+        parohie_id: parohieId, articol_id: art.id, tip: "intrare", data, cantitate: l.cantitate,
+        valoare_unitara: art.pret_vanzare, valoare_totala: valoareTotala, document_id: nrcdDocId,
+      })
+      .select()
+      .single();
+    if (errMiscare) throw errMiscare;
+
+    const valoareAchizitie = l.cantitate * Number(art.pret_achizitie);
+    valoareAchizitiePangar += valoareAchizitie;
+    const contIdAchizitie = categoriiAchizitie[art.categorie_bvc]?.achizitie;
+    if (contIdAchizitie) sumePeContAchizitie[contIdAchizitie] = (sumePeContAchizitie[contIdAchizitie] || 0) + valoareAchizitie;
+
+    miscariNoi.push({
+      id: miscareInserata.id, data, tip: "intrare", articolId: art.id, cantitate: l.cantitate,
+      valoareUnitara: Number(art.pret_vanzare), valoareTotala,
+      nrNRCD: rezultatNrcd.nr, furnizor, nrFactura, valoareAchizitie, documentId: nrcdDocId,
+    });
+  }
+
+  let valoareAchizitieConsumIntern = 0;
+  for (const l of liniiConsumInternSigure) {
+    const valoare = Number(l.cantitate) * Number(l.costUnitar);
+    valoareAchizitieConsumIntern += valoare;
+    const contIdAchizitie = categoriiAchizitie[l.motiv]?.achizitie;
+    if (contIdAchizitie) sumePeContAchizitie[contIdAchizitie] = (sumePeContAchizitie[contIdAchizitie] || 0) + valoare;
+  }
+
+  let operatiuniPlata = [];
+  let nrOP = null;
+  let renumerotariPlata = [];
+  if (plataAcum) {
+    const liniiPlata = Object.entries(sumePeContAchizitie).map(([contId, suma]) => ({
+      contId, suma, modPlata,
+      explicatie: `Plată factură ${nrFactura} (NRCD nr. ${rezultatNrcd.nr}/${rezultatNrcd.an})`,
+    }));
+    const rezultatPlata = await salveazaDocument(parohieId, {
+      tip: "plata", data, tert: furnizor, documentSursaId: nrcdDocId, linii: liniiPlata,
+    });
+    operatiuniPlata = rezultatPlata.operatiuniNoi;
+    nrOP = rezultatPlata.nr;
+    renumerotariPlata = rezultatPlata.renumerotari || [];
+  }
+
+  return {
+    nrNRCD: rezultatNrcd.nr,
+    anNRCD: rezultatNrcd.an,
+    documentId: nrcdDocId,
+    articolePatch: articoleCurente.map((a) => {
+      const linie = liniiPangarSigure.find((l) => l.articolId === a.id);
+      const stocNou = Number(a.stoc) + linie.cantitate;
+      return { id: a.id, stoc: stocNou, stocReferinta: stocNou };
+    }),
+    miscariNoi,
+    operatiuniPlata,
+    nrOP,
+    renumerotari: [...(rezultatNrcd.renumerotari || []), ...renumerotariPlata],
+    datorieNoua: !plataAcum
+      ? { furnizor, suma: valoareAchizitiePangar, nrFactura, nrNRCD: rezultatNrcd.nr, dataFactura: data, dataScadenta, status: "neachitata", documentId: nrcdDocId }
+      : null,
+  };
+}
+
 // Vânzare FIFO cu linii multiple — mai multe produse diferite, vândute simultan, pe o singură
 // chitanță (exact ca la o vânzare reală, cu mai multe articole în același coș). `linii` =
 // [{ bazaCod, cantitateTotala }, ...]. `categoriiPangar` = constanta CATEGORII_PANGAR.
