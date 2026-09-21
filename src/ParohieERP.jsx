@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useContext } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -10,7 +10,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, creeazaFacturaFurnizor, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, receptioneazaFacturaMixta, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, creeazaFacturaFurnizor, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import {
@@ -5873,7 +5873,7 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
     : datorie.liniiAchizitie;
   const categoriiPangarPentruCalcul = esteFacturaGenerala
     ? Object.fromEntries(datorie.liniiAchizitie.map((l) => [l.contId, { achizitie: l.contId }]))
-    : CATEGORII_PANGAR;
+    : { ...CATEGORII_PANGAR, ...MOTIVE_CA_CATEGORII_ACHIZITIE };
 
   if (!esteFacturaGenerala && (!datorie.liniiAchizitie || datorie.liniiAchizitie.length === 0)) {
     throw new Error("Nu s-a găsit nicio linie de achiziție pentru această datorie, în starea curentă a paginii — reîncarcă pagina (Ctrl+Shift+R) și încearcă din nou achitarea.");
@@ -9149,20 +9149,70 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     setState((s) => ({ ...s, articole: [...s.articole, articolNou] }));
   }
 
-  // Recepție NRCD cu linii multiple — mai multe produse diferite, pe aceeași factură,
-  // exact ca la o factură reală. `linii` = [{ articolId, cantitate }, ...].
-  async function receptieNRCD(linii, opts) {
-    const rezultat = await receptioneazaPangar(parohieId, {
-      linii, data: opts.data, furnizor: opts.furnizor, nrFactura: opts.nrFactura,
-      plataAcum: opts.plataAcum, modPlata: opts.modPlata, dataScadenta: opts.dataScadenta,
-      categoriiPangar: CATEGORII_PANGAR,
+  // NOTĂ: recepția NRCD (pură Pangar sau mixtă) trece acum, unitar, prin receptieFacturaMixta
+  // (mai jos) — chiar și o factură fără nicio linie de Consum intern funcționează identic ca
+  // înainte prin acest flux unic, fără o funcție separată doar pentru cazul „pur Pangar".
+
+  // Factură de achiziție MIXTĂ — vezi explicația completă la receptioneazaFacturaMixta din
+  // supabaseData.js. Un singur document NRCD real, cu liniile de Pangar în tabelele Supabase
+  // obișnuite (FIFO, ca la orice recepție) și liniile de Consum intern gestionate local (ca la
+  // receptieMultipla), dar legate de ACELAȘI documentId — astfel datoria către furnizor rămâne
+  // una singură, urmărită unitar, achitabilă printr-un singur mecanism, indiferent de destinație.
+  async function receptieFacturaMixta({ liniiPangar, liniiConsumIntern, data, furnizor, nrFactura, plataAcum, modPlata, dataScadenta }) {
+    const categoriiAchizitie = { ...CATEGORII_PANGAR, ...MOTIVE_CA_CATEGORII_ACHIZITIE };
+    const rezultat = await receptioneazaFacturaMixta(parohieId, {
+      liniiPangar, liniiConsumIntern, data, furnizor, nrFactura,
+      plataAcum, modPlata, dataScadenta, categoriiAchizitie,
     });
-    const denumiri = linii
+
+    // Liniile de Consum intern — fiecare devine propriul ei lot nou (ca la o recepție obișnuită
+    // de Consum intern), dar cu documentId, motiv, nr. NRCD și furnizor atașate, necesare atât
+    // pentru afișare unitară cât și pentru calculul ulterior al restului de achitat pe motiv.
+    const articoleConsumInternNoi = [];
+    const miscariConsumInternNoi = [];
+    (liniiConsumIntern || []).forEach((l, idx) => {
+      const lotNou = {
+        id: uid(), seq: state.articoleConsumIntern.length + idx + 1,
+        denumire: l.denumire, um: l.um, costUnitar: l.costUnitar, stoc: l.cantitate,
+      };
+      articoleConsumInternNoi.push(lotNou);
+      miscariConsumInternNoi.push({
+        id: uid(), data, tip: "intrare", articolId: lotNou.id, cantitate: l.cantitate,
+        valoareUnitara: l.costUnitar, valoareTotala: l.cantitate * l.costUnitar,
+        documentId: rezultat.documentId, motiv: l.motiv,
+        nrNRCD: rezultat.nrNRCD, anNRCD: rezultat.anNRCD, furnizor, nrFactura,
+      });
+    });
+
+    const valoareConsumIntern = (liniiConsumIntern || []).reduce((s, l) => s + Number(l.cantitate) * Number(l.costUnitar), 0);
+    const sumePeMotiv = {};
+    for (const l of liniiConsumIntern || []) {
+      sumePeMotiv[l.motiv] = (sumePeMotiv[l.motiv] || 0) + Number(l.cantitate) * Number(l.costUnitar);
+    }
+
+    const denumiriPangar = (liniiPangar || [])
       .map((l) => state.articole.find((a) => a.id === l.articolId)?.cod)
-      .filter(Boolean)
-      .join(", ");
+      .filter(Boolean);
+    const denumiriConsumIntern = (liniiConsumIntern || []).map((l) => l.denumire);
+    const toateDenumirile = [...denumiriPangar, ...denumiriConsumIntern].join(", ");
+
     setState((s) => {
       const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+      const datorieNoua = !plataAcum
+        ? {
+            id: rezultat.documentId, documentId: rezultat.documentId, furnizor,
+            suma: (rezultat.datorieNoua?.suma || 0) + valoareConsumIntern,
+            sumaAchitata: 0,
+            sumaRamasa: (rezultat.datorieNoua?.suma || 0) + valoareConsumIntern,
+            platiExistente: [],
+            liniiAchizitie: [
+              ...(rezultat.datorieNoua?.liniiAchizitie || []),
+              ...Object.entries(sumePeMotiv).map(([categorieBVC, suma]) => ({ categorieBVC, suma })),
+            ],
+            nrFactura, nrNRCD: rezultat.nrNRCD, anNRCD: rezultat.anNRCD,
+            dataFactura: data, dataScadenta, status: "neachitata",
+          }
+        : null;
       return {
         ...sPatched,
         articole: sPatched.articole.map((a) => {
@@ -9170,9 +9220,11 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           return patch ? { ...a, stoc: patch.stoc, stocReferinta: patch.stocReferinta } : a;
         }),
         miscariStoc: [...sPatched.miscariStoc, ...rezultat.miscariNoi],
+        articoleConsumIntern: [...sPatched.articoleConsumIntern, ...articoleConsumInternNoi],
+        miscariConsumIntern: [...sPatched.miscariConsumIntern, ...miscariConsumInternNoi],
         operatiuni: [...sPatched.operatiuni, ...rezultat.operatiuniPlata],
-        datoriiFurnizori: rezultat.datorieNoua ? [...(sPatched.datoriiFurnizori || []), rezultat.datorieNoua] : (sPatched.datoriiFurnizori || []),
-        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `NRCD nr. ${rezultat.nrNRCD}/${rezultat.anNRCD} — recepție ${denumiri} (${opts.furnizor})`),
+        datoriiFurnizori: datorieNoua ? [...(sPatched.datoriiFurnizori || []), datorieNoua] : (sPatched.datoriiFurnizori || []),
+        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `NRCD nr. ${rezultat.nrNRCD}/${rezultat.anNRCD} — recepție mixtă (${toateDenumirile}) de la ${furnizor}`),
       };
     });
   }
@@ -9477,6 +9529,18 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   }, [grupuriProcesate, GRUPURI_MARI_STOCURI]);
 
   const articoleSortate = useMemo(() => [...state.articole].sort(comparaCategorieSiDenumire), [state.articole]);
+
+  // Grupare pe denumire+UM a articolelor de Consum intern — aceeași logică ca în ConsumInternTab
+  // (grupeConsumIntern de-acolo) — necesară aici pentru formularul de recepție a facturii mixte,
+  // ca produsele de Consum intern deja existente în nomenclator să apară ca sugestii la alegere.
+  const grupeConsumInternPentruMixt = useMemo(() => {
+    const map = new Map();
+    for (const a of state.articoleConsumIntern) {
+      const key = `${a.denumire}|||${a.um}`;
+      if (!map.has(key)) map.set(key, { denumire: a.denumire, um: a.um });
+    }
+    return Array.from(map.values()).sort((a, b) => a.denumire.localeCompare(b.denumire));
+  }, [state.articoleConsumIntern]);
   const [sortColoanaNomenclator, setSortColoanaNomenclator] = useState(null);
   const [sortDirectieNomenclator, setSortDirectieNomenclator] = useState("asc");
   function sorteazaNomenclator(coloana) {
@@ -10216,7 +10280,20 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                             {(() => {
                               const datorie = (state.datoriiFurnizori || []).find((d) => d.documentId === grup.documentId);
                               if (!datorie) {
-                                return <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white border border-emerald-500 whitespace-nowrap">ACHITAT</span>;
+                                const platiLegate = state.operatiuni.filter((op) => op.tip === "plata" && op.documentSursaId === grup.documentId);
+                                const dateDistincte = [...new Set(platiLegate.map((op) => op.data))].sort();
+                                const dataAfisata = dateDistincte.length > 0 ? fmtDataJurnal(dateDistincte[dateDistincte.length - 1]) : null;
+                                const titluTooltip = dateDistincte.length > 1
+                                  ? `Achitat în ${dateDistincte.length} plăți: ${dateDistincte.map(fmtDataJurnal).join(", ")}`
+                                  : undefined;
+                                return (
+                                  <span
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white border border-emerald-500 whitespace-nowrap"
+                                    title={titluTooltip}
+                                  >
+                                    ACHITAT{dataAfisata ? ` — ${dataAfisata}` : ""}
+                                  </span>
+                                );
                               }
                               if (permisiuni.citireOnly) {
                                 return <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitat</span>;
@@ -10489,8 +10566,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           furnizoriAutorizati={[state.parohie?.eparhie, state.parohie?.protoierie].filter(Boolean)}
           liniiInitiale={inst.liniiInitiale}
           operatiuni={state.operatiuni}
+          grupeConsumIntern={grupeConsumInternPentruMixt}
           onClose={() => setInstanteReceptieNRCD((l) => l.filter((i) => i.id !== inst.id))}
-          onSave={async (linii, opts) => { await receptieNRCD(linii, opts); setInstanteReceptieNRCD((l) => l.filter((i) => i.id !== inst.id)); }}
+          onSave={async (liniiPangar, liniiConsumIntern, opts) => {
+            await receptieFacturaMixta({ liniiPangar, liniiConsumIntern, ...opts });
+            setInstanteReceptieNRCD((l) => l.filter((i) => i.id !== inst.id));
+          }}
         />
       ))}
       {instanteVanzare.map((inst) => (
@@ -11250,7 +11331,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
 // Recepție NRCD cu linii multiple — mai multe produse diferite, pe aceeași factură, exact ca la
 // o factură reală. Produsele se aleg strict din nomenclator (fără introducere manuală de text),
 // din listă derulantă — orice produs nou creat apare automat aici, fără nimic suplimentar.
-function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, liniiInitiale, operatiuni, onClose, onSave }) {
+function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, liniiInitiale, operatiuni, grupeConsumIntern, onClose, onSave }) {
   const [pas, setPas] = useState("detalii"); // detalii | decizie | acum | amanata
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
@@ -11260,7 +11341,7 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
     ? ultimulNRCDEmis.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
   const [data, setData] = useState(dataImplicita);
-  const [linii, setLinii] = useState(liniiInitiale || [{ id: uid(), articolId: "", cantitate: "" }]);
+  const [linii, setLinii] = useState(liniiInitiale || [{ id: uid(), destinatie: "pangar", articolId: "", cantitate: "" }]);
   const [modPlata, setModPlata] = useState("transfer");
   const [dataScadenta, setDataScadenta] = useState("");
   const [error, setError] = useState("");
@@ -11268,11 +11349,19 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
 
   const articoleSortate = useMemo(() => [...articole].sort(comparaCategorieSiDenumire), [articole]);
   const articolById = useMemo(() => Object.fromEntries(articole.map((a) => [a.id, a])), [articole]);
+  const grupeConsumInternSortate = useMemo(() => [...(grupeConsumIntern || [])].sort((a, b) => a.denumire.localeCompare(b.denumire)), [grupeConsumIntern]);
 
-  const liniiValide = linii.filter((l) => l.articolId && Number(l.cantitate) > 0);
-  const valoareAchizitieTotala = liniiValide.reduce((sum, l) => sum + Number(l.cantitate) * (articolById[l.articolId]?.pretAchizitie || 0), 0);
+  // O linie e "de Pangar" (articol din nomenclator, cost = preț achiziție) sau "de Consum intern"
+  // (denumire/UM liber alese, cost introdus manual, motiv obligatoriu — determină, mai târziu, la
+  // achitare, contul bugetar pe care se recunoaște cheltuiala; vezi MOTIVE_CA_CATEGORII_ACHIZITIE).
+  const liniiPangarValide = linii.filter((l) => l.destinatie !== "consumIntern" && l.articolId && Number(l.cantitate) > 0);
+  const liniiConsumInternValide = linii.filter((l) => l.destinatie === "consumIntern" && l.denumire?.trim() && Number(l.cantitate) > 0 && Number(l.costUnitar) > 0 && l.motiv);
+  const valoareAchizitieTotala =
+    liniiPangarValide.reduce((sum, l) => sum + Number(l.cantitate) * (articolById[l.articolId]?.pretAchizitie || 0), 0) +
+    liniiConsumInternValide.reduce((sum, l) => sum + Number(l.cantitate) * Number(l.costUnitar), 0);
   const toateLiniileEligibileScadentaAutomata =
-    liniiValide.length > 0 && liniiValide.every((l) => CATEGORII_SCADENTA_AUTOMATA.includes(articolById[l.articolId]?.categorieBVC));
+    liniiPangarValide.length > 0 && liniiConsumInternValide.length === 0 &&
+    liniiPangarValide.every((l) => CATEGORII_SCADENTA_AUTOMATA.includes(articolById[l.articolId]?.categorieBVC));
 
   useEffect(() => {
     if (toateLiniileEligibileScadentaAutomata && data) {
@@ -11285,7 +11374,7 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
   }
 
   function adaugaLinie() {
-    setLinii((ls) => [...ls, { id: uid(), articolId: "", cantitate: "" }]);
+    setLinii((ls) => [...ls, { id: uid(), destinatie: "pangar", articolId: "", cantitate: "" }]);
   }
 
   function stergeLinie(id) {
@@ -11296,8 +11385,17 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
     if (!furnizor.trim()) { setError("Furnizorul este obligatoriu."); return false; }
     if (!nrFactura.trim()) { setError("Numărul facturii este obligatoriu."); return false; }
     if (!data) { setError("Data este obligatorie."); return false; }
-    if (linii.some((l) => !l.articolId)) { setError("Fiecare linie trebuie să aibă un produs selectat din nomenclator."); return false; }
-    if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return false; }
+    for (const l of linii) {
+      if (l.destinatie === "consumIntern") {
+        if (!l.denumire?.trim()) { setError("Fiecare linie de Consum intern trebuie să aibă un articol ales."); return false; }
+        if (!l.cantitate || Number(l.cantitate) <= 0) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return false; }
+        if (!l.costUnitar || Number(l.costUnitar) <= 0) { setError("Fiecare linie de Consum intern trebuie să aibă un cost de achiziție valid, mai mare ca 0."); return false; }
+        if (!l.motiv) { setError("Fiecare linie de Consum intern trebuie să aibă un motiv ales."); return false; }
+      } else {
+        if (!l.articolId) { setError("Fiecare linie de Pangar trebuie să aibă un produs selectat din nomenclator."); return false; }
+        if (!l.cantitate || Number(l.cantitate) <= 0) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return false; }
+      }
+    }
     setError("");
     return true;
   }
@@ -11315,7 +11413,8 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
     setSalvand(true);
     try {
       await onSave(
-        liniiValide.map((l) => ({ articolId: l.articolId, cantitate: Number(l.cantitate) })),
+        liniiPangarValide.map((l) => ({ articolId: l.articolId, cantitate: Number(l.cantitate) })),
+        liniiConsumInternValide.map((l) => ({ denumire: l.denumire.trim(), um: l.um || "buc", cantitate: Number(l.cantitate), costUnitar: Number(l.costUnitar), motiv: l.motiv })),
         { furnizor: furnizor.trim(), nrFactura: nrFactura.trim(), data, plataAcum, modPlata, dataScadenta: plataAcum ? null : dataScadenta }
       );
     } catch (e) {
@@ -11348,28 +11447,91 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
             <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Produse recepționate</div>
             {linii.map((l, i) => {
               const art = articolById[l.articolId];
+              const eConsumIntern = l.destinatie === "consumIntern";
               return (
                 <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-6">
-                    <Field label={`Produs (linia ${i + 1})`}>
-                      <select className={inputCls} value={l.articolId} onChange={(e) => actualizeazaLinie(l.id, { articolId: e.target.value })}>
-                        <option value="">— selectați din nomenclator —</option>
-                        {articoleSortate.map((a) => (
-                          <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>
-                        ))}
+                  <div className="col-span-2">
+                    <Field label={`Destinație (linia ${i + 1})`}>
+                      <select
+                        className={inputCls}
+                        value={l.destinatie || "pangar"}
+                        onChange={(e) => actualizeazaLinie(l.id, { destinatie: e.target.value })}
+                      >
+                        <option value="pangar">Pangar</option>
+                        <option value="consumIntern">Consum intern</option>
                       </select>
                     </Field>
                   </div>
-                  <div className="col-span-2">
-                    <Field label="Cantitate">
-                      <input type="number" step="1" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
-                    </Field>
-                  </div>
-                  <div className="col-span-3 text-xs text-stone-500 pb-1.5">
-                    {art && l.cantitate > 0 && (
-                      <>Cost total: <span className="font-medium tabular-nums">{fmt(Number(l.cantitate) * art.pretAchizitie)} lei</span></>
-                    )}
-                  </div>
+                  {eConsumIntern ? (
+                    <>
+                      <div className="col-span-3">
+                        <Field label="Articol">
+                          <select
+                            className={inputCls}
+                            value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                            onChange={(e) => {
+                              const [denumire, um] = e.target.value.split("|||");
+                              actualizeazaLinie(l.id, { denumire, um });
+                            }}
+                          >
+                            <option value="">— selectați / introduceți nou —</option>
+                            {grupeConsumInternSortate.map((g) => (
+                              <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire} ({g.um})</option>
+                            ))}
+                          </select>
+                          <input
+                            className={inputCls + " mt-1"}
+                            placeholder="sau denumire nouă"
+                            value={l.denumire || ""}
+                            onChange={(e) => actualizeazaLinie(l.id, { denumire: e.target.value, um: l.um || "buc" })}
+                          />
+                        </Field>
+                      </div>
+                      <div className="col-span-1">
+                        <Field label="Cantitate">
+                          <input type="number" step="1" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
+                        </Field>
+                      </div>
+                      <div className="col-span-2">
+                        <Field label="Cost unitar">
+                          <input type="number" step="0.01" className={inputCls} value={l.costUnitar || ""} onChange={(e) => actualizeazaLinie(l.id, { costUnitar: e.target.value })} placeholder="0,00" />
+                        </Field>
+                      </div>
+                      <div className="col-span-3">
+                        <Field label="Motiv (determină contul de cheltuială)">
+                          <select className={inputCls} value={l.motiv || ""} onChange={(e) => actualizeazaLinie(l.id, { motiv: e.target.value })}>
+                            <option value="">— alegeți —</option>
+                            {Object.entries(MOTIVE_CONSUM).map(([cheie, m]) => (
+                              <option key={cheie} value={cheie}>{m.label}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="col-span-4">
+                        <Field label="Produs">
+                          <select className={inputCls} value={l.articolId} onChange={(e) => actualizeazaLinie(l.id, { articolId: e.target.value })}>
+                            <option value="">— selectați din nomenclator —</option>
+                            {articoleSortate.map((a) => (
+                              <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                      <div className="col-span-2">
+                        <Field label="Cantitate">
+                          <input type="number" step="1" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
+                        </Field>
+                      </div>
+                      <div className="col-span-3 text-xs text-stone-500 pb-1.5">
+                        {art && l.cantitate > 0 && (
+                          <>Cost total: <span className="font-medium tabular-nums">{fmt(Number(l.cantitate) * art.pretAchizitie)} lei</span></>
+                        )}
+                      </div>
+                    </>
+                  )}
                   <div className="col-span-1 flex justify-center pb-1.5">
                     <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
                       <Trash2 size={15} />
@@ -12947,6 +13109,15 @@ const MOTIVE_CONSUM = {
   protocol: { label: "Protocol", contId: "623", cereBeneficiar: false },
 };
 
+// Traduce fiecare motiv de Consum intern într-o "categorie" compatibilă cu motorul de achitare
+// deja existent la Pangar (achitaDatoriePangar) — acesta citește doar .achizitie din hartă,
+// indiferent dacă cheia e o categorie_bvc Pangar sau un motiv Consum intern. Permite unei facturi
+// MIXTE (linii de Pangar + linii de Consum intern pe aceeași factură) să fie achitată printr-un
+// singur mecanism unificat, cu linii pe conturile corecte pentru fiecare parte.
+const MOTIVE_CA_CATEGORII_ACHIZITIE = Object.fromEntries(
+  Object.entries(MOTIVE_CONSUM).map(([cheie, m]) => [cheie, { achizitie: m.contId }])
+);
+
 function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitiala, onConsumaActiuneInitiala, anConsumIntern, setAnConsumIntern }) {
   const [instanteArticol, setInstanteArticol] = useState([]);
   const [instanteReceptie, setInstanteReceptie] = useState([]);
@@ -13132,9 +13303,13 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
     });
   }
 
+  // Bon de consum — DOAR mișcare de stoc (ieșire FIFO) și evidență informativă (motiv,
+  // beneficiar) — NU mai creează nicio cheltuială/operațiune proprie. Cheltuiala reală se
+  // recunoaște o singură dată, la achiziție (plata facturii către furnizor, vezi
+  // receptieFacturaMixta) — recunoașterea ei din nou aici ar dubla artificial cheltuiala în
+  // execuția bugetară pentru același produs, aceiași bani.
   async function bonDeConsum({ data, motiv, beneficiar, linii }) {
     const year = yearOf(data);
-    const nrOP = await rezervaUrmatorulNumar(parohieId, year, "plata");
     setState((s) => {
       const nrBon = nextNumber(s, year, "bonConsum");
       const contoare = commitNumber(s, year, "bonConsum");
@@ -13168,28 +13343,22 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       }
 
       const motivInfo = MOTIVE_CONSUM[motiv];
-      const explicatie = `Bon de consum nr. ${nrBon}/${year} — ${motivInfo.label}${beneficiar ? " (" + beneficiar + ")" : ""}`;
-      const op = {
-        id: uid(), tip: "plata", contId: motivInfo.contId, data, suma: totalValoare,
-        modPlata: "numerar", tert: beneficiar || "", explicatie, nr: nrOP, an: year,
-      };
-      const bon = { id: uid(), nr: nrBon, an: year, data, motiv, beneficiar, linii: liniiRezultat, opId: op.id };
+      const bon = { id: uid(), nr: nrBon, an: year, data, motiv, beneficiar, linii: liniiRezultat };
 
       return {
         ...s,
         articoleConsumIntern,
         miscariConsumIntern: [...s.miscariConsumIntern, ...miscariNoi],
         bonuriConsum: [...s.bonuriConsum, bon],
-        operatiuni: [...s.operatiuni, op],
         contoare,
-        jurnalAudit: adaugaAudit(s, permisiuni.label, `Bon de consum nr. ${nrBon}/${year} — ${motivInfo.label}, ${fmt(totalValoare)} lei`),
+        jurnalAudit: adaugaAudit(s, permisiuni.label, `Bon de consum nr. ${nrBon}/${year} — ${motivInfo.label}, ${fmt(totalValoare)} lei (evidență, fără impact bugetar)`),
       };
     });
   }
 
   // Editare bon de consum: restituie loturile consumate de bonul vechi, verifică disponibilul,
-  // apoi reface FIFO cu noile linii/motiv/dată — actualizând, în loc, operațiunea financiară legată
-  // (bon.opId), fără să emită un document nou. Blocată integral dacă stocul nu acoperă noile cantități.
+  // apoi reface FIFO cu noile linii/motiv/dată — doar evidență, fără nicio operațiune financiară
+  // (bonul nu mai are impact bugetar propriu). Blocată integral dacă stocul nu acoperă noile cantități.
   function editeazaBonConsum(bonId, opts) {
     setState((s) => {
       const bon = s.bonuriConsum.find((b) => b.id === bonId);
@@ -13245,14 +13414,10 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       }
 
       const motivInfo = MOTIVE_CONSUM[opts.motiv];
-      const operatiuni = s.operatiuni.map((op) => (op.id === bon.opId ? {
-        ...op, contId: motivInfo.contId, data: opts.data, suma: totalValoare, tert: opts.beneficiar || "",
-        explicatie: `Bon de consum nr. ${bon.nr}/${bon.an} — ${motivInfo.label}${opts.beneficiar ? " (" + opts.beneficiar + ")" : ""}`,
-      } : op));
       const bonuriConsum = s.bonuriConsum.map((b) => (b.id === bonId ? { ...b, data: opts.data, motiv: opts.motiv, beneficiar: opts.beneficiar, linii: liniiRezultat } : b));
 
       return {
-        ...s, articoleConsumIntern, miscariConsumIntern: [...miscariConsumIntern, ...miscariNoi], operatiuni, bonuriConsum,
+        ...s, articoleConsumIntern, miscariConsumIntern: [...miscariConsumIntern, ...miscariNoi], bonuriConsum,
         jurnalAudit: adaugaAudit(s, permisiuni.label, `Modificare bon de consum nr. ${bon.nr}/${bon.an}`),
       };
     });
