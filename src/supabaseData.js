@@ -1799,6 +1799,15 @@ export async function marcheazaNRCDAchitat(documentId) {
   if (error) throw error;
 }
 
+// Inversul lui marcheazaNRCDAchitat — folosit la ȘTERGEREA unui Ordin de plată care a fost, la
+// rândul lui, o achitare a acestui NRCD (integrală sau ultima tranșă dintr-o plată parțială).
+// Fără asta, ștergerea unui astfel de OP lasă factura marcată "achitata" definitiv, deși plata
+// care o stinsese tocmai a fost ștearsă — datoria ar dispărea, invizibilă, din urmărire.
+export async function demarcheazaNRCDAchitat(documentId) {
+  const { error } = await supabase.from("documente").update({ status: "neachitata" }).eq("id", documentId);
+  if (error) throw error;
+}
+
 // Factură furnizor GENERALĂ (fără legătură cu Pangar) — analog cu receptioneazaPangar, dar fără
 // nicio mișcare de stoc/articole: utilizatorul alege direct articolul bugetar pe fiecare linie
 // (ca la un Ordin de plată obișnuit), nu o categorie Pangar care se rezolvă mai târziu la un cont

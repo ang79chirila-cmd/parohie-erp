@@ -10,7 +10,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, receptioneazaFacturaMixta, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, creeazaFacturaFurnizor, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, receptioneazaFacturaMixta, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, demarcheazaNRCDAchitat, creeazaFacturaFurnizor, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import {
@@ -16471,12 +16471,101 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
         }));
       } else {
         const rezultat = await stergeDocument(documentIdCurent);
+
+        // Dacă documentul șters e chiar o achitare (tip="plata") a unei datorii către furnizor
+        // (NRCD Pangar, factură mixtă, sau factură generală), datoria trebuie RESTAURATĂ — altfel
+        // banii dispar din operațiuni, dar datoria rămâne stinsă (sau, dacă fusese achitare
+        // integrală, dispărută complet din urmărire, invizibilă). Vezi și demarcheazaNRCDAchitat,
+        // mai jos — inversul lui marcheazaNRCDAchitat, apelat la achitare.
+        const documentSursaIdCurent = tip !== "incasare" ? docCurent.linii[0]?.documentSursaId : null;
+        if (documentSursaIdCurent) {
+          await demarcheazaNRCDAchitat(documentSursaIdCurent);
+        }
+
         setState((s) => {
           const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+          let datoriiFurnizori = sPatched.datoriiFurnizori || [];
+
+          if (documentSursaIdCurent) {
+            const sumaPeContStearsa = {};
+            for (const l of docCurent.linii) sumaPeContStearsa[l.contId] = (sumaPeContStearsa[l.contId] || 0) + l.suma;
+            const sumaStearsa = Math.round(Object.values(sumaPeContStearsa).reduce((s2, v) => s2 + v, 0) * 100) / 100;
+
+            const datorieExistenta = datoriiFurnizori.find((d) => d.documentId === documentSursaIdCurent);
+            if (datorieExistenta) {
+              // Era o plată parțială — datoria era încă urmărită. O readucem la starea de
+              // dinainte de această plată: suma achitată scade, restul crește, iar plata
+              // ștearsă dispare din istoricul ei de plăți.
+              datoriiFurnizori = datoriiFurnizori.map((d) => d.documentId === documentSursaIdCurent ? {
+                ...d,
+                sumaAchitata: Math.round((d.sumaAchitata - sumaStearsa) * 100) / 100,
+                sumaRamasa: Math.round((d.sumaRamasa + sumaStearsa) * 100) / 100,
+                platiExistente: (d.platiExistente || []).filter((p) => p.documentId !== documentIdCurent),
+              } : d);
+            } else {
+              // Fusese achitată integral — datoria dispăruse complet din listă la achitare.
+              // O RECONSTRUIM din urmele rămase: celelalte plăți încă existente pe aceeași
+              // factură (dacă achitarea se făcuse în mai multe tranșe), plus metadatele
+              // facturii originale, regăsite din mișcările de stoc/Consum intern legate de
+              // același document (acesta nu a fost șters, doar demarcat mai sus).
+              const altePlati = sPatched.operatiuni.filter((op) =>
+                op.tip === "plata" && op.documentSursaId === documentSursaIdCurent && op.documentId !== documentIdCurent
+              );
+              const platiGrupate = {};
+              for (const op of altePlati) {
+                (platiGrupate[op.documentId] ||= { documentId: op.documentId, nr: op.nr, an: op.an, data: op.data, suma: 0, sumePeMod: {} }).suma += op.suma;
+                platiGrupate[op.documentId].sumePeMod[op.modPlata] = (platiGrupate[op.documentId].sumePeMod[op.modPlata] || 0) + op.suma;
+              }
+              const platiExistenteReconstruite = Object.values(platiGrupate).map((p) => ({
+                documentId: p.documentId, nr: p.nr, an: p.an, data: p.data, suma: Math.round(p.suma * 100) / 100,
+                moduri: Object.entries(p.sumePeMod).map(([modPlata, suma]) => ({ modPlata, suma })),
+              }));
+              const sumaAltePlati = Math.round(altePlati.reduce((s2, op) => s2 + op.suma, 0) * 100) / 100;
+              const sumaTotalReconstruita = Math.round((sumaAltePlati + sumaStearsa) * 100) / 100;
+
+              // Mapare inversă cont→categorie/motiv, ca să reconstruim liniiAchizitie în forma
+              // așteptată de motorul de achitare (calculeazaLiniiCuRest citește categorieBVC).
+              const contToCategorie = {};
+              for (const [cheie, v] of Object.entries({ ...CATEGORII_PANGAR, ...MOTIVE_CA_CATEGORII_ACHIZITIE })) {
+                if (v.achizitie) contToCategorie[v.achizitie] = cheie;
+              }
+              const sumePeCont = { ...sumaPeContStearsa };
+              for (const op of altePlati) sumePeCont[op.contId] = (sumePeCont[op.contId] || 0) + op.suma;
+              const liniiAchizitie = Object.entries(sumePeCont).map(([contId, suma]) => ({
+                categorieBVC: contToCategorie[contId] || contId,
+                suma: Math.round(suma * 100) / 100,
+              }));
+
+              const miscarePangar = sPatched.miscariStoc.find((m) => m.documentId === documentSursaIdCurent);
+              const miscareConsumIntern = sPatched.miscariConsumIntern.find((m) => m.documentId === documentSursaIdCurent);
+              const sursa = miscarePangar || miscareConsumIntern;
+
+              datoriiFurnizori = [
+                ...datoriiFurnizori,
+                {
+                  id: documentSursaIdCurent, documentId: documentSursaIdCurent,
+                  furnizor: sursa?.furnizor || docCurent.tert || "",
+                  suma: sumaTotalReconstruita,
+                  sumaAchitata: sumaAltePlati,
+                  sumaRamasa: sumaStearsa,
+                  platiExistente: platiExistenteReconstruite,
+                  liniiAchizitie,
+                  nrFactura: sursa?.nrFactura || "",
+                  nrNRCD: sursa?.nrNRCD,
+                  anNRCD: yearOf(sursa?.data || docCurent.data),
+                  dataFactura: sursa?.data || docCurent.data,
+                  dataScadenta: null,
+                  status: "neachitata",
+                },
+              ];
+            }
+          }
+
           return {
             ...sPatched,
             operatiuni: sPatched.operatiuni.filter((op) => op.documentId !== documentIdCurent),
-            jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}`),
+            datoriiFurnizori,
+            jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ștergere ${tipEtichetat.toLowerCase()} nr. ${docCurent.nr}/${docCurent.an}${documentSursaIdCurent ? " — datoria către furnizor a fost restaurată" : ""}`),
           };
         });
       }
