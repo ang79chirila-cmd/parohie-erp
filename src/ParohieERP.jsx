@@ -316,7 +316,10 @@ function categorieAfisarePangar(bazaCod) {
   return "ALTELE";
 }
 
-// Comparator: întâi ordinea fixă a categoriilor, apoi alfabetic (denumire) în interiorul ei.
+// Comparator: întâi ordinea fixă a categoriilor, apoi anul descrescător (cele mai noi produse
+// primele — relevant mai ales la Vin și Calendare, unde nomenclatorul se populează an de an),
+// apoi alfabetic (denumire) ca ultim criteriu. Produsele fără an (majoritatea — lumânări, candele,
+// colportaj) rămân la finalul categoriei lor, sortate alfabetic între ele.
 // Funcționează la fel pentru rânduri individuale (au bazaCod direct) și pentru grupuri FIFO
 // (au bazaCod la nivel de grup).
 function comparaCategorieSiDenumire(a, b) {
@@ -325,6 +328,9 @@ function comparaCategorieSiDenumire(a, b) {
   const ordA = idxA === -1 ? 999 : idxA;
   const ordB = idxB === -1 ? 999 : idxB;
   if (ordA !== ordB) return ordA - ordB;
+  const anA = a.an || 0;
+  const anB = b.an || 0;
+  if (anA !== anB) return anB - anA;
   return (a.denumire || "").localeCompare(b.denumire || "", "ro");
 }
 
@@ -9173,7 +9179,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     (liniiConsumIntern || []).forEach((l, idx) => {
       const lotNou = {
         id: uid(), seq: state.articoleConsumIntern.length + idx + 1,
-        denumire: l.denumire, um: l.um, costUnitar: l.costUnitar, stoc: l.cantitate,
+        denumire: l.denumire, um: l.um, an: l.an ?? null, esteVin: !!l.esteVin, costUnitar: l.costUnitar, stoc: l.cantitate,
       };
       articoleConsumInternNoi.push(lotNou);
       miscariConsumInternNoi.push({
@@ -9492,7 +9498,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       const imagineUrl = sortate.find((a) => a.imagineUrl)?.imagineUrl || null;
       const prag = Math.max(PRAG_STOC_PROCENT * (referintaTotal || 0), PRAG_STOC_MINIM);
       const stareLabel = stocTotal === 0 ? "Epuizat" : stocTotal <= prag ? "Scăzut" : "OK";
-      return { bazaCod, denumire: sortate[0].denumire, um: sortate[0].um, categorieBVC: sortate[0].categorieBVC, coduri: sortate, stocTotal, valoareTotal, referintaTotal, imagineUrl, stareLabel };
+      return { bazaCod, denumire: sortate[0].denumire, um: sortate[0].um, categorieBVC: sortate[0].categorieBVC, an: sortate[0].an, coduri: sortate, stocTotal, valoareTotal, referintaTotal, imagineUrl, stareLabel };
     }).sort(comparaCategorieSiDenumire);
   }, [state.articole]);
 
@@ -9536,10 +9542,10 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const grupeConsumInternPentruMixt = useMemo(() => {
     const map = new Map();
     for (const a of state.articoleConsumIntern) {
-      const key = `${a.denumire}|||${a.um}`;
-      if (!map.has(key)) map.set(key, { denumire: a.denumire, um: a.um });
+      const key = `${a.denumire}|||${a.um}|||${a.an ?? ""}`;
+      if (!map.has(key)) map.set(key, { denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: !!a.esteVin });
     }
-    return Array.from(map.values()).sort((a, b) => a.denumire.localeCompare(b.denumire));
+    return Array.from(map.values()).sort((a, b) => (b.an || 0) - (a.an || 0) || a.denumire.localeCompare(b.denumire, "ro"));
   }, [state.articoleConsumIntern]);
   const [sortColoanaNomenclator, setSortColoanaNomenclator] = useState(null);
   const [sortDirectieNomenclator, setSortDirectieNomenclator] = useState("asc");
@@ -10622,6 +10628,7 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
   const [pretAchizitie, setPretAchizitie] = useState("");
   const [pretVanzare, setPretVanzare] = useState("");
   const [categorieBVC, setCategorieBVC] = useState(variantaDin?.categorieBVC || "lumanari");
+  const [an, setAn] = useState(variantaDin?.an ? String(variantaDin.an) : "");
   const [fotografie, setFotografie] = useState(null);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -10632,6 +10639,9 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
   // greșeala (produs introdus cu preț de vânzare = preț de achiziție, marjă/venit propriu zero).
   const categorieEfectiva = variantaDin?.categorieBVC || categorieBVC;
   const ePangarColportaj = categorieEfectiva === "colportaj";
+  // Anul e obligatoriu doar la Vin și Calendare (tipărituri) — la Lumânări, Candele și Colportaj
+  // nu are sens (produse fără o ediție/an anume), deci rămâne opțional/needitat pentru ele.
+  const anObligatoriu = categorieEfectiva === "vin" || categorieEfectiva === "tipar";
   useEffect(() => {
     if (ePangarColportaj && pretAchizitie) {
       const calculat = Math.round(Number(pretAchizitie) * 1.25 * 100) / 100;
@@ -10644,6 +10654,10 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
   function validate() {
     if (!bazaCod.trim() || !denumire.trim() || !um.trim() || !pretAchizitie || !pretVanzare) {
       setError("Toate câmpurile sunt obligatorii.");
+      return false;
+    }
+    if (anObligatoriu && !an) {
+      setError("Anul este obligatoriu pentru Vin și Calendare.");
       return false;
     }
     if (/[.\s]/.test(bazaCod.trim())) {
@@ -10679,6 +10693,7 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
         pretAchizitie: Number(pretAchizitie),
         pretVanzare: Number(pretVanzare),
         categorieBVC: variantaDin?.categorieBVC || categorieBVC,
+        an: an ? Number(an) : null,
       }, fotografie);
     } catch (e) {
       setConfirming(false);
@@ -10748,6 +10763,13 @@ function ArticolForm({ variantaDin, onClose, onSave }) {
               ))}
             </select>
           )}
+        </Field>
+        <Field label={anObligatoriu ? "An (obligatoriu pentru Vin și Calendare)" : "An (opțional)"}>
+          <input
+            type="number" step="1" className={inputCls}
+            value={an} onChange={(e) => setAn(e.target.value)}
+            placeholder={anObligatoriu ? "ex: 2026" : "opțional"}
+          />
         </Field>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Unitate">
@@ -11349,7 +11371,21 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
 
   const articoleSortate = useMemo(() => [...articole].sort(comparaCategorieSiDenumire), [articole]);
   const articolById = useMemo(() => Object.fromEntries(articole.map((a) => [a.id, a])), [articole]);
-  const grupeConsumInternSortate = useMemo(() => [...(grupeConsumIntern || [])].sort((a, b) => a.denumire.localeCompare(b.denumire)), [grupeConsumIntern]);
+  // Sugestiile de produs pentru o linie de Consum intern includ, pe lângă nomenclatorul propriu
+  // de Consum intern, și TOATE produsele de Vin din nomenclatorul Pangar — aceleași sticle pot
+  // ajunge, la aceeași factură, fie la vânzare (Pangar), fie la uz liturgic intern (fără preț de
+  // vânzare acolo), fără să fie nevoie să fie re-introduse ca produse noi, separate.
+  const grupeConsumInternSortate = useMemo(() => {
+    const dinConsumIntern = [...(grupeConsumIntern || [])].map((g) => ({ denumire: g.denumire, um: g.um, an: g.an ?? null, esteVin: !!g.esteVin }));
+    const dinPangarVin = (articole || [])
+      .filter((a) => a.categorieBVC === "vin")
+      .map((a) => ({ denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: true }));
+    const combinate = new Map();
+    for (const g of [...dinConsumIntern, ...dinPangarVin]) {
+      combinate.set(`${g.denumire}|||${g.um}|||${g.an ?? ""}`, g);
+    }
+    return Array.from(combinate.values()).sort((a, b) => (b.an || 0) - (a.an || 0) || a.denumire.localeCompare(b.denumire, "ro"));
+  }, [grupeConsumIntern, articole]);
 
   // O linie e "de Pangar" (articol din nomenclator, cost = preț achiziție) sau "de Consum intern"
   // (denumire/UM liber alese, cost introdus manual, motiv obligatoriu — determină, mai târziu, la
@@ -11391,6 +11427,7 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
         if (!l.cantitate || Number(l.cantitate) <= 0) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return false; }
         if (!l.costUnitar || Number(l.costUnitar) <= 0) { setError("Fiecare linie de Consum intern trebuie să aibă un cost de achiziție valid, mai mare ca 0."); return false; }
         if (!l.motiv) { setError("Fiecare linie de Consum intern trebuie să aibă un motiv ales."); return false; }
+        if (l.esteVin && !l.an) { setError("Anul este obligatoriu pentru liniile de vin."); return false; }
       } else {
         if (!l.articolId) { setError("Fiecare linie de Pangar trebuie să aibă un produs selectat din nomenclator."); return false; }
         if (!l.cantitate || Number(l.cantitate) <= 0) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return false; }
@@ -11414,7 +11451,7 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
     try {
       await onSave(
         liniiPangarValide.map((l) => ({ articolId: l.articolId, cantitate: Number(l.cantitate) })),
-        liniiConsumInternValide.map((l) => ({ denumire: l.denumire.trim(), um: l.um || "buc", cantitate: Number(l.cantitate), costUnitar: Number(l.costUnitar), motiv: l.motiv })),
+        liniiConsumInternValide.map((l) => ({ denumire: l.denumire.trim(), um: l.um || "buc", cantitate: Number(l.cantitate), costUnitar: Number(l.costUnitar), motiv: l.motiv, an: l.an ? Number(l.an) : null, esteVin: !!l.esteVin })),
         { furnizor: furnizor.trim(), nrFactura: nrFactura.trim(), data, plataAcum, modPlata, dataScadenta: plataAcum ? null : dataScadenta }
       );
     } catch (e) {
@@ -11464,19 +11501,22 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                   </div>
                   {eConsumIntern ? (
                     <>
-                      <div className="col-span-3">
+                      <div className="col-span-2">
                         <Field label="Articol">
                           <select
                             className={inputCls}
-                            value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                            value={l.denumire ? `${l.denumire}|||${l.um}|||${l.an ?? ""}` : ""}
                             onChange={(e) => {
-                              const [denumire, um] = e.target.value.split("|||");
-                              actualizeazaLinie(l.id, { denumire, um });
+                              const [denumire, um, anText] = e.target.value.split("|||");
+                              const grupPotrivit = grupeConsumInternSortate.find((g) => g.denumire === denumire && g.um === um && String(g.an ?? "") === anText);
+                              actualizeazaLinie(l.id, { denumire, um, an: anText || "", esteVin: !!grupPotrivit?.esteVin });
                             }}
                           >
                             <option value="">— selectați / introduceți nou —</option>
                             {grupeConsumInternSortate.map((g) => (
-                              <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire} ({g.um})</option>
+                              <option key={`${g.denumire}|||${g.um}|||${g.an ?? ""}`} value={`${g.denumire}|||${g.um}|||${g.an ?? ""}`}>
+                                {g.denumire} ({g.um}){g.an ? ` — ${g.an}` : ""}
+                              </option>
                             ))}
                           </select>
                           <input
@@ -11485,6 +11525,15 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                             value={l.denumire || ""}
                             onChange={(e) => actualizeazaLinie(l.id, { denumire: e.target.value, um: l.um || "buc" })}
                           />
+                          <label className="flex items-center gap-1.5 text-xs text-stone-600 mt-1">
+                            <input type="checkbox" checked={!!l.esteVin} onChange={(e) => actualizeazaLinie(l.id, { esteVin: e.target.checked })} />
+                            Este vin
+                          </label>
+                        </Field>
+                      </div>
+                      <div className="col-span-1">
+                        <Field label={l.esteVin ? "An (obligatoriu)" : "An (opțional)"}>
+                          <input type="number" step="1" className={inputCls} value={l.an || ""} onChange={(e) => actualizeazaLinie(l.id, { an: e.target.value })} placeholder="—" />
                         </Field>
                       </div>
                       <div className="col-span-1">
@@ -13143,12 +13192,12 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actiuneInitiala]);
 
-  function addArticol(denumire, um) {
+  function addArticol(denumire, um, an, esteVin) {
     setState((s) => ({
       ...s,
       articoleConsumIntern: [
         ...s.articoleConsumIntern,
-        { id: uid(), seq: s.articoleConsumIntern.length + 1, denumire, um, costUnitar: 0, stoc: 0 },
+        { id: uid(), seq: s.articoleConsumIntern.length + 1, denumire, um, an: an ?? null, esteVin: !!esteVin, costUnitar: 0, stoc: 0 },
       ],
     }));
   }
@@ -13160,7 +13209,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       let articoleConsumIntern = [...s.articoleConsumIntern];
       const miscariNoi = [];
       for (const l of linii) {
-        const lotNou = { id: uid(), seq: articoleConsumIntern.length + 1, denumire: l.denumire, um: l.um, costUnitar: l.cost, stoc: l.cantitate };
+        const lotNou = { id: uid(), seq: articoleConsumIntern.length + 1, denumire: l.denumire, um: l.um, an: l.an ?? null, esteVin: !!l.esteVin, costUnitar: l.cost, stoc: l.cantitate };
         articoleConsumIntern = [...articoleConsumIntern, lotNou];
         miscariNoi.push({
           id: uid(), data, tip: "intrare", articolId: lotNou.id, cantitate: l.cantitate,
@@ -13180,9 +13229,9 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   // Spre deosebire de Pangar (unde stocul se adaugă la un produs existent), la Consum intern
   // fiecare linie de stoc inițial creează, la fel ca o recepție normală, propriul ei lot nou —
   // marcat distinct (stocInitial: true), ca să poată fi identificat/editat separat mai târziu.
-  function creeazaStocInitialConsumIntern(denumire, um, cantitate, cost, data) {
+  function creeazaStocInitialConsumIntern(denumire, um, cantitate, cost, data, an) {
     setState((s) => {
-      const lotNou = { id: uid(), seq: s.articoleConsumIntern.length + 1, denumire, um, costUnitar: cost, stoc: cantitate };
+      const lotNou = { id: uid(), seq: s.articoleConsumIntern.length + 1, denumire, um, an: an ?? null, costUnitar: cost, stoc: cantitate };
       const miscareNoua = {
         id: uid(), data, tip: "intrare", articolId: lotNou.id, cantitate,
         valoareUnitara: cost, valoareTotala: cantitate * cost, stocInitial: true,
@@ -13323,7 +13372,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         let ramas = Number(l.cantitate) || 0;
         if (ramas <= 0) continue;
         const loturi = articoleConsumIntern
-          .filter((a) => a.denumire === l.denumire && a.um === l.um && a.stoc > 0)
+          .filter((a) => a.denumire === l.denumire && a.um === l.um && (a.an ?? null) === (l.an ?? null) && a.stoc > 0)
           .sort((a, b) => a.seq - b.seq);
         for (const lot of loturi) {
           if (ramas <= 0) break;
@@ -13381,7 +13430,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       });
 
       for (const l of opts.linii) {
-        const disponibil = articoleSimulate.filter((a) => a.denumire === l.denumire && a.um === l.um).reduce((sum, a) => sum + a.stoc, 0);
+        const disponibil = articoleSimulate.filter((a) => a.denumire === l.denumire && a.um === l.um && (a.an ?? null) === (l.an ?? null)).reduce((sum, a) => sum + a.stoc, 0);
         if (Number(l.cantitate) > disponibil) {
           setNotice(`Stoc insuficient pentru „${l.denumire}” — disponibil: ${disponibil} ${l.um}.`);
           return s;
@@ -13397,7 +13446,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       for (const l of opts.linii) {
         let ramas = Number(l.cantitate) || 0;
         if (ramas <= 0) continue;
-        const loturi = articoleConsumIntern.filter((a) => a.denumire === l.denumire && a.um === l.um && a.stoc > 0).sort((a, b) => a.seq - b.seq);
+        const loturi = articoleConsumIntern.filter((a) => a.denumire === l.denumire && a.um === l.um && (a.an ?? null) === (l.an ?? null) && a.stoc > 0).sort((a, b) => a.seq - b.seq);
         for (const lot of loturi) {
           if (ramas <= 0) break;
           const cantDinLot = Math.min(lot.stoc, ramas);
@@ -13427,14 +13476,14 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   const grupeConsumIntern = useMemo(() => {
     const map = new Map();
     for (const a of state.articoleConsumIntern) {
-      const key = `${a.denumire}|||${a.um}`;
-      if (!map.has(key)) map.set(key, { denumire: a.denumire, um: a.um, stocTotal: 0, loturi: [] });
+      const key = `${a.denumire}|||${a.um}|||${a.an ?? ""}`;
+      if (!map.has(key)) map.set(key, { denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: !!a.esteVin, stocTotal: 0, loturi: [] });
       const g = map.get(key);
       g.stocTotal += a.stoc;
       g.loturi.push(a);
     }
     for (const g of map.values()) g.loturi.sort((a, b) => a.seq - b.seq);
-    return Array.from(map.values()).sort((a, b) => a.denumire.localeCompare(b.denumire));
+    return Array.from(map.values()).sort((a, b) => (b.an || 0) - (a.an || 0) || a.denumire.localeCompare(b.denumire, "ro"));
   }, [state.articoleConsumIntern]);
 
   // Simulare cronologică globală (aceeași logică precum evenimentePangar, adaptată la modelul
@@ -13642,17 +13691,22 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
               <AntetFiltrabil cheie="articol" eticheta="Articol" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("articol")} />
+              <th className="px-3 py-1 font-bold text-center">An</th>
               <AntetFiltrabil cheie="stoc" eticheta="Stoc curent" filtre={filtreConsumIntern} setFiltre={setFiltreConsumIntern} sugestii={sugestiiConsumIntern("stoc")} className="px-3 py-1 align-bottom text-right" />
               <th className="px-3 py-1 font-bold">Loturi active (FIFO, cel mai vechi primul)</th>
             </tr>
           </thead>
           <tbody>
             {articoleAfisate.length === 0 && (
-              <tr><td colSpan={3} className="px-3 py-6 text-center text-stone-400">Niciun articol găsit.</td></tr>
+              <tr><td colSpan={4} className="px-3 py-6 text-center text-stone-400">Niciun articol găsit.</td></tr>
             )}
             {articoleAfisate.map((g) => (
-              <tr key={`${g.denumire}|||${g.um}`} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                <td className="px-3 py-1 font-medium">{g.denumire} <span className="text-stone-400 text-xs">({g.um})</span></td>
+              <tr key={`${g.denumire}|||${g.um}|||${g.an ?? ""}`} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
+                <td className="px-3 py-1 font-medium">
+                  {g.denumire} <span className="text-stone-400 text-xs">({g.um})</span>
+                  {g.esteVin && <span className="ml-1.5 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-1">vin</span>}
+                </td>
+                <td className="px-3 py-1 text-center text-stone-500">{g.an || "—"}</td>
                 <td className="px-3 py-1 text-right tabular-nums font-medium">{g.stocTotal}</td>
                 <td className="px-3 py-1 text-xs text-stone-500">
                   {g.loturi.filter((l) => l.stoc > 0).length === 0
@@ -13815,12 +13869,13 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       </Card>
 
       {instanteArticol.map((inst) => (
-        <ArticolConsumInternForm key={inst.id} onClose={() => setInstanteArticol((l) => l.filter((i) => i.id !== inst.id))} onSave={(denumire, um) => { addArticol(denumire, um); setInstanteArticol((l) => l.filter((i) => i.id !== inst.id)); }} />
+        <ArticolConsumInternForm key={inst.id} onClose={() => setInstanteArticol((l) => l.filter((i) => i.id !== inst.id))} onSave={(denumire, um, an, esteVin) => { addArticol(denumire, um, an, esteVin); setInstanteArticol((l) => l.filter((i) => i.id !== inst.id)); }} />
       ))}
       {instanteReceptie.map((inst) => (
         <ReceptieConsumInternMultiForm
           key={inst.id}
           grupe={grupeConsumIntern}
+          articole={state.articole}
           onClose={() => setInstanteReceptie((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (data, linii) => { await receptieMultipla(data, linii); setInstanteReceptie((l) => l.filter((i) => i.id !== inst.id)); }}
         />
@@ -13832,7 +13887,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
           articole={state.articoleConsumIntern}
           miscariStocInitiale={state.miscariConsumIntern.filter((m) => m.stocInitial)}
           onClose={() => setInstanteStocInitial((l) => l.filter((i) => i.id !== inst.id))}
-          onAdauga={async (denumire, um, cantitate, cost, data) => creeazaStocInitialConsumIntern(denumire, um, cantitate, cost, data)}
+          onAdauga={async (denumire, um, cantitate, cost, data, an) => creeazaStocInitialConsumIntern(denumire, um, cantitate, cost, data, an)}
           onModifica={async (miscareId, opts) => editeazaStocInitialConsumIntern(miscareId, opts)}
           onSterge={async (miscareId) => stergeStocInitialConsumIntern(miscareId)}
         />
@@ -13916,6 +13971,8 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
 function ArticolConsumInternForm({ onClose, onSave }) {
   const [denumire, setDenumire] = useState("");
   const [um, setUm] = useState("buc");
+  const [esteVin, setEsteVin] = useState(false);
+  const [an, setAn] = useState("");
   const [error, setError] = useState("");
 
   function submit() {
@@ -13923,7 +13980,11 @@ function ArticolConsumInternForm({ onClose, onSave }) {
       setError("Denumirea este obligatorie.");
       return;
     }
-    onSave(denumire.trim(), um.trim() || "buc");
+    if (esteVin && !an) {
+      setError("Anul este obligatoriu pentru vin.");
+      return;
+    }
+    onSave(denumire.trim(), um.trim() || "buc", an ? Number(an) : null, esteVin);
   }
 
   return (
@@ -13932,9 +13993,18 @@ function ArticolConsumInternForm({ onClose, onSave }) {
         <Field label="Denumire">
           <input className={inputCls} value={denumire} onChange={(e) => setDenumire(e.target.value)} placeholder="ex: Vin, Tămâie, Cărbuni" />
         </Field>
-        <Field label="Unitate de măsură">
-          <input className={inputCls} value={um} onChange={(e) => setUm(e.target.value)} />
-        </Field>
+        <label className="flex items-center gap-2 text-sm text-stone-700">
+          <input type="checkbox" checked={esteVin} onChange={(e) => setEsteVin(e.target.checked)} />
+          Este vin (impune anul)
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Unitate de măsură">
+            <input className={inputCls} value={um} onChange={(e) => setUm(e.target.value)} />
+          </Field>
+          <Field label={esteVin ? "An (obligatoriu la vin)" : "An (opțional)"}>
+            <input type="number" step="1" className={inputCls} value={an} onChange={(e) => setAn(e.target.value)} placeholder="ex: 2026" />
+          </Field>
+        </div>
         {error && <span className="text-rose-600 text-xs">{error}</span>}
         <div className="flex justify-end gap-2 mt-2">
           <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
@@ -14115,19 +14185,29 @@ function BonConsumEditForm({ bon, grupe, onClose, onSave }) {
 
 // Recepție articole Consum intern, cu linii multiple — produsele se aleg strict din nomenclator
 // (dropdown, fără text liber); orice produs nou creat prin "+ Produs nou" apare automat aici.
-function ReceptieConsumInternMultiForm({ grupe, onClose, onSave }) {
+function ReceptieConsumInternMultiForm({ grupe, articole, onClose, onSave }) {
   const [data, setData] = useState(todayISO());
-  const [linii, setLinii] = useState([{ id: uid(), denumire: "", um: "", cantitate: "", cost: "" }]);
+  const [linii, setLinii] = useState([{ id: uid(), denumire: "", um: "", an: "", cantitate: "", cost: "" }]);
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
-  const grupeSortate = useMemo(() => [...grupe].sort((a, b) => a.denumire.localeCompare(b.denumire)), [grupe]);
+  // Sugestiile includ, pe lângă nomenclatorul propriu de Consum intern, și toate produsele de
+  // Vin din nomenclatorul Pangar — vezi explicația identică la ReceptieNRCDForm.
+  const grupeSortate = useMemo(() => {
+    const dinConsumIntern = [...(grupe || [])].map((g) => ({ denumire: g.denumire, um: g.um, an: g.an ?? null, esteVin: !!g.esteVin }));
+    const dinPangarVin = (articole || [])
+      .filter((a) => a.categorieBVC === "vin")
+      .map((a) => ({ denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: true }));
+    const combinate = new Map();
+    for (const g of [...dinConsumIntern, ...dinPangarVin]) combinate.set(`${g.denumire}|||${g.um}|||${g.an ?? ""}`, g);
+    return Array.from(combinate.values()).sort((a, b) => (b.an || 0) - (a.an || 0) || a.denumire.localeCompare(b.denumire, "ro"));
+  }, [grupe, articole]);
 
   function actualizeazaLinie(id, patch) {
     setLinii((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   }
   function adaugaLinie() {
-    setLinii((ls) => [...ls, { id: uid(), denumire: "", um: "", cantitate: "", cost: "" }]);
+    setLinii((ls) => [...ls, { id: uid(), denumire: "", um: "", an: "", cantitate: "", cost: "" }]);
   }
   function stergeLinie(id) {
     setLinii((ls) => (ls.length > 1 ? ls.filter((l) => l.id !== id) : ls));
@@ -14139,10 +14219,11 @@ function ReceptieConsumInternMultiForm({ grupe, onClose, onSave }) {
     if (linii.some((l) => !l.denumire)) { setError("Fiecare linie trebuie să aibă un articol selectat din nomenclator."); return; }
     if (linii.some((l) => !l.cantitate || Number(l.cantitate) <= 0)) { setError("Fiecare linie trebuie să aibă o cantitate validă, mai mare ca 0."); return; }
     if (linii.some((l) => !l.cost || Number(l.cost) <= 0)) { setError("Fiecare linie trebuie să aibă un cost de achiziție valid, mai mare ca 0."); return; }
+    if (linii.some((l) => l.esteVin && !l.an)) { setError("Anul este obligatoriu pentru liniile de vin."); return; }
     setError("");
     setSalvand(true);
     try {
-      await onSave(data, linii.map((l) => ({ denumire: l.denumire, um: l.um, cantitate: Number(l.cantitate), cost: Number(l.cost) })));
+      await onSave(data, linii.map((l) => ({ denumire: l.denumire, um: l.um, an: l.an ? Number(l.an) : null, esteVin: !!l.esteVin, cantitate: Number(l.cantitate), cost: Number(l.cost) })));
     } catch (e) {
       setError(e.message || "Eroare la salvarea recepției. Încearcă din nou.");
     } finally {
@@ -14166,21 +14247,29 @@ function ReceptieConsumInternMultiForm({ grupe, onClose, onSave }) {
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Articole recepționate</div>
           {linii.map((l, i) => (
             <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
-              <div className="col-span-5">
+              <div className="col-span-4">
                 <Field label={`Articol (linia ${i + 1})`}>
                   <select
                     className={inputCls}
-                    value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                    value={l.denumire ? `${l.denumire}|||${l.um}|||${l.an ?? ""}` : ""}
                     onChange={(e) => {
-                      const [denumire, um] = e.target.value.split("|||");
-                      actualizeazaLinie(l.id, { denumire, um });
+                      const [denumire, um, anText] = e.target.value.split("|||");
+                      const grupPotrivit = grupeSortate.find((g) => g.denumire === denumire && g.um === um && String(g.an ?? "") === anText);
+                      actualizeazaLinie(l.id, { denumire, um, an: anText || "", esteVin: !!grupPotrivit?.esteVin });
                     }}
                   >
                     <option value="">— selectați din nomenclator —</option>
                     {grupeSortate.map((g) => (
-                      <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire} ({g.um})</option>
+                      <option key={`${g.denumire}|||${g.um}|||${g.an ?? ""}`} value={`${g.denumire}|||${g.um}|||${g.an ?? ""}`}>
+                        {g.denumire} ({g.um}){g.an ? ` — ${g.an}` : ""}
+                      </option>
                     ))}
                   </select>
+                </Field>
+              </div>
+              <div className="col-span-1">
+                <Field label={l.esteVin ? "An (obligatoriu)" : "An"}>
+                  <input type="number" step="1" className={inputCls} value={l.an || ""} onChange={(e) => actualizeazaLinie(l.id, { an: e.target.value })} placeholder="—" />
                 </Field>
               </div>
               <div className="col-span-2">
@@ -14193,9 +14282,9 @@ function ReceptieConsumInternMultiForm({ grupe, onClose, onSave }) {
                   <input type="number" step="0.01" className={inputCls} value={l.cost} onChange={(e) => actualizeazaLinie(l.id, { cost: e.target.value })} />
                 </Field>
               </div>
-              <div className="col-span-2 text-xs text-stone-500 pb-1.5">
+              <div className="col-span-1 text-xs text-stone-500 pb-1.5">
                 {l.cantitate > 0 && l.cost > 0 && (
-                  <>Total: <span className="font-medium tabular-nums">{fmt(Number(l.cantitate) * Number(l.cost))} lei</span></>
+                  <>{fmt(Number(l.cantitate) * Number(l.cost))}</>
                 )}
               </div>
               <div className="col-span-1 flex justify-center pb-1.5">
@@ -14236,7 +14325,7 @@ function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, on
   let idLinieNoua = 0;
   function linieGoala() {
     idLinieNoua += 1;
-    return { key: `linie-noua-${Date.now()}-${idLinieNoua}`, denumire: "", um: "", cantitate: "", cost: "", data: todayISO() };
+    return { key: `linie-noua-${Date.now()}-${idLinieNoua}`, denumire: "", um: "", an: "", cantitate: "", cost: "", data: todayISO() };
   }
   const [liniiNoi, setLiniiNoi] = useState(() => [linieGoala()]);
   const [salvandKeyNou, setSalvandKeyNou] = useState(null);
@@ -14264,7 +14353,7 @@ function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, on
     setError("");
     setSalvandKeyNou(l.key);
     try {
-      await onAdauga(l.denumire, l.um, cantitate, cost, l.data);
+      await onAdauga(l.denumire, l.um, cantitate, cost, l.data, l.an ? Number(l.an) : null);
       eliminaLinieNoua(l.key);
     } catch (e) {
       setError(e.message || "Eroare la adăugarea stocului inițial. Încearcă din nou.");
@@ -14382,20 +14471,25 @@ function StocInitialConsumInternModal({ grupe, miscariStocInitiale, articole, on
                 <Field label={`Articol (linia ${i + 1})`}>
                   <select
                     className={inputCls}
-                    value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                    value={l.denumire ? `${l.denumire}|||${l.um}|||${l.an ?? ""}` : ""}
                     onChange={(e) => {
-                      const [denumire, um] = e.target.value.split("|||");
-                      actualizeazaLinieNoua(l.key, { denumire, um });
+                      const [denumire, um, anText] = e.target.value.split("|||");
+                      actualizeazaLinieNoua(l.key, { denumire, um, an: anText || "" });
                     }}
                   >
                     <option value="">— selectați din nomenclator —</option>
                     {grupeSortate.map((g) => (
-                      <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>{g.denumire} ({g.um})</option>
+                      <option key={`${g.denumire}|||${g.um}|||${g.an ?? ""}`} value={`${g.denumire}|||${g.um}|||${g.an ?? ""}`}>{g.denumire} ({g.um}){g.an ? ` — ${g.an}` : ""}</option>
                     ))}
                   </select>
                 </Field>
               </div>
-              <div className="col-span-2">
+              <div className="col-span-1">
+                <Field label="An">
+                  <input type="number" step="1" className={inputCls} value={l.an || ""} onChange={(e) => actualizeazaLinieNoua(l.key, { an: e.target.value })} placeholder="—" />
+                </Field>
+              </div>
+              <div className="col-span-1">
                 <Field label="Cantitate">
                   <input type="number" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinieNoua(l.key, { cantitate: e.target.value })} />
                 </Field>
@@ -14457,8 +14551,8 @@ function BonConsumForm({ grupe, onClose, onSave }) {
   }
 
   // Simulare FIFO: din ce loturi s-ar consuma cantitatea introdusă, în ordinea seq (cel mai vechi întâi).
-  function simuleazaFIFO(denumire, um, cantitate) {
-    const grup = grupe.find((g) => g.denumire === denumire && g.um === um);
+  function simuleazaFIFO(denumire, um, an, cantitate) {
+    const grup = grupe.find((g) => g.denumire === denumire && g.um === um && (g.an ?? null) === (an ?? null));
     if (!grup) return { valoare: 0, detaliu: [] };
     let ramas = cantitate;
     let valoare = 0;
@@ -14475,7 +14569,7 @@ function BonConsumForm({ grupe, onClose, onSave }) {
 
   const totalValoare = linii.reduce((sum, l) => {
     if (!l.denumire || !l.cantitate) return sum;
-    return sum + simuleazaFIFO(l.denumire, l.um, Number(l.cantitate) || 0).valoare;
+    return sum + simuleazaFIFO(l.denumire, l.um, l.an, Number(l.cantitate) || 0).valoare;
   }, 0);
 
   async function submit() {
@@ -14492,16 +14586,16 @@ function BonConsumForm({ grupe, onClose, onSave }) {
       return;
     }
     for (const l of linii) {
-      const grup = grupe.find((g) => g.denumire === l.denumire && g.um === l.um);
+      const grup = grupe.find((g) => g.denumire === l.denumire && g.um === l.um && (g.an ?? null) === (l.an ?? null));
       if (Number(l.cantitate) > (grup?.stocTotal || 0)) {
-        setError(`Stoc insuficient pentru „${l.denumire}” — disponibil: ${grup?.stocTotal || 0} ${l.um}.`);
+        setError(`Stoc insuficient pentru „${l.denumire}”${l.an ? ` (${l.an})` : ""} — disponibil: ${grup?.stocTotal || 0} ${l.um}.`);
         return;
       }
     }
     setError("");
     setSalvand(true);
     try {
-      await onSave({ data, motiv, beneficiar: beneficiar.trim(), linii: linii.map((l) => ({ denumire: l.denumire, um: l.um, cantitate: Number(l.cantitate) })) });
+      await onSave({ data, motiv, beneficiar: beneficiar.trim(), linii: linii.map((l) => ({ denumire: l.denumire, um: l.um, an: l.an ?? null, cantitate: Number(l.cantitate) })) });
     } catch (e) {
       setError(e.message || "Eroare la salvarea bonului de consum. Încearcă din nou.");
     } finally {
@@ -14532,23 +14626,23 @@ function BonConsumForm({ grupe, onClose, onSave }) {
         <div className="flex flex-col gap-2">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Articole descărcate (FIFO)</div>
           {linii.map((l, i) => {
-            const simulare = l.denumire && l.cantitate ? simuleazaFIFO(l.denumire, l.um, Number(l.cantitate) || 0) : null;
+            const simulare = l.denumire && l.cantitate ? simuleazaFIFO(l.denumire, l.um, l.an, Number(l.cantitate) || 0) : null;
             return (
               <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-5">
                   <Field label={`Articol (linia ${i + 1})`}>
                     <select
                       className={inputCls}
-                      value={l.denumire ? `${l.denumire}|||${l.um}` : ""}
+                      value={l.denumire ? `${l.denumire}|||${l.um}|||${l.an ?? ""}` : ""}
                       onChange={(e) => {
-                        const [denumire, um] = e.target.value.split("|||");
-                        actualizeazaLinie(l.id, { denumire, um });
+                        const [denumire, um, anText] = e.target.value.split("|||");
+                        actualizeazaLinie(l.id, { denumire, um, an: anText || null });
                       }}
                     >
                       <option value="">— selectați —</option>
                       {grupeDisponibile.map((g) => (
-                        <option key={`${g.denumire}|||${g.um}`} value={`${g.denumire}|||${g.um}`}>
-                          {g.denumire} (stoc: {g.stocTotal} {g.um})
+                        <option key={`${g.denumire}|||${g.um}|||${g.an ?? ""}`} value={`${g.denumire}|||${g.um}|||${g.an ?? ""}`}>
+                          {g.denumire}{g.an ? ` — ${g.an}` : ""} (stoc: {g.stocTotal} {g.um})
                         </option>
                       ))}
                     </select>

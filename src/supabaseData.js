@@ -581,6 +581,7 @@ export async function getArticolePangar(parohieId) {
     pretVanzare: Number(a.pret_vanzare),
     cod: a.cod,
     categorieBVC: a.categorie_bvc,
+    an: a.an != null ? Number(a.an) : null,
     stoc: Number(a.stoc),
     stocReferinta: Number(a.stoc_referinta),
     locked: a.locked,
@@ -648,12 +649,12 @@ export async function getMiscariStocPangar(parohieId) {
 // Universal valabil: după crearea produsului pentru parohia curentă, e propagat automat (via
 // funcția SQL `propaga_produs_toate_parohiile`, SECURITY DEFINER — ocolește RLS doar pt acest
 // scop) către toate CELELALTE parohii care nu-l au deja, cu stoc 0 pentru ele.
-export async function creeazaArticolPangar(parohieId, { seq, bazaCod, denumire, um, pretAchizitie, pretVanzare, cod, categorieBVC }) {
+export async function creeazaArticolPangar(parohieId, { seq, bazaCod, denumire, um, pretAchizitie, pretVanzare, cod, categorieBVC, an }) {
   const { data, error } = await supabase
     .from("articole_pangar")
     .insert({
       parohie_id: parohieId, seq, baza_cod: bazaCod, denumire, um,
-      pret_achizitie: pretAchizitie, pret_vanzare: pretVanzare, cod, categorie_bvc: categorieBVC,
+      pret_achizitie: pretAchizitie, pret_vanzare: pretVanzare, cod, categorie_bvc: categorieBVC, an: an || null,
       stoc: 0, stoc_referinta: 0, locked: true,
     })
     .select()
@@ -662,7 +663,7 @@ export async function creeazaArticolPangar(parohieId, { seq, bazaCod, denumire, 
 
   const { error: errPropagare } = await supabase.rpc("propaga_produs_toate_parohiile", {
     p_cod: cod, p_baza_cod: bazaCod, p_denumire: denumire, p_um: um,
-    p_pret_achizitie: pretAchizitie, p_pret_vanzare: pretVanzare, p_categorie_bvc: categorieBVC, p_seq: seq,
+    p_pret_achizitie: pretAchizitie, p_pret_vanzare: pretVanzare, p_categorie_bvc: categorieBVC, p_seq: seq, p_an: an || null,
   });
   if (errPropagare) {
     // Produsul curent tot s-a creat cu succes — doar propagarea la celelalte parohii a eșuat.
@@ -673,7 +674,8 @@ export async function creeazaArticolPangar(parohieId, { seq, bazaCod, denumire, 
   return {
     id: data.id, seq: data.seq, bazaCod: data.baza_cod, denumire: data.denumire, um: data.um,
     pretAchizitie: Number(data.pret_achizitie), pretVanzare: Number(data.pret_vanzare), cod: data.cod,
-    categorieBVC: data.categorie_bvc, stoc: 0, stocReferinta: 0, locked: true, imagineUrl: null,
+    categorieBVC: data.categorie_bvc, an: data.an != null ? Number(data.an) : null,
+    stoc: 0, stocReferinta: 0, locked: true, imagineUrl: null,
   };
 }
 
@@ -687,14 +689,15 @@ export async function creeazaNomenclatorStandardPangar(parohieId, produseStandar
   const randuri = produseStandard.map((p) => ({
     parohie_id: parohieId, seq: p.seq, baza_cod: p.bazaCod, denumire: p.denumire, um: p.um,
     pret_achizitie: p.pretAchizitie, pret_vanzare: p.pretVanzare, cod: p.cod,
-    categorie_bvc: p.categorieBVC, stoc: 0, stoc_referinta: 0, locked: true,
+    categorie_bvc: p.categorieBVC, an: p.an || null, stoc: 0, stoc_referinta: 0, locked: true,
   }));
   const { data, error } = await supabase.from("articole_pangar").insert(randuri).select();
   if (error) throw error;
   return (data || []).map((a) => ({
     id: a.id, seq: a.seq, bazaCod: a.baza_cod, denumire: a.denumire, um: a.um,
     pretAchizitie: Number(a.pret_achizitie), pretVanzare: Number(a.pret_vanzare), cod: a.cod,
-    categorieBVC: a.categorie_bvc, stoc: 0, stocReferinta: 0, locked: true, imagineUrl: null,
+    categorieBVC: a.categorie_bvc, an: a.an != null ? Number(a.an) : null,
+    stoc: 0, stocReferinta: 0, locked: true, imagineUrl: null,
   }));
 }
 
@@ -708,7 +711,7 @@ export async function getNomenclatorCanonicPangar() {
   return (data || []).map((p) => ({
     seq: p.seq, bazaCod: p.baza_cod, denumire: p.denumire, um: p.um,
     pretAchizitie: Number(p.pret_achizitie), pretVanzare: Number(p.pret_vanzare),
-    cod: p.cod, categorieBVC: p.categorie_bvc,
+    cod: p.cod, categorieBVC: p.categorie_bvc, an: p.an != null ? Number(p.an) : null,
   }));
 }
 
