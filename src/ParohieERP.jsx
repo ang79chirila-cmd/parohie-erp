@@ -9930,9 +9930,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     document: e.document,
     cod: e.cod,
     denumire: e.denumire,
-    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
-    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
-    stoc: `${e.stocCodDupa} ${e.um}`,
+    cantitateIntrata: e.tip === "intrare" ? fmtCant(e.cantitate) : "",
+    cantitateIesita: e.tip === "iesire" ? fmtCant(e.cantitate) : "",
+    stoc: `${fmtCant(e.stocCodDupa)} ${e.um}`,
     valoareStoc: fmt(e.valoareCodDupa),
   })), [registruPangarAn]);
 
@@ -9965,9 +9965,9 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       data: fmtDataJurnal(e.data),
       document: e.document,
       cod: e.cod,
-      cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
-      cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
-      stoc: `${e.stocProdusDupa} ${e.um}`,
+      cantitateIntrata: e.tip === "intrare" ? fmtCant(e.cantitate) : "",
+      cantitateIesita: e.tip === "iesire" ? fmtCant(e.cantitate) : "",
+      stoc: `${fmtCant(e.stocProdusDupa)} ${e.um}`,
       valoareStoc: fmt(e.valoareProdusDupa),
     }));
     if (evenimenteProdusAn.length === 0) return randuri;
@@ -9980,7 +9980,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     const valoareStocLaFinal = evenimenteProdusAn[evenimenteProdusAn.length - 1].valoareProdusDupa;
     randuri.push({
       nrCrt: "", data: "", document: "TOTAL", cod: "",
-      cantitateIntrata: totalIntrata, cantitateIesita: totalIesita,
+      cantitateIntrata: fmtCant(totalIntrata), cantitateIesita: fmtCant(totalIesita),
       stoc: "", valoareStoc: fmt(valoareStocLaFinal),
     });
     return randuri;
@@ -10019,10 +10019,10 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   const randuriFisaSintetica = [
     {
       eticheta: "Cantitate",
-      stocInitial: fisaSinteticaProdus.stocInitial,
-      cantitateIntrata: fisaSinteticaProdus.cantitateIntrata,
-      cantitateIesita: fisaSinteticaProdus.cantitateIesita,
-      stocFinal: fisaSinteticaProdus.stocFinal,
+      stocInitial: fmtCant(fisaSinteticaProdus.stocInitial),
+      cantitateIntrata: fmtCant(fisaSinteticaProdus.cantitateIntrata),
+      cantitateIesita: fmtCant(fisaSinteticaProdus.cantitateIesita),
+      stocFinal: fmtCant(fisaSinteticaProdus.stocFinal),
     },
     {
       eticheta: "Valoare la preț de vânzare (lei)",
@@ -10104,7 +10104,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 <div className="text-sm font-medium text-stone-700">Fișă cronologică de produs</div>
                 <p className="text-xs text-stone-500">Toate tranzacțiile din {anPangar} ale produsului „{produsInfoSelectat?.denumire || "—"}" — toate codurile lui, cronologic, cu stoc și valoare de stoc agregate la nivel de produs.</p>
               </div>
-              <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaCronologica} rows={randuriFisaCronologica} parohie={state.parohie} extraCoperta={extraCopertaTotaluriPangar} />
+              <ExportMenu titlu={`FISA CRONOLOGICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaCronologica} rows={randuriFisaCronologica} parohie={state.parohie} />
             </div>
 
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -10112,7 +10112,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                 <div className="text-sm font-medium text-stone-700">Fișă sintetică de produs</div>
                 <p className="text-xs text-stone-500">Stoc inițial / intrări / ieșiri / stoc final pentru „{produsInfoSelectat?.denumire || "—"}" în {anPangar}, cantitativ și valoric (la preț de vânzare).</p>
               </div>
-              <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaSintetica} rows={randuriFisaSintetica} parohie={state.parohie} extraCoperta={extraCopertaTotaluriPangar} />
+              <ExportMenu titlu={`FISA SINTETICA DE PRODUS - ${(produsInfoSelectat?.denumire || "").toUpperCase()} PE ANUL ${anPangar}`} columns={coloaneFisaSintetica} rows={randuriFisaSintetica} parohie={state.parohie} />
             </div>
           </div>
         </Modal>
@@ -10997,7 +10997,7 @@ function ReceptieEditForm({ miscare, articole, opLegat, alteLiniiNrcd, onAdaugaL
         {alteLiniiNrcd && alteLiniiNrcd.length > 0 && (
           <div className="text-xs text-stone-500">
             <span className="font-medium">Alte produse pe acest NRCD:</span>{" "}
-            {alteLiniiNrcd.map((l) => `${l.articolDenumire} (${l.cantitate} buc.)`).join(", ")}
+            {alteLiniiNrcd.map((l) => `${l.articolDenumire} (${fmtCant(l.cantitate)} buc.)`).join(", ")}
           </div>
         )}
 
@@ -11377,7 +11377,7 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
                   <select className={inputCls} value={l.bazaCod} onChange={(e) => actualizeazaLinie(l.id, { bazaCod: e.target.value })}>
                     <option value="">— selectați —</option>
                     {grupuriDisponibile.map((g) => (
-                      <option key={g.bazaCod} value={g.bazaCod}>{g.denumire} (stoc: {g.stocTotal} {g.um})</option>
+                      <option key={g.bazaCod} value={g.bazaCod}>{g.denumire} (stoc: {fmtCant(g.stocTotal)} {g.um})</option>
                     ))}
                   </select>
                 </Field>
@@ -12156,7 +12156,7 @@ function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, partene
                       <select className={inputCls} value={l.bazaCod} onChange={(e) => actualizeazaLinie(l.id, { bazaCod: e.target.value, cantitate: "", sumaIncasata: undefined })}>
                         <option value="">— selectați —</option>
                         {grupuriDisponibile.map((g) => (
-                          <option key={g.bazaCod} value={g.bazaCod}>{g.denumire} (stoc: {g.stocTotal} {g.um})</option>
+                          <option key={g.bazaCod} value={g.bazaCod}>{g.denumire} (stoc: {fmtCant(g.stocTotal)} {g.um})</option>
                         ))}
                       </select>
                     </Field>
@@ -13523,9 +13523,9 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   ];
   const randuriRegistruConsumIntern = useMemo(() => registruConsumInternAn.map((e, i) => ({
     nrCrt: i + 1, data: fmtDataJurnal(e.data), document: e.document, denumire: e.denumire, beneficiar: e.tert,
-    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
-    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
-    stoc: `${e.stocLotDupa} ${e.um}`, valoareStoc: fmt(e.valoareLotDupa),
+    cantitateIntrata: e.tip === "intrare" ? fmtCant(e.cantitate) : "",
+    cantitateIesita: e.tip === "iesire" ? fmtCant(e.cantitate) : "",
+    stoc: `${fmtCant(e.stocLotDupa)} ${e.um}`, valoareStoc: fmt(e.valoareLotDupa),
   })), [registruConsumInternAn]);
 
   // Selector de produs pentru fișele 2 și 3, implicit primul din nomenclator.
@@ -13555,9 +13555,9 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   ];
   const randuriFisaCronologicaConsumIntern = useMemo(() => evenimenteProdusAnConsumIntern.map((e, i) => ({
     nrCrt: i + 1, data: fmtDataJurnal(e.data), document: e.document, beneficiar: e.tert,
-    cantitateIntrata: e.tip === "intrare" ? e.cantitate : "",
-    cantitateIesita: e.tip === "iesire" ? e.cantitate : "",
-    stoc: `${e.stocProdusDupa} ${e.um}`, valoareStoc: fmt(e.valoareProdusDupa),
+    cantitateIntrata: e.tip === "intrare" ? fmtCant(e.cantitate) : "",
+    cantitateIesita: e.tip === "iesire" ? fmtCant(e.cantitate) : "",
+    stoc: `${fmtCant(e.stocProdusDupa)} ${e.um}`, valoareStoc: fmt(e.valoareProdusDupa),
   })), [evenimenteProdusAnConsumIntern]);
 
   // 3. FIȘĂ SINTETICĂ DE PRODUS — stoc inițial (snapshot înainte de an) / intrat / ieșit / stoc final,
@@ -13592,10 +13592,10 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   ];
   const randuriFisaSinteticaConsumIntern = [
     {
-      eticheta: "Cantitate", stocInitial: fisaSinteticaProdusConsumIntern.stocInitial,
-      cantitateIntrata: fisaSinteticaProdusConsumIntern.cantitateIntrata,
-      cantitateIesita: fisaSinteticaProdusConsumIntern.cantitateIesita,
-      stocFinal: fisaSinteticaProdusConsumIntern.stocFinal,
+      eticheta: "Cantitate", stocInitial: fmtCant(fisaSinteticaProdusConsumIntern.stocInitial),
+      cantitateIntrata: fmtCant(fisaSinteticaProdusConsumIntern.cantitateIntrata),
+      cantitateIesita: fmtCant(fisaSinteticaProdusConsumIntern.cantitateIesita),
+      stocFinal: fmtCant(fisaSinteticaProdusConsumIntern.stocFinal),
     },
     {
       eticheta: "Valoare la cost de intrare (lei)", stocInitial: fmt(fisaSinteticaProdusConsumIntern.valoareInitial),
@@ -13670,7 +13670,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                   {g.esteVin && <span className="ml-1.5 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-1">vin</span>}
                 </td>
                 <td className="px-3 py-1 text-center text-stone-500">{g.an || "—"}</td>
-                <td className="px-3 py-1 text-right tabular-nums font-medium">{g.stocTotal}</td>
+                <td className="px-3 py-1 text-right tabular-nums font-medium">{fmtCant(g.stocTotal)}</td>
                 <td className="px-3 py-1 text-xs text-stone-500">
                   {g.loturi.filter((l) => l.stoc > 0).length === 0
                     ? "—"
@@ -14622,7 +14622,7 @@ function BonConsumForm({ grupe, onClose, onSave }) {
                       <option value="">— selectați —</option>
                       {grupeDisponibile.map((g) => (
                         <option key={`${g.denumire}|||${g.um}|||${g.an ?? ""}`} value={`${g.denumire}|||${g.um}|||${g.an ?? ""}`}>
-                          {g.denumire}{g.an ? ` — ${g.an}` : ""} (stoc: {g.stocTotal} {g.um})
+                          {g.denumire}{g.an ? ` — ${g.an}` : ""} (stoc: {fmtCant(g.stocTotal)} {g.um})
                         </option>
                       ))}
                     </select>
