@@ -4393,6 +4393,10 @@ export default function ParohieERP() {
 
   const [receptieRapidaArticolId, setReceptieRapidaArticolId] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // Avertisment vizibil, la nivelul întregii aplicații, dacă încărcarea inițială a datelor din
+  // Supabase sau auto-salvarea locală (date_locale) eșuează — altfel eroarea rămâne doar în
+  // consola browserului și utilizatorul nu are niciun semnal că ceva nu s-a încărcat/salvat.
+  const [eroareSincronizare, setEroareSincronizare] = useState("");
 
   // Autentificare reală, pe server (Supabase Auth) — CIF + utilizator + parolă → rol fix,
   // verificat de server, nu auto-ales. `session` rămâne CIF-ul (compatibil cu load/save state
@@ -4471,6 +4475,7 @@ export default function ParohieERP() {
     if (!loaded || !contActiv?.parohieId) return;
     (async () => {
       try {
+        setEroareSincronizare("");
         const [prevederiSupabase, operatiuniSupabase, articolePangarSupabase, miscariStocPangarSupabase, datoriiFurnizoriSupabase, datoriiFurnizoriGeneraleSupabase, partenerSupabase, locuriSupabase, concesiuniSupabase, persoaneSupabase, bunuriPatrimoniuSupabase, corespondentaSupabase, arhivaSupabase, inventarieriSupabase, dateLocaleSupabase, organismeSupabase, articoleConsumInternSupabase, miscariConsumInternSupabase, bonuriConsumSupabase] = await Promise.all([
           getToatePrevederile(contActiv.parohieId),
           getOperatiuni(contActiv.parohieId),
@@ -4625,6 +4630,9 @@ export default function ParohieERP() {
         }
       } catch (e) {
         console.error("Eroare la încărcarea datelor din Supabase:", e);
+        setEroareSincronizare(
+          "Nu s-au putut încărca datele din Supabase (verificați conexiunea la internet). Datele afișate pot fi incomplete sau vechi — reîncărcați pagina și încercați din nou."
+        );
       }
     })();
   }, [loaded, contActiv?.parohieId, refreshTrigger]);
@@ -4644,7 +4652,13 @@ export default function ParohieERP() {
         conturi: state.conturi,
         contoare: state.contoare,
         dataCreareInstanta: state.dataCreareInstanta,
-      }).catch((e) => console.error("Eroare la salvarea datelor parohiei:", e));
+      }).then(() => setEroareSincronizare(""))
+        .catch((e) => {
+          console.error("Eroare la salvarea datelor parohiei:", e);
+          setEroareSincronizare(
+            "Ultimele modificări (date parohie, exerciții financiare, tarife, jurnal audit) NU s-au salvat — verificați conexiunea la internet. Modificările rămân doar pe acest ecran până la salvarea cu succes."
+          );
+        });
     }, 600);
     return () => clearTimeout(timeoutId);
   }, [
@@ -5387,6 +5401,21 @@ export default function ParohieERP() {
           </Modal>
         )}
       </header>
+
+      {eroareSincronizare && (
+        <div className="bg-amber-50 border-b border-amber-300 text-amber-900 text-sm px-6 py-2 flex items-center justify-between gap-3 shrink-0">
+          <span className="flex items-center gap-2">
+            <AlertTriangle size={15} className="shrink-0" />
+            {eroareSincronizare}
+          </span>
+          <button
+            onClick={() => setEroareSincronizare("")}
+            className="text-amber-700 hover:text-amber-900 shrink-0 text-xs underline"
+          >
+            Am înțeles
+          </button>
+        </div>
+      )}
 
       {/* Main */}
       <main className="flex-1 overflow-y-auto">
