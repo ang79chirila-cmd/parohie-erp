@@ -2378,10 +2378,22 @@ function imprimaHtmlFaraPopup(titlu, htmlBody) {
   iframe.style.height = "0";
   iframe.style.border = "0";
   document.body.appendChild(iframe);
+  if (!iframe.contentWindow) {
+    window.alert("Nu s-a putut pregăti fereastra de printare în acest browser. Încearcă din nou sau alt browser.");
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    return;
+  }
   const cleanup = () => {
     setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 1000);
   };
-  iframe.onload = () => {
+  // Declanșăm printarea o singură dată — fie la evenimentul "load" (calea normală), fie, dacă
+  // acesta întârzie sau nu se declanșează deloc (comportament inconsecvent al unor browsere pentru
+  // iframe-uri populate cu document.write), forțat după 400ms. Fără plasa asta, un singur browser
+  // cu "load" nefiabil ne-ar aduce înapoi exact la simptomul inițial — "nu se întâmplă nimic".
+  let sImprimat = false;
+  const tiparesteOData = () => {
+    if (sImprimat) return;
+    sImprimat = true;
     try {
       iframe.contentWindow.focus();
       iframe.contentWindow.print();
@@ -2391,10 +2403,12 @@ function imprimaHtmlFaraPopup(titlu, htmlBody) {
     if (iframe.contentWindow) {
       iframe.contentWindow.onafterprint = cleanup;
     }
-    // Plasă de siguranță: dacă evenimentul afterprint nu se declanșează (unele browsere),
-    // iframe-ul tot dispare, doar puțin mai târziu.
+    // Dacă browserul nu declanșează deloc "afterprint" (unele browsere/setări), iframe-ul tot
+    // dispare, doar mai târziu — nu rămâne niciodată agățat permanent în pagină.
     setTimeout(cleanup, 60000);
   };
+  iframe.onload = tiparesteOData;
+  setTimeout(tiparesteOData, 400);
   const doc = iframe.contentWindow.document;
   doc.open();
   doc.write(`<html><head><title>${xmlEscape(titlu)}</title></head><body>${htmlBody}</body></html>`);
