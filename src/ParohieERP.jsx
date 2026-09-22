@@ -2368,7 +2368,7 @@ function exportXML(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
 function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie, extraCoperta = "") {
   const win = window.open("", "_blank");
   if (!win) {
-    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
     return;
   }
   const p = parohie || {};
@@ -2998,7 +2998,10 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
   // directă — la fel ca restul rapoartelor, care deschid o fereastră/tab, lăsând userul să aleagă
   // printare sau salvare din propriile controale ale browserului.
   const blobUrl = doc.output("bloburl");
-  window.open(blobUrl, "_blank");
+  const win = window.open(blobUrl, "_blank");
+  if (!win) {
+    window.alert("Fereastra cu PDF-ul a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
+  }
 }
 
 
@@ -3066,7 +3069,7 @@ function exportXMLGrupat(titlu, grupuri, parohie, dataRaportCurenta) {
 function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) {
-    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
     return;
   }
   const p = parohie || {};
@@ -3183,7 +3186,7 @@ function grupeazaDocumente(operatiuni, tip) {
 function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele, dataTiparireCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) {
-    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
     return;
   }
   const p = parohie || {};
@@ -3325,7 +3328,7 @@ function construiesteRaportAnualComplet(state, an) {
 function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) {
-    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
     return;
   }
   const p = parohie || {};
@@ -3477,7 +3480,7 @@ function exportRaportAnualXLSX(raport, parohie) {
 function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
   if (!win) {
-    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
     return;
   }
   const p = parohie || {};
@@ -6288,7 +6291,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
           key={inst.id}
           conturi={state.conturi}
           an={prevederiInfo.anUrmator}
-          onValidate={(linii) => { prevederiInfo.onValidat(linii); setInstantePrevederiUrmator((l) => l.filter((i) => i.id !== inst.id)); }}
+          onValidate={async (linii) => { await prevederiInfo.onValidat(linii); setInstantePrevederiUrmator((l) => l.filter((i) => i.id !== inst.id)); }}
           onClose={() => setInstantePrevederiUrmator((l) => l.filter((i) => i.id !== inst.id))}
         />
       ))}
@@ -7123,9 +7126,13 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                         type="button"
                         title="Șterge această linie de virament"
                         className="text-stone-300 hover:text-rose-600"
-                        onClick={() => {
+                        onClick={async () => {
                           if (window.confirm(`Ștergi linia de virament din ${fmtDataJurnal(r.op.data)} — ${fmt(r.op.suma)} lei (${r.eCasa ? "Casă" : r.eDepozit ? "Depozit bancar" : "Bancă"})?`)) {
-                            stergeLinieVirament(r.op);
+                            try {
+                              await stergeLinieVirament(r.op);
+                            } catch (e) {
+                              window.alert(e.message || "Eroare la ștergerea liniei de virament. Încearcă din nou.");
+                            }
                           }
                         }}
                       >
@@ -8172,6 +8179,7 @@ function TransferForm({ conturi, operatiuni, directieInitiala = "casa-banca", on
   const [scadenta, setScadenta] = useState("");
   const [error, setError] = useState("");
   const [avertismentDuplicat, setAvertismentDuplicat] = useState(null);
+  const [salvand, setSalvand] = useState(false);
 
   const eDepozit = directie === "deschidere-depozit" || directie === "inchidere-depozit";
   const contTransfer = eDepozit ? "5081" : "581";
@@ -8199,7 +8207,7 @@ function TransferForm({ conturi, operatiuni, directieInitiala = "casa-banca", on
     );
   }
 
-  function submit(ignoraDuplicat) {
+  async function submit(ignoraDuplicat) {
     const sumaNum = Number(suma);
     if (!suma || isNaN(sumaNum) || sumaNum <= 0) {
       setError("Introduceți o sumă validă, mai mare ca 0.");
@@ -8220,10 +8228,17 @@ function TransferForm({ conturi, operatiuni, directieInitiala = "casa-banca", on
       : directie === "deschidere-depozit" ? (laturaDepozit === "casa" ? "numerar" : "transfer") : "depozit";
     const intModPlata = directie === "casa-banca" ? "transfer" : directie === "banca-casa" ? "numerar"
       : directie === "deschidere-depozit" ? "depozit" : (laturaDepozit === "casa" ? "numerar" : "transfer");
-    onSave([
-      { tip: "plata", contId: contTransfer, data, suma: sumaNum, modPlata: iesModPlata, tert: "", explicatie: explicatieTransfer },
-      { tip: "incasare", contId: contTransfer, data, suma: sumaNum, modPlata: intModPlata, tert: "", explicatie: explicatieTransfer },
-    ]);
+    setSalvand(true);
+    try {
+      await onSave([
+        { tip: "plata", contId: contTransfer, data, suma: sumaNum, modPlata: iesModPlata, tert: "", explicatie: explicatieTransfer },
+        { tip: "incasare", contId: contTransfer, data, suma: sumaNum, modPlata: intModPlata, tert: "", explicatie: explicatieTransfer },
+      ]);
+    } catch (e) {
+      setError(e.message || "Eroare la salvarea transferului. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
   }
 
   return (
@@ -8282,11 +8297,11 @@ function TransferForm({ conturi, operatiuni, directieInitiala = "casa-banca", on
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">{avertismentDuplicat}</p>
         )}
         <div className="flex justify-end gap-2 mt-2">
-          <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
           {avertismentDuplicat ? (
-            <Btn variant="danger" onClick={() => submit(true)}>Da, adaugă oricum</Btn>
+            <Btn variant="danger" onClick={() => submit(true)} disabled={salvand}>{salvand ? "Se salvează..." : "Da, adaugă oricum"}</Btn>
           ) : (
-            <Btn variant="gold" onClick={() => submit(false)}>Salvează transferul</Btn>
+            <Btn variant="gold" onClick={() => submit(false)} disabled={salvand}>{salvand ? "Se salvează..." : "Salvează transferul"}</Btn>
           )}
         </div>
       </div>
@@ -8365,6 +8380,21 @@ function PerecheViramentEditForm({ perechea, onClose, onSave }) {
 
 function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onClose }) {
   const [confirmareStergere, setConfirmareStergere] = useState(null); // index din perechi | null
+  const [eroareStergere, setEroareStergere] = useState("");
+  const [stergand, setStergand] = useState(false);
+
+  async function confirmaStergere(p) {
+    setStergand(true);
+    setEroareStergere("");
+    try {
+      await onSterge(p);
+      setConfirmareStergere(null);
+    } catch (e) {
+      setEroareStergere(e.message || "Eroare la ștergerea transferului. Încearcă din nou.");
+    } finally {
+      setStergand(false);
+    }
+  }
 
   return (
     <Modal title="Editare/ștergere transferuri interne (581/5081)" onClose={onClose} wide>
@@ -8397,14 +8427,14 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
                     <td className="px-2 py-1">
                       {!permisiuni.citireOnly && (
                         <div className="flex gap-1.5 justify-end">
-                          <Btn variant="gold" onClick={() => onModifica(p)}>Modifică</Btn>
+                          <Btn variant="gold" onClick={() => onModifica(p)} disabled={stergand}>Modifică</Btn>
                           {confirmareStergere === i ? (
                             <>
-                              <Btn variant="danger" onClick={async () => { await onSterge(p); setConfirmareStergere(null); }}>Confirmă</Btn>
-                              <Btn variant="ghost" onClick={() => setConfirmareStergere(null)}>Anulează</Btn>
+                              <Btn variant="danger" onClick={() => confirmaStergere(p)} disabled={stergand}>{stergand ? "Se șterge..." : "Confirmă"}</Btn>
+                              <Btn variant="ghost" onClick={() => { setConfirmareStergere(null); setEroareStergere(""); }} disabled={stergand}>Anulează</Btn>
                             </>
                           ) : (
-                            <Btn variant="danger" onClick={() => setConfirmareStergere(i)}>Șterge</Btn>
+                            <Btn variant="danger" onClick={() => setConfirmareStergere(i)} disabled={stergand}>Șterge</Btn>
                           )}
                         </div>
                       )}
@@ -8418,6 +8448,7 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
             </tbody>
           </table>
         </div>
+        {eroareStergere && <p className="text-rose-600 text-xs">{eroareStergere}</p>}
         <div className="flex justify-end border-t border-stone-200 pt-3">
           <Btn variant="ghost" onClick={onClose}>Închide</Btn>
         </div>
@@ -13920,15 +13951,24 @@ function ReceptieConsumEditForm({ miscare, lot, onClose, onSave }) {
   const [data, setData] = useState(miscare.data);
   const [error, setError] = useState("");
   const [cerutConfirmare, setCerutConfirmare] = useState(false);
+  const [salvand, setSalvand] = useState(false);
 
-  function submit() {
+  async function submit() {
     const cant = Number(cantitate);
     const cost = Number(costUnitar);
     if (!cant || cant <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
     if (cost < 0) { setError("Costul nu poate fi negativ."); return; }
     if (!data) { setError("Data e obligatorie."); return; }
     setError("");
-    onSave({ cantitate: cant, costUnitar: cost, data });
+    setSalvand(true);
+    try {
+      await onSave({ cantitate: cant, costUnitar: cost, data });
+    } catch (e) {
+      setCerutConfirmare(false);
+      setError(e.message || "Eroare la salvarea recepției. Încearcă din nou.");
+    } finally {
+      setSalvand(false);
+    }
   }
 
   return (
@@ -13956,11 +13996,11 @@ function ReceptieConsumEditForm({ miscare, lot, onClose, onSave }) {
           </p>
         )}
         <div className="flex justify-end gap-2 border-t border-stone-200 pt-3">
-          <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
+          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Renunță</Btn>
           {!cerutConfirmare ? (
-            <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
+            <Btn variant="gold" onClick={() => setCerutConfirmare(true)} disabled={salvand}>Salvează</Btn>
           ) : (
-            <Btn variant="gold" onClick={submit}>Da, confirmă modificarea</Btn>
+            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
           )}
         </div>
       </div>
