@@ -2365,12 +2365,43 @@ function exportXML(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
   URL.revokeObjectURL(url);
 }
 
+// Tipărire fără fereastră nouă — printr-un <iframe> ascuns, injectat direct în pagina curentă.
+// Spre deosebire de window.open(), un iframe nu e considerat niciodată fereastră pop-up de către
+// niciun browser, politică de organizație sau extensie: nu poate fi blocat. Elimină complet
+// dependența (și punctul de eșec) pe care window.open() o introducea la fiecare generare de raport.
+function imprimaHtmlFaraPopup(titlu, htmlBody) {
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+  const cleanup = () => {
+    setTimeout(() => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); }, 1000);
+  };
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      window.alert("Nu s-a putut deschide fereastra de printare. Încearcă din nou.");
+    }
+    if (iframe.contentWindow) {
+      iframe.contentWindow.onafterprint = cleanup;
+    }
+    // Plasă de siguranță: dacă evenimentul afterprint nu se declanșează (unele browsere),
+    // iframe-ul tot dispare, doar puțin mai târziu.
+    setTimeout(cleanup, 60000);
+  };
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`<html><head><title>${xmlEscape(titlu)}</title></head><body>${htmlBody}</body></html>`);
+  doc.close();
+}
+
 function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie, extraCoperta = "") {
-  const win = window.open("", "_blank");
-  if (!win) {
-    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
-    return;
-  }
   const p = parohie || {};
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
 
@@ -2460,7 +2491,7 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
       </td></tr>
     </tfoot>`;
 
-  win.document.write(`<html><head><title>${xmlEscape(titlu)}</title>${style}</head><body>
+  imprimaHtmlFaraPopup(titlu, `${style}
     ${coperta}
     <div class="continut">
       <table class="raport">
@@ -2469,10 +2500,7 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
         <tbody>${body}</tbody>
       </table>
     </div>
-  </body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
+  `);
 }
 
 // Variantă DEDICATĂ, pe jsPDF + AutoTable, doar pentru Jurnalul de Venituri și Cheltuieli —
@@ -2994,14 +3022,16 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
     doc.addImage(LOGOURI_PARTENERI_BASE64, "PNG", xLogo, yLogo, latimeLogo, inaltimeLogo);
   }
 
-  // Deschidem PDF-ul într-un tab nou (vizualizatorul PDF nativ al browserului), nu descărcare
-  // directă — la fel ca restul rapoartelor, care deschid o fereastră/tab, lăsând userul să aleagă
-  // printare sau salvare din propriile controale ale browserului.
+  // Descărcare directă a fișierului PDF deja construit, printr-un link ascuns — nu necesită
+  // window.open() (deci nu poate fi niciodată blocată de pop-up blocker/politici de browser).
+  // Userul primește fișierul .pdf direct în Descărcări, gata pentru printare sau atașare.
   const blobUrl = doc.output("bloburl");
-  const win = window.open(blobUrl, "_blank");
-  if (!win) {
-    window.alert("Fereastra cu PDF-ul a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
-  }
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `Jurnal-venituri-cheltuieli-${anSelectat}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 
@@ -3067,11 +3097,6 @@ function exportXMLGrupat(titlu, grupuri, parohie, dataRaportCurenta) {
 }
 
 function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, formatHartie) {
-  const win = window.open("", "_blank");
-  if (!win) {
-    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
-    return;
-  }
   const p = parohie || {};
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
 
@@ -3142,7 +3167,7 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
       </div>`;
   }).join("");
 
-  win.document.write(`<html><head><title>${xmlEscape(titlu)}</title>${style}</head><body>
+  imprimaHtmlFaraPopup(titlu, `${style}
     ${coperta}
     <div class="continut">
       <table class="raport-grupat">
@@ -3161,10 +3186,7 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
         <span>Data: ${azi}</span>
       </div>
     </div>
-  </body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
+  `);
 }
 
 // Reconstituie documentele (Chitanță/Ordin de plată) din operațiunile-linie individuale,
@@ -3184,11 +3206,6 @@ function grupeazaDocumente(operatiuni, tip) {
 }
 
 function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele, dataTiparireCurenta, orientare, formatHartie) {
-  const win = window.open("", "_blank");
-  if (!win) {
-    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
-    return;
-  }
   const p = parohie || {};
   const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
 
@@ -3267,10 +3284,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
     })
     .join("");
 
-  win.document.write(`<html><head><title>${xmlEscape(tipEtichetat)}</title>${style}</head><body>${paginile}</body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
+  imprimaHtmlFaraPopup(tipEtichetat, `${style}${paginile}`);
 }
 
 // Versiune generică: tipărește orice tip de document (NRCD, Bon de consum, Proces-verbal, Corespondență),
@@ -3326,11 +3340,6 @@ function construiesteRaportAnualComplet(state, an) {
 }
 
 function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
-  const win = window.open("", "_blank");
-  if (!win) {
-    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
-    return;
-  }
   const p = parohie || {};
   // Raportul anual de sinteză e prin definiție un document de sfârșit de exercițiu — datat mereu
   // 31.12.{an}, indiferent de data reală la care se generează/reprintă (azi).
@@ -3427,10 +3436,7 @@ function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
       </div>
     </div>`;
 
-  win.document.write(`<html><head><title>Raport anual de sinteză ${raport.an}</title>${style}</head><body>${coperta}${paginaFinanciar}${paginaModule}</body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
+  imprimaHtmlFaraPopup(`Raport anual de sinteză ${raport.an}`, `${style}${coperta}${paginaFinanciar}${paginaModule}`);
 }
 
 function exportRaportAnualXLSX(raport, parohie) {
@@ -3478,11 +3484,6 @@ function exportRaportAnualXLSX(raport, parohie) {
 }
 
 function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientare, formatHartie) {
-  const win = window.open("", "_blank");
-  if (!win) {
-    window.alert("Fereastra de printare a fost blocată de browser. Permiteți ferestrele pop-up pentru acest site (de obicei printr-o iconiță din bara de adresă) și încercați din nou.");
-    return;
-  }
   const p = parohie || {};
   const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
 
@@ -3541,10 +3542,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
     })
     .join("");
 
-  win.document.write(`<html><head><title>${xmlEscape(tipEtichetat)}</title>${style}</head><body>${paginile}</body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
+  imprimaHtmlFaraPopup(tipEtichetat, `${style}${paginile}`);
 }
 
 function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [], extraCoperta = "", infoSelectie = null }) {
