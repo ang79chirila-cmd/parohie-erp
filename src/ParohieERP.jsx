@@ -2367,7 +2367,10 @@ function exportXML(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
 
 function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie, extraCoperta = "") {
   const win = window.open("", "_blank");
-  if (!win) return;
+  if (!win) {
+    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    return;
+  }
   const p = parohie || {};
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
 
@@ -3062,7 +3065,10 @@ function exportXMLGrupat(titlu, grupuri, parohie, dataRaportCurenta) {
 
 function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
-  if (!win) return;
+  if (!win) {
+    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    return;
+  }
   const p = parohie || {};
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
 
@@ -3176,7 +3182,10 @@ function grupeazaDocumente(operatiuni, tip) {
 
 function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele, dataTiparireCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
-  if (!win) return;
+  if (!win) {
+    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    return;
+  }
   const p = parohie || {};
   const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
 
@@ -3315,7 +3324,10 @@ function construiesteRaportAnualComplet(state, an) {
 
 function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
   const win = window.open("", "_blank");
-  if (!win) return;
+  if (!win) {
+    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    return;
+  }
   const p = parohie || {};
   // Raportul anual de sinteză e prin definiție un document de sfârșit de exercițiu — datat mereu
   // 31.12.{an}, indiferent de data reală la care se generează/reprintă (azi).
@@ -3464,7 +3476,10 @@ function exportRaportAnualXLSX(raport, parohie) {
 
 function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientare, formatHartie) {
   const win = window.open("", "_blank");
-  if (!win) return;
+  if (!win) {
+    window.alert("Browserul a blocat deschiderea ferestrei de raport. Permite pop-up-urile pentru acest site (de obicei, o iconiță în bara de adresă) și încearcă din nou.");
+    return;
+  }
   const p = parohie || {};
   const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
 
