@@ -1041,9 +1041,125 @@ export async function receptioneazaFacturaMixta(parohieId, { liniiPangar, liniiC
     operatiuniPlata,
     nrOP,
     renumerotari: [...(rezultatNrcd.renumerotari || []), ...renumerotariPlata],
+    // Datoria completă (Pangar + Consum intern combinate) — vezi comentariul de la sumePeContAchizitie,
+    // câteva zeci de linii mai sus: acel dicționar ține deja, corect, TOATE conturile de achiziție
+    // atinse (772.xx/731.xx pentru Pangar, 601.01/623/671 etc. pentru Consum intern), separate unul
+    // de altul pe cheia de cont. Suma totală și defalcarea pe linii se calculează direct de aici —
+    // nu doar din partea de Pangar — ca datoria să reflecte de la bun început întreaga factură.
     datorieNoua: !plataAcum
-      ? { furnizor, suma: valoareAchizitiePangar, nrFactura, nrNRCD: rezultatNrcd.nr, dataFactura: data, dataScadenta, status: "neachitata", documentId: nrcdDocId }
+      ? {
+          furnizor, nrFactura, nrNRCD: rezultatNrcd.nr, anNRCD: rezultatNrcd.an,
+          dataFactura: data, dataScadenta, status: "neachitata", documentId: nrcdDocId,
+          suma: valoareAchizitiePangar + valoareAchizitieConsumIntern,
+          liniiAchizitie: Object.entries(sumePeContAchizitie).map(([categorieBVC, suma]) => ({ categorieBVC, suma })),
+        }
       : null,
+  };
+}
+
+// Șterge definitiv un NRCD — indiferent dacă are doar linii de Pangar, doar de Consum intern,
+// sau ambele pe același document (recepție mixtă). Restituie stocul consumat pe FIECARE parte
+// atinsă, apoi șterge documentul întreg (cu renumerotarea aferentă, ca la orice ștergere de
+// document). Blocată dacă recepția e deja achitată (există Ordin de plată legat) sau dacă s-a
+// consumat deja din stocul primit — pe oricare parte, Pangar sau Consum intern.
+export async function stergeReceptieMixta(documentId) {
+  const { data: platiLegate, error: errPlati } = await supabase
+    .from("documente")
+    .select("id, nr, an")
+    .eq("document_sursa_id", documentId)
+    .eq("tip", "ordin_plata");
+  if (errPlati) throw errPlati;
+  if (platiLegate && platiLegate.length > 0) {
+    const listaOP = platiLegate.map((op) => `nr. ${op.nr}/${op.an}`).join(", ");
+    throw new Error(`Această recepție este deja achitată (Ordin de plată ${listaOP}) — șterge întâi ordinul/ordinele de plată legate.`);
+  }
+
+  const { data: miscariPangar, error: errMP } = await supabase
+    .from("miscari_stoc_pangar").select("*").eq("document_id", documentId).eq("tip", "intrare");
+  if (errMP) throw errMP;
+  const cantitatePeArticolPangar = new Map();
+  for (const m of miscariPangar || []) {
+    cantitatePeArticolPangar.set(m.articol_id, (cantitatePeArticolPangar.get(m.articol_id) || 0) + Number(m.cantitate));
+  }
+  const idsAtinsePangar = [...cantitatePeArticolPangar.keys()];
+  let articolePangarAtinse = [];
+  if (idsAtinsePangar.length > 0) {
+    const { data, error: errArt } = await supabase.from("articole_pangar").select("id, cod, stoc").in("id", idsAtinsePangar);
+    if (errArt) throw errArt;
+    articolePangarAtinse = data;
+    for (const art of articolePangarAtinse) {
+      const deScos = cantitatePeArticolPangar.get(art.id);
+      if (Number(art.stoc) - deScos < 0) {
+        throw new Error(`Nu poți șterge recepția — s-a vândut deja din ce s-a recepționat pe codul ${art.cod} (stoc curent: ${art.stoc}, de scos: ${deScos}).`);
+      }
+    }
+  }
+
+  const { data: miscariCI, error: errMCI } = await supabase
+    .from("miscari_consum_intern").select("*").eq("document_id", documentId).eq("tip", "intrare");
+  if (errMCI) throw errMCI;
+  const idsAtinseCI = [...new Set((miscariCI || []).map((m) => m.articol_id))];
+  let articoleCIAtinse = [];
+  if (idsAtinseCI.length > 0) {
+    const { data, error: errArtCI } = await supabase.from("articole_consum_intern").select("id, denumire, um, stoc").in("id", idsAtinseCI);
+    if (errArtCI) throw errArtCI;
+    articoleCIAtinse = data;
+    for (const m of miscariCI) {
+      const articol = articoleCIAtinse.find((a) => a.id === m.articol_id);
+      const consumatDeja = Number(m.cantitate) - Number(articol.stoc);
+      if (consumatDeja > 0) {
+        throw new Error(`Nu poți șterge recepția — s-au consumat deja ${consumatDeja} ${articol.um} din „${articol.denumire}".`);
+      }
+    }
+  }
+
+  if ((miscariPangar || []).length === 0 && (miscariCI || []).length === 0) {
+    throw new Error("Nu s-au găsit mișcări de stoc pentru această recepție.");
+  }
+
+  // Toate validările au trecut — aplicăm efectiv, întâi restituirea de stoc pe fiecare parte.
+  for (const art of articolePangarAtinse) {
+    const stocNou = Number(art.stoc) - cantitatePeArticolPangar.get(art.id);
+    const { error } = await supabase.from("articole_pangar").update({ stoc: stocNou, stoc_referinta: stocNou }).eq("id", art.id);
+    if (error) throw error;
+  }
+  if ((miscariPangar || []).length > 0) {
+    const { error } = await supabase.from("miscari_stoc_pangar").delete().eq("document_id", documentId).eq("tip", "intrare");
+    if (error) throw error;
+  }
+
+  for (const m of miscariCI || []) {
+    const articol = articoleCIAtinse.find((a) => a.id === m.articol_id);
+    const stocNou = Number(articol.stoc) - Number(m.cantitate);
+    const { error } = await supabase.from("articole_consum_intern").update({ stoc: stocNou }).eq("id", articol.id);
+    if (error) throw error;
+  }
+  if ((miscariCI || []).length > 0) {
+    const { error } = await supabase.from("miscari_consum_intern").delete().eq("document_id", documentId).eq("tip", "intrare");
+    if (error) throw error;
+  }
+
+  const { renumerotari } = await stergeDocument(documentId);
+
+  let articolePangarFinale = [];
+  if (idsAtinsePangar.length > 0) {
+    const { data, error } = await supabase.from("articole_pangar").select("id, stoc").in("id", idsAtinsePangar);
+    if (error) throw error;
+    articolePangarFinale = data;
+  }
+  let articoleCIFinale = [];
+  if (idsAtinseCI.length > 0) {
+    const { data, error } = await supabase.from("articole_consum_intern").select("id, stoc").in("id", idsAtinseCI);
+    if (error) throw error;
+    articoleCIFinale = data;
+  }
+
+  return {
+    renumerotari,
+    articolePangarPatch: articolePangarFinale.map((a) => ({ id: a.id, stoc: Number(a.stoc), stocReferinta: Number(a.stoc) })),
+    articoleConsumInternPatch: articoleCIFinale.map((a) => ({ id: a.id, stoc: Number(a.stoc) })),
+    idsMiscariPangarSterse: (miscariPangar || []).map((m) => m.id),
+    idsMiscariConsumInternSterse: (miscariCI || []).map((m) => m.id),
   };
 }
 

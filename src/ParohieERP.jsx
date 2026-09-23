@@ -10,13 +10,13 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, receptioneazaFacturaMixta, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, anuleazaVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, demarcheazaNRCDAchitat, creeazaFacturaFurnizor,
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, receptioneazaFacturaMixta, stergeReceptieMixta, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, anuleazaVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, demarcheazaNRCDAchitat, creeazaFacturaFurnizor,
   getArticoleConsumIntern, getMiscariConsumIntern, creeazaArticolConsumIntern, receptieMultiplaConsumIntern,
   editeazaReceptieConsumIntern, stergeReceptieConsumIntern,
   creeazaStocInitialConsumIntern as creeazaStocInitialConsumInternBackend,
   editeazaStocInitialConsumIntern as editeazaStocInitialConsumInternBackend,
   stergeStocInitialConsumIntern as stergeStocInitialConsumInternBackend,
-  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, getBonuriConsum, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, stergeReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
+  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, getBonuriConsum, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import {
@@ -6033,6 +6033,48 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
   }));
 }
 
+// Șterge un NRCD, indiferent dacă are doar linii de Pangar, doar de Consum intern, sau ambele —
+// mecanism unic, apelabil din ambele module (Pangar și Consum Intern & Filantropie), ca să nu mai
+// existe (ca înainte) o cale funcțională doar pentru Pangar și niciuna pentru Consum intern, sau
+// una care ar strica liniile Consum intern ale unui NRCD mixt dacă ar fi folosită neatent. Nu
+// afișează nimic singură — la fel ca achitaDatoriePangar, aruncă eroarea mai departe; fiecare
+// apelant (cu propriul `notice` local) o prinde și o afișează.
+async function stergeReceptieNRCD(parohieId, state, setState, permisiuniLabel, documentId) {
+  const miscariPangarVechi = state.miscariStoc.filter((m) => m.tip === "intrare" && m.documentId === documentId);
+  const miscariCIVechi = state.miscariConsumIntern.filter((m) => m.tip === "intrare" && m.documentId === documentId);
+  if (miscariPangarVechi.length === 0 && miscariCIVechi.length === 0) return;
+
+  const anDoc = yearOf((miscariPangarVechi[0] || miscariCIVechi[0]).data);
+  if (state.exercitiiFinanciare?.[anDoc]?.inchisDefinitiv) {
+    throw new Error(`Exercițiul financiar ${anDoc} este închis definitiv — recepția nu mai poate fi ștearsă.`);
+  }
+
+  const rezultat = await stergeReceptieMixta(documentId);
+
+  const idsPangarSterse = new Set(rezultat.idsMiscariPangarSterse);
+  const idsCISterse = new Set(rezultat.idsMiscariConsumInternSterse);
+  const nrNRCD = (miscariPangarVechi[0] || miscariCIVechi[0]).nrNRCD;
+
+  setState((s) => {
+    const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+    return {
+      ...sPatched,
+      articole: sPatched.articole.map((a) => {
+        const patch = rezultat.articolePangarPatch.find((p) => p.id === a.id);
+        return patch ? { ...a, ...patch } : a;
+      }),
+      articoleConsumIntern: sPatched.articoleConsumIntern.map((a) => {
+        const patch = rezultat.articoleConsumInternPatch.find((p) => p.id === a.id);
+        return patch ? { ...a, ...patch } : a;
+      }),
+      miscariStoc: sPatched.miscariStoc.filter((m) => !idsPangarSterse.has(m.id)),
+      miscariConsumIntern: sPatched.miscariConsumIntern.filter((m) => !idsCISterse.has(m.id)),
+      datoriiFurnizori: (sPatched.datoriiFurnizori || []).filter((d) => d.documentId !== documentId),
+      jurnalAudit: adaugaAudit(sPatched, permisiuniLabel, `Ștergere recepție — NRCD nr. ${nrNRCD}/${anDoc}`),
+    };
+  });
+}
+
 function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permisiuni, parohieId, prevederiInfo, inchidereInfo, anTablou, setAnTablou }) {
   const { alerteStoc, alerteSold, alerteDepozite, datoriiNeachitate, datoriiPeste60, totalDatoriiCurente } = derived;
   const [instanteAchitare, setInstanteAchitare] = useState([]); // [{id, datorie}]
@@ -9378,35 +9420,12 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // exercițiul e închis definitiv, sau — la nivel de backend — dacă recepția e deja achitată
   // (are OP legat) sau dacă s-a vândut deja din stocul recepționat aici.
   async function stergeReceptie(documentId) {
-    const liniiVechi = state.miscariStoc.filter((m) => m.tip === "intrare" && m.documentId === documentId);
-    if (liniiVechi.length === 0) return true;
-    const anDoc = yearOf(liniiVechi[0].data);
-    if (state.exercitiiFinanciare?.[anDoc]?.inchisDefinitiv) {
-      setNotice(`Exercițiul financiar ${anDoc} este închis definitiv — recepția nu mai poate fi ștearsă.`);
-      return false;
-    }
-    let rezultat;
     try {
-      rezultat = await stergeReceptiePangar(documentId);
+      await stergeReceptieNRCD(parohieId, state, setState, permisiuni.label, documentId);
     } catch (e) {
       setNotice(e.message || "Eroare la ștergerea recepției. Încearcă din nou.");
       return false;
     }
-    const idsVechi = new Set(liniiVechi.map((m) => m.id));
-    const nrNRCD = liniiVechi[0].nrNRCD;
-    setState((s) => {
-      const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
-      return {
-        ...sPatched,
-        articole: sPatched.articole.map((a) => {
-          const patch = rezultat.articolePatch.find((p) => p.id === a.id);
-          return patch ? { ...a, ...patch } : a;
-        }),
-        miscariStoc: sPatched.miscariStoc.filter((m) => !idsVechi.has(m.id)),
-        datoriiFurnizori: (sPatched.datoriiFurnizori || []).filter((d) => d.documentId !== documentId),
-        jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ștergere recepție — NRCD nr. ${nrNRCD}/${anDoc}`),
-      };
-    });
     return true;
   }
 
@@ -13331,6 +13350,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   const [instanteEditBon, setInstanteEditBon] = useState([]); // [{id, bon}]
   const [confirmareStergereReceptie, setConfirmareStergereReceptie] = useState(null); // miscareId | null
   const [instanteAchitare, setInstanteAchitare] = useState([]); // [{id, datorie}]
+  const [confirmareStergereNRCD, setConfirmareStergereNRCD] = useState(null); // documentId | null
 
   // Documente (NRCD-uri) cu linii de Consum intern, din anul selectat — grupate din mișcările în
   // sine (care păstrează furnizor/nrFactura/nrNRCD direct pe fiecare rând), NU din datoriiFurnizori,
@@ -13777,7 +13797,31 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                         if (permisiuni.citireOnly) {
                           return <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitat</span>;
                         }
-                        return <Btn variant="rosu" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie }])}>Achită</Btn>;
+                        return (
+                          <div className="flex gap-1.5 justify-end items-center">
+                            <Btn variant="rosu" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie }])}>Achită</Btn>
+                            {confirmareStergereNRCD === doc.documentId ? (
+                              <>
+                                <Btn
+                                  variant="danger"
+                                  onClick={async () => {
+                                    try {
+                                      await stergeReceptieNRCD(parohieId, state, setState, permisiuni.label, doc.documentId);
+                                    } catch (e) {
+                                      setNotice(e.message || "Eroare la ștergerea recepției. Încearcă din nou.");
+                                    }
+                                    setConfirmareStergereNRCD(null);
+                                  }}
+                                >
+                                  Confirmă
+                                </Btn>
+                                <Btn variant="ghost" onClick={() => setConfirmareStergereNRCD(null)}>Anulează</Btn>
+                              </>
+                            ) : (
+                              <Btn variant="danger" onClick={() => setConfirmareStergereNRCD(doc.documentId)}>Șterge</Btn>
+                            )}
+                          </div>
+                        );
                       })()}
                     </td>
                   </tr>
@@ -13787,6 +13831,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
           </table>
         </Card>
       )}
+
 
       <Card className="overflow-x-auto">
         <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Gestiune curentă (FIFO — loturi la cost de intrare)</div>
@@ -13861,7 +13906,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                           <Btn variant="gold" onClick={() => setInstanteEditReceptie((l) => [...l, { id: uid(), miscare: m }])}>Modifică</Btn>
                           {confirmareStergereReceptie === m.id ? (
                             <>
-                              <Btn variant="danger" onClick={() => { stergeReceptie(m.id); setConfirmareStergereReceptie(null); }}>
+                              <Btn variant="danger" onClick={async () => { await stergeReceptie(m.id); setConfirmareStergereReceptie(null); }}>
                                 Confirmă
                               </Btn>
                               <Btn variant="ghost" onClick={() => setConfirmareStergereReceptie(null)}>Anulează</Btn>
