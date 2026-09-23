@@ -10,7 +10,7 @@ import {
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
 } from "./mfaHelpers";
 import { getDateLocaleParohie, salveazaDateLocaleParohie } from "./parohieDateLocale";
-import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, receptioneazaFacturaMixta, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, demarcheazaNRCDAchitat, creeazaFacturaFurnizor,
+import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveazaDocument, actualizeazaDocument, seteazaExcedentReportat, rezervaUrmatorulNumar, getArticolePangar, getMiscariStocPangar, creeazaArticolPangar, creeazaNomenclatorStandardPangar, getNomenclatorCanonicPangar, receptioneazaPangar, receptioneazaFacturaMixta, vanzareFIFOPangar, editeazaVanzareMultiplaPangar, stergeVanzarePangar, anuleazaVanzarePangar, getDatoriiFurnizori, marcheazaNRCDAchitat, demarcheazaNRCDAchitat, creeazaFacturaFurnizor,
   getArticoleConsumIntern, getMiscariConsumIntern, creeazaArticolConsumIntern, receptieMultiplaConsumIntern,
   editeazaReceptieConsumIntern, stergeReceptieConsumIntern,
   creeazaStocInitialConsumIntern as creeazaStocInitialConsumInternBackend,
@@ -9556,6 +9556,38 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
     return true;
   }
 
+  // Anulare (SPRE DEOSEBIRE de ștergere) — chitanța rămâne, cu numărul, seria și data neschimbate
+  // (nu declanșează nicio renumerotare), dar produsele/valoarea dispar: devine o linie unică, sumă
+  // 0, "ANULATĂ". Stocul consumat de vânzarea originală se restituie, la fel ca la ștergere.
+  async function anuleazaVanzare(nrChitanta, anChitanta) {
+    const iesiriVechi = state.miscariStoc.filter((m) => m.tip === "iesire" && m.nrChitanta === nrChitanta && m.anChitanta === anChitanta);
+    if (iesiriVechi.length === 0) return true;
+    if (state.exercitiiFinanciare?.[anChitanta]?.inchisDefinitiv) {
+      setNotice(`Exercițiul financiar ${anChitanta} este închis definitiv — vânzarea nu mai poate fi anulată.`);
+      return false;
+    }
+    const documentId = iesiriVechi[0].documentId;
+    let rezultat;
+    try {
+      rezultat = await anuleazaVanzarePangar(documentId);
+    } catch (e) {
+      setNotice(e.message || "Eroare la anularea vânzării. Încearcă din nou.");
+      return false;
+    }
+    const idsVechi = new Set(iesiriVechi.map((m) => m.id));
+    setState((s) => ({
+      ...s,
+      articole: s.articole.map((a) => {
+        const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+        return patch ? { ...a, stoc: patch.stocNou } : a;
+      }),
+      miscariStoc: s.miscariStoc.filter((m) => !idsVechi.has(m.id)),
+      operatiuni: [...s.operatiuni.filter((op) => op.documentId !== documentId), ...rezultat.operatiuniNoi],
+      jurnalAudit: adaugaAudit(s, permisiuni.label, `Anulare vânzare pangar — chitanță nr. ${nrChitanta}/${anChitanta}`),
+    }));
+    return true;
+  }
+
   // Grupare pe bazaCod, pentru vederea agregată FIFO
   const grupuri = useMemo(() => {
     const map = new Map();
@@ -10621,6 +10653,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
           grupuri={grupuri}
           onClose={() => setInstanteEditVanzare((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (opts) => { await editeazaVanzare(inst.vanzare.nrChitanta, inst.vanzare.anChitanta, opts); setInstanteEditVanzare((l) => l.filter((i) => i.id !== inst.id)); }}
+          onAnuleaza={async () => { const ok = await anuleazaVanzare(inst.vanzare.nrChitanta, inst.vanzare.anChitanta); if (ok) setInstanteEditVanzare((l) => l.filter((i) => i.id !== inst.id)); return ok; }}
         />
       ))}
 
@@ -11283,7 +11316,7 @@ function StocInitialModal({ articole, miscariStocInitiale, onClose, onAdauga, on
   );
 }
 
-function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
+function VanzareEditForm({ vanzare, grupuri, onClose, onSave, onAnuleaza }) {
   // Pornim cu liniile deja existente pe chitanță (fiecare produs distinct = o linie), plus
   // posibilitatea de a adăuga produse noi, complet diferite, pe aceeași chitanță deja emisă.
   const [linii, setLinii] = useState(
@@ -11298,6 +11331,16 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
   const [cerutConfirmare, setCerutConfirmare] = useState(false);
+  const [cerutConfirmareAnulare, setCerutConfirmareAnulare] = useState(false);
+  const [anuland, setAnuland] = useState(false);
+
+  async function confirmaAnulare() {
+    setAnuland(true);
+    const ok = await onAnuleaza();
+    setAnuland(false);
+    if (ok) onClose();
+    else setCerutConfirmareAnulare(false);
+  }
 
   const grupuriDisponibile = useMemo(() => grupuri, [grupuri]);
   const grupByBazaCod = useMemo(() => Object.fromEntries(grupuri.map((g) => [g.bazaCod, g])), [grupuri]);
@@ -11418,6 +11461,24 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave }) {
             <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
           )}
         </div>
+
+        {onAnuleaza && (
+          <div className="flex items-center justify-between gap-3 border-t border-rose-200 pt-3">
+            <p className="text-xs text-rose-700">
+              Anulare — chitanța nr. {vanzare.nrChitanta}/{vanzare.anChitanta} își păstrează numărul și data (nu se
+              renumerotează nimic), dar devine sumă 0, fără produse, cu terțul fixat pe „ANULATĂ". Stocul consumat
+              se restituie integral. Ireversibil din acest ecran.
+            </p>
+            {!cerutConfirmareAnulare ? (
+              <Btn variant="danger" onClick={() => setCerutConfirmareAnulare(true)} className="shrink-0">Anulează chitanța</Btn>
+            ) : (
+              <div className="flex gap-2 shrink-0">
+                <Btn variant="ghost" onClick={() => setCerutConfirmareAnulare(false)} disabled={anuland}>Renunță</Btn>
+                <Btn variant="danger" onClick={confirmaAnulare} disabled={anuland}>{anuland ? "Se anulează..." : "Da, anulează"}</Btn>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   );

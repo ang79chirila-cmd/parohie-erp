@@ -2158,6 +2158,65 @@ export async function editeazaVanzareMultiplaPangar(documentId, { linii, data, t
   };
 }
 
+// Anulează o vânzare pangar deja emisă — SPRE DEOSEBIRE de ștergere, chitanța NU dispare și NU
+// declanșează renumerotarea celorlalte documente: își păstrează exact numărul, seria și data,
+// dar devine o linie unică, sumă 0, fără cont bugetar, cu terțul/explicația fixate pe "ANULATĂ"
+// — aceeași convenție deja folosită la Chitanțe (vezi ChitantaForm, checkbox "Chitanță ANULATĂ",
+// și comentariul din salveazaDocument: linie sumă 0 + fără cont e singurul caz special acceptat).
+// Stocul consumat de vânzarea originală se restituie integral, ca la ștergere.
+export async function anuleazaVanzarePangar(documentId) {
+  const { data: miscariVechi, error: errMV } = await supabase
+    .from("miscari_stoc_pangar")
+    .select("*")
+    .eq("document_id", documentId)
+    .eq("tip", "iesire");
+  if (errMV) throw errMV;
+  if (!miscariVechi || miscariVechi.length === 0) throw new Error("Nu s-au găsit mișcări de stoc pentru această vânzare.");
+
+  for (const m of miscariVechi) {
+    const { data: art, error: errArt } = await supabase.from("articole_pangar").select("stoc").eq("id", m.articol_id).single();
+    if (errArt) throw errArt;
+    const { error: errRest } = await supabase
+      .from("articole_pangar")
+      .update({ stoc: Number(art.stoc) + Number(m.cantitate) })
+      .eq("id", m.articol_id);
+    if (errRest) throw errRest;
+  }
+
+  const idsAtinse = miscariVechi.map((m) => m.articol_id);
+
+  const { error: errDelM } = await supabase.from("miscari_stoc_pangar").delete().eq("document_id", documentId).eq("tip", "iesire");
+  if (errDelM) throw errDelM;
+  const { error: errDelL } = await supabase.from("linii_document").delete().eq("document_id", documentId);
+  if (errDelL) throw errDelL;
+
+  const { data: liniiInserate, error: errInsL } = await supabase
+    .from("linii_document")
+    .insert([{ document_id: documentId, cont_id: null, suma: 0, explicatie: "ANULATĂ", mod_plata: null }])
+    .select();
+  if (errInsL) throw errInsL;
+
+  const { error: errUpdMeta } = await supabase.from("documente").update({ tert: "ANULATĂ" }).eq("id", documentId);
+  if (errUpdMeta) throw errUpdMeta;
+
+  const { data: docFinal, error: errFinalDoc } = await supabase.from("documente").select("nr, an, data").eq("id", documentId).single();
+  if (errFinalDoc) throw errFinalDoc;
+
+  const { data: articoleFinale, error: errFinale } = await supabase.from("articole_pangar").select("id, stoc").in("id", idsAtinse);
+  if (errFinale) throw errFinale;
+
+  const liniaAnulata = liniiInserate[0];
+  return {
+    articolePatch: articoleFinale.map((a) => ({ id: a.id, stocNou: Number(a.stoc) })),
+    operatiuniNoi: [{
+      id: liniaAnulata.id, tip: "incasare", contId: null, data: docFinal.data, suma: 0, modPlata: null,
+      tert: "ANULATĂ", explicatie: "ANULATĂ", nr: docFinal.nr, an: docFinal.an, documentId,
+    }],
+    nrChitanta: docFinal.nr,
+    anChitanta: docFinal.an,
+  };
+}
+
 // Șterge definitiv o vânzare pangar (chitanța + toate liniile ei bugetare + mișcările de stoc
 // asociate) — restituie mai întâi cantitatea consumată la FIFO înapoi în stoc, pentru fiecare
 // cod atins (o vânzare poate fi acoperit de mai multe coduri, dacă FIFO a trecut prin ele).
