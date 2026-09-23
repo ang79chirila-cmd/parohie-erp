@@ -7304,6 +7304,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           saltInitialNr={browseSaltNr}
+          anImplicit={anSelectat}
           onDuplica={(initial) => {
             if (browseTip === "incasare") setInstanteChitanta((l) => [...l, { id: uid(), initial }]);
             else setInstanteOP((l) => [...l, { id: uid(), initial }]);
@@ -7680,12 +7681,16 @@ function PrevederiBugetareForm({ conturi, an, obligatoriu, modCorectie, liniiIni
 }
 
 function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, initial, onClose, onSave }) {
-  // Dacă userul lucra pe un an anterior (reconstituire) în Registru Jurnal, formularul pornește
-  // cu 1 ianuarie din acel an, nu cu data de azi — altfel prima dată implicită "trăgea" documentul
-  // spre anul curent, indiferent pe ce an lucra efectiv userul. Dar dacă există deja o chitanță
-  // anterioară (indiferent de an), data implicită continuă de la EA — introducere manuală,
-  // cronologică, de documente istorice, nu data de azi.
-  const ultimaChitantaEmisa = useMemo(() => ultimulDocumentDeTip(operatiuni, "incasare"), [operatiuni]);
+  // Data implicită respectă STRICT exercițiul financiar selectat (anImplicit): continuă de la
+  // ultima chitanță emisă DIN ACEL AN, dacă există deja una — altfel pornește cu 1 ianuarie din
+  // acel an. Nu se mai uită la ultima chitanță emisă vreodată (indiferent de an) — dacă userul a
+  // avansat între timp în alt an (test, corecție ulterioară) și revine să lucreze pe un an anterior,
+  // data implicită nu mai trebuie să "tragă" documentul spre anul acela ulterior.
+  const chitanteAnImplicit = useMemo(
+    () => (anImplicit != null ? operatiuni.filter((op) => op.an === anImplicit) : operatiuni),
+    [operatiuni, anImplicit]
+  );
+  const ultimaChitantaEmisa = useMemo(() => ultimulDocumentDeTip(chitanteAnImplicit, "incasare"), [chitanteAnImplicit]);
   const dataImplicita = ultimaChitantaEmisa
     ? ultimaChitantaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
@@ -7939,7 +7944,11 @@ function ChitantaForm({ conturi, exercitiiFinanciare, operatiuni, anImplicit, pa
 
 function OrdinPlataForm({ conturi, derived, exercitiiFinanciare, operatiuni, anImplicit, parteneri, onCreatPartener, eparhie, protoierie, initial, onClose, onSave }) {
   // Aceeași corecție ca la ChitantaForm — vezi explicația de-acolo.
-  const ultimulOPEmis = useMemo(() => ultimulDocumentDeTip(operatiuni, "plata"), [operatiuni]);
+  const platiAnImplicit = useMemo(
+    () => (anImplicit != null ? operatiuni.filter((op) => op.an === anImplicit) : operatiuni),
+    [operatiuni, anImplicit]
+  );
+  const ultimulOPEmis = useMemo(() => ultimulDocumentDeTip(platiAnImplicit, "plata"), [platiAnImplicit]);
   const dataImplicita = ultimulOPEmis
     ? ultimulOPEmis.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
@@ -11492,7 +11501,11 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
   // Aceeași corecție ca la ChitantaForm/OrdinPlataForm/VanzareMultiplaForm — vezi explicația de-acolo.
-  const ultimulNRCDEmis = useMemo(() => ultimulDocumentDeTip(operatiuni, "nrcd"), [operatiuni]);
+  const nrcdAnImplicit = useMemo(
+    () => (anImplicit != null ? operatiuni.filter((op) => op.an === anImplicit) : operatiuni),
+    [operatiuni, anImplicit]
+  );
+  const ultimulNRCDEmis = useMemo(() => ultimulDocumentDeTip(nrcdAnImplicit, "nrcd"), [nrcdAnImplicit]);
   const dataImplicita = ultimulNRCDEmis
     ? ultimulNRCDEmis.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
@@ -11820,7 +11833,11 @@ function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, 
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
   // Aceeași corecție ca la OrdinPlataForm/ReceptieNRCDForm — vezi explicația de-acolo.
-  const ultimaFacturaEmisa = useMemo(() => ultimulDocumentDeTip(operatiuni, "facturaFurnizor"), [operatiuni]);
+  const facturiAnImplicit = useMemo(
+    () => (anImplicit != null ? operatiuni.filter((op) => op.an === anImplicit) : operatiuni),
+    [operatiuni, anImplicit]
+  );
+  const ultimaFacturaEmisa = useMemo(() => ultimulDocumentDeTip(facturiAnImplicit, "facturaFurnizor"), [facturiAnImplicit]);
   const dataImplicita = ultimaFacturaEmisa
     ? ultimaFacturaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
@@ -12025,7 +12042,11 @@ function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, 
 function VanzareMultiplaForm({ grupuri, operatiuni, conturi, anImplicit, parteneri, onCreatPartener, donatoriIstorici, ultimaSerieNumar, onClose, onSave }) {
   // Aceeași corecție ca la ChitantaForm/OrdinPlataForm — vezi explicația de-acolo. Vânzarea pangar
   // e tot o chitanță, deci continuă din aceeași secvență (tip "incasare") ca ChitantaForm.
-  const ultimaChitantaEmisa = useMemo(() => ultimulDocumentDeTip(operatiuni, "incasare"), [operatiuni]);
+  const vanzariAnImplicit = useMemo(
+    () => (anImplicit != null ? operatiuni.filter((op) => op.an === anImplicit) : operatiuni),
+    [operatiuni, anImplicit]
+  );
+  const ultimaChitantaEmisa = useMemo(() => ultimulDocumentDeTip(vanzariAnImplicit, "incasare"), [vanzariAnImplicit]);
   const dataImplicita = ultimaChitantaEmisa
     ? ultimaChitantaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
@@ -16456,7 +16477,7 @@ function DocumentArhivaForm({ onClose, onSave }) {
 
 /* ------------------------------ Navigator documente (Chitanțe / Ordine de plată) -------------------------------- */
 
-function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, parteneri, onCreatPartener, saltInitialNr, onDuplica, onClose }) {
+function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, parteneri, onCreatPartener, saltInitialNr, anImplicit, onDuplica, onClose }) {
   // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
   // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
   // Viramentele interne (581/5081) au propriul bazin de numerotare, izolat, care se poate suprapune
@@ -16470,6 +16491,16 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     if (saltInitialNr != null) {
       const gasit = documente.findIndex((d) => d.nr === saltInitialNr);
       if (gasit !== -1) return gasit;
+    }
+    // Fără un salt explicit la un anumit număr, navigatorul respectă STRICT anul exercițiului
+    // financiar selectat — se deschide pe ultimul document din ACEL an, nu pe ultimul document
+    // emis vreodată (care ar putea aparține altui an, dacă userul a avansat între timp acolo).
+    // Dacă anul selectat nu are încă niciun document, revine la ultimul document existent, oricare
+    // ar fi anul lui — mai util decât a deschide navigatorul complet gol.
+    if (anImplicit != null) {
+      for (let i = documente.length - 1; i >= 0; i--) {
+        if (documente[i].an === anImplicit) return i;
+      }
     }
     return documente.length - 1;
   });
