@@ -1046,7 +1046,7 @@ function FlyoutMenu({ items, pozitie, onCloseAll }) {
               key={i}
               ref={(el) => (subRefs.current[i] = el)}
               onClick={(e) => { e.stopPropagation(); subDeschis === i ? setSubDeschis(null) : deschideSub(i); }}
-              className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50 ${subDeschis === i ? "bg-stone-50 text-stone-900" : "text-stone-700"}`}
+              className={`w-full flex items-center justify-between gap-2 text-left px-3 py-1.5 text-sm font-bold hover:bg-stone-50 ${subDeschis === i ? "bg-stone-50 text-stone-900" : "text-stone-700"}`}
             >
               <span className="flex items-center gap-2">
                 {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
@@ -1057,7 +1057,7 @@ function FlyoutMenu({ items, pozitie, onCloseAll }) {
             <button
               key={i}
               onClick={(e) => { e.stopPropagation(); it.onClick(); onCloseAll(); }}
-              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm font-bold text-stone-700 hover:bg-stone-50"
             >
               {it.icon && <it.icon size={14} className="text-stone-500" />} {it.label}
             </button>
@@ -1091,7 +1091,7 @@ function MenuBarItem({ label, icon: Icon, items, activ }) {
       <button
         ref={butonRef}
         onClick={() => (open ? inchideTot() : deschide())}
-        className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors whitespace-nowrap ${
+        className={`flex items-center gap-1.5 px-3 h-9 text-sm font-bold rounded-md border transition-colors whitespace-nowrap ${
           activ || open
             ? "bg-white/10 text-white border-[#B8860B]"
             : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
@@ -2150,11 +2150,14 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
           backgroundColor: culoareFundal,
           width: largime,
           height: inaltime || undefined,
-          maxHeight: "90vh",
+          maxHeight: "calc(100vh - 124px)",
           maxWidth: "calc(100vw - 16px)",
-          top: pozitie ? pozitie.top : `calc(50% + ${offsetInitial.y}px)`,
+          // Bannerul colorat de sus (identitate + navigare) are înălțime fixă: h-11 (44px) + h-14
+          // (56px) = 100px exact. Toate ferestrele se aliniază strict la această linie, imediat sub
+          // banner — nicio variație verticală între ele, indiferent de ordinea/numărul lor de deschidere.
+          top: pozitie ? pozitie.top : "100px",
           left: pozitie ? pozitie.left : `calc(50% + ${offsetInitial.x}px)`,
-          transform: pozitie ? "none" : "translate(-50%, -50%)",
+          transform: pozitie ? "none" : "translateX(-50%)",
           pointerEvents: "auto",
           boxShadow: esteFocalizata
             ? "0 25px 50px -12px rgba(0,0,0,0.45), 0 0 0 1px rgba(31,56,100,0.15)"
@@ -5272,7 +5275,7 @@ export default function ParohieERP() {
       {/* Bară principală de navigare — două rânduri: sus identitatea parohiei + cont, jos navigarea */}
       <header className="bg-[#8A2B29] text-white flex flex-col shrink-0 border-b border-white/10">
         <div className="flex items-center gap-1 px-6 h-11 border-b border-white/10">
-          <div className="font-arhaic text-xl leading-snug tracking-wide text-[#F7ECD3] shrink-0">
+          <div className="font-arhaic text-2xl leading-snug tracking-wide text-[#F7ECD3] shrink-0">
             {session === DEMO_CIF ? "Parohia „Sf. Nicolae”" : (state.parohie?.denumire || "Parohia Erp")}
           </div>
           <div className="flex-1" />
@@ -5282,14 +5285,14 @@ export default function ParohieERP() {
           <button
             title="Setări — jurnal de audit, deblocare 2FA, securitate, schimbă parola, date parohie"
             onClick={() => setShowSetari(true)}
-            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-white/25 text-white/90 hover:bg-white/10 hover:text-white hover:border-white/40 transition-colors shrink-0"
+            className="flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded-md border border-white/25 text-white/90 hover:bg-white/10 hover:text-white hover:border-white/40 transition-colors shrink-0"
           >
             <Settings size={14} /> Setări
           </button>
           <button
             title="Ieșire din cont — încheie sesiunea curentă"
             onClick={() => setShowLogoutConfirm(true)}
-            className="flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border border-rose-400/40 text-rose-200 hover:bg-rose-500/10 hover:text-rose-100 hover:border-rose-400/60 transition-colors shrink-0 ml-1"
+            className="flex items-center gap-1.5 px-3 h-8 text-xs font-bold rounded-md border border-rose-400/40 text-rose-200 hover:bg-rose-500/10 hover:text-rose-100 hover:border-rose-400/60 transition-colors shrink-0 ml-1"
           >
             <LogOut size={14} /> Ieșire
           </button>
@@ -5299,7 +5302,7 @@ export default function ParohieERP() {
           <button
             onClick={() => setTab("dashboard")}
             title="Tablou de bord"
-            className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-3 h-9 text-sm font-bold rounded-md border transition-colors shrink-0 whitespace-nowrap ${
               tabActiv === "dashboard"
                 ? "bg-white/10 text-white border-[#B8860B]"
                 : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
@@ -5316,7 +5319,7 @@ export default function ParohieERP() {
               <button
                 key={n.id}
                 onClick={() => setTab(n.id)}
-                className={`flex items-center gap-1.5 px-3 h-9 text-sm rounded-md border transition-colors shrink-0 whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-3 h-9 text-sm font-bold rounded-md border transition-colors shrink-0 whitespace-nowrap ${
                   tabActiv === n.id
                     ? "bg-white/10 text-white border-[#B8860B]"
                     : "text-white/70 border-transparent hover:bg-white/5 hover:text-white hover:border-white/30"
@@ -11633,11 +11636,11 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
               const art = articolById[l.articolId];
               const eConsumIntern = l.destinatie === "consumIntern";
               return (
-                <Card key={l.id} className="p-3 grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-2">
+              <Card key={l.id} className="p-3 flex flex-wrap gap-3 items-end">
+                  <div className="w-[130px]">
                     <Field label={`Destinație (linia ${i + 1})`}>
                       <select
-                        className={inputCls}
+                        className={inputCls + " w-full"}
                         value={l.destinatie || "pangar"}
                         onChange={(e) => actualizeazaLinie(l.id, { destinatie: e.target.value })}
                       >
@@ -11648,10 +11651,10 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                   </div>
                   {eConsumIntern ? (
                     <>
-                      <div className="col-span-2">
+                      <div className="flex-1 min-w-[240px]">
                         <Field label="Articol">
                           <select
-                            className={inputCls}
+                            className={inputCls + " w-full"}
                             value={l.denumire ? `${l.denumire}|||${l.um}|||${l.an ?? ""}` : ""}
                             onChange={(e) => {
                               const [denumire, um, anText] = e.target.value.split("|||");
@@ -11667,7 +11670,7 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                             ))}
                           </select>
                           <input
-                            className={inputCls + " mt-1"}
+                            className={inputCls + " w-full mt-1"}
                             placeholder="sau denumire nouă"
                             value={l.denumire || ""}
                             onChange={(e) => actualizeazaLinie(l.id, { denumire: e.target.value, um: l.um || "buc" })}
@@ -11678,24 +11681,24 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                           </label>
                         </Field>
                       </div>
-                      <div className="col-span-1">
+                      <div className="w-[140px]">
                         <Field label={l.esteVin ? "An (obligatoriu)" : "An (opțional)"}>
-                          <input type="number" step="1" className={inputCls} value={l.an || ""} onChange={(e) => actualizeazaLinie(l.id, { an: e.target.value })} placeholder="—" />
+                          <input type="number" step="1" className={inputCls + " w-full"} value={l.an || ""} onChange={(e) => actualizeazaLinie(l.id, { an: e.target.value })} placeholder="—" />
                         </Field>
                       </div>
-                      <div className="col-span-1">
+                      <div className="w-[120px]">
                         <Field label="Cantitate">
-                          <input type="number" step="1" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
+                          <input type="number" step="1" className={inputCls + " w-full"} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
                         </Field>
                       </div>
-                      <div className="col-span-2">
+                      <div className="w-[140px]">
                         <Field label="Cost unitar">
-                          <input type="number" step="0.01" className={inputCls} value={l.costUnitar || ""} onChange={(e) => actualizeazaLinie(l.id, { costUnitar: e.target.value })} placeholder="0,00" />
+                          <input type="number" step="0.01" className={inputCls + " w-full"} value={l.costUnitar || ""} onChange={(e) => actualizeazaLinie(l.id, { costUnitar: e.target.value })} placeholder="0,00" />
                         </Field>
                       </div>
-                      <div className="col-span-3">
+                      <div className="flex-1 min-w-[220px]">
                         <Field label="Motiv (determină contul de cheltuială)">
-                          <select className={inputCls} value={l.motiv || ""} onChange={(e) => actualizeazaLinie(l.id, { motiv: e.target.value })}>
+                          <select className={inputCls + " w-full"} value={l.motiv || ""} onChange={(e) => actualizeazaLinie(l.id, { motiv: e.target.value })}>
                             <option value="">— alegeți —</option>
                             {Object.entries(MOTIVE_CONSUM).map(([cheie, m]) => (
                               <option key={cheie} value={cheie}>{m.label}</option>
@@ -11706,9 +11709,9 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                     </>
                   ) : (
                     <>
-                      <div className="col-span-4">
+                      <div className="flex-1 min-w-[280px]">
                         <Field label="Produs">
-                          <select className={inputCls} value={l.articolId} onChange={(e) => actualizeazaLinie(l.id, { articolId: e.target.value })}>
+                          <select className={inputCls + " w-full"} value={l.articolId} onChange={(e) => actualizeazaLinie(l.id, { articolId: e.target.value })}>
                             <option value="">— selectați din nomenclator —</option>
                             {articoleSortate.map((a) => (
                               <option key={a.id} value={a.id}>{a.cod} — {a.denumire}</option>
@@ -11716,19 +11719,19 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                           </select>
                         </Field>
                       </div>
-                      <div className="col-span-2">
+                      <div className="w-[140px]">
                         <Field label="Cantitate">
-                          <input type="number" step="1" className={inputCls} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
+                          <input type="number" step="1" className={inputCls + " w-full"} value={l.cantitate} onChange={(e) => actualizeazaLinie(l.id, { cantitate: e.target.value })} placeholder="0" />
                         </Field>
                       </div>
-                      <div className="col-span-3 text-xs text-stone-500 pb-1.5">
+                      <div className="min-w-[180px] text-xs text-stone-500 pb-1.5">
                         {art && l.cantitate > 0 && (
                           <>Cost total: <span className="font-medium tabular-nums">{fmt(Number(l.cantitate) * art.pretAchizitie)} lei</span></>
                         )}
                       </div>
                     </>
                   )}
-                  <div className="col-span-1 flex justify-center pb-1.5">
+                  <div className="flex justify-center pb-1.5">
                     <button type="button" onClick={() => stergeLinie(l.id)} disabled={linii.length === 1} className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed">
                       <Trash2 size={15} />
                     </button>
