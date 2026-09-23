@@ -2418,120 +2418,238 @@ function imprimaHtmlFaraPopup(titlu, htmlBody) {
   doc.close();
 }
 
+// Generator PDF generic, pe jsPDF + AutoTable — NU mai trece deloc prin window.print() (nici
+// măcar indirect, prin iframe): unele browsere/politici de organizație pot bloca tipărirea la
+// nivel de sistem, caz în care ORICE mecanism bazat pe print() rămâne complet inert, indiferent
+// de fereastră/iframe. Aici fișierul PDF e construit direct, în memorie, și livrat printr-o
+// descărcare de fișier obișnuită (doc.output("bloburl") + <a download>) — o descărcare nu e
+// niciodată supusă politicii de tipărire. Reia identic tiparul vizual dovedit la Jurnal
+// (genereazaJurnalPDFCuTotalCumulat): fonturi Unicode complete (NotoSans/EBGaramond), copertă cu
+// bandă+siglă+date complete ale parohiei, titlu cu bară de accent, tabelul propriu-zis, siglă mică
+// repetată pe fiecare pagină, numerotare, bloc final Preot Paroh/Data + logo parteneri.
 function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, formatHartie, extraCoperta = "") {
   const p = parohie || {};
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
+  const uni = (s) => String(s ?? "").normalize("NFC");
 
-  const style = `
-    <style>
-      ${ARHAIC_FONT_FACE_CSS}
-      ${NOTOSANS_FONT_FACE_CSS}
-      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      body { font-family: 'NotoSans', Arial, sans-serif; color: #292524; margin: 0; font-size: 12pt; }
-      h2 { color: #1F3864; }
-      .coperta { padding: 32px 24px; page-break-after: always; min-height: 250mm; display: flex; flex-direction: column; }
-      .coperta-antet { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
-      .coperta-antet img.sigla { width: 56px; height: 56px; flex-shrink: 0; }
-      .coperta-antet h1 { margin: 0; }
-      .coperta-logo-parteneri { margin-top: auto; padding-top: 24px; text-align: center; }
-      .coperta-logo-parteneri img { max-width: 100%; height: auto; }
-      .coperta h1 { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; font-size: 24px; margin-bottom: 4px; }
-      .coperta .hram { color: #8a6a2f; font-style: italic; margin-bottom: 20px; }
-      .coperta table { width: 100%; border-collapse: collapse; font-size: 14px; }
-      .coperta td { padding: 5px 6px; border-bottom: 1px solid #e7e5e4; }
-      .coperta td.label { color: #78716c; width: 45%; }
-      .continut { padding: 0 24px; }
-      table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; }
-      table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
-      table.raport thead.antet-repetat th { background: #8A2B29; color: white; font-weight: normal; padding: 6px 8px; }
-      table.raport thead.antet-repetat { display: table-header-group; }
-      .antet-repetat-linie { display: flex; align-items: center; gap: 8px; }
-      .antet-repetat-linie img.sigla-mica { width: 20px; height: 20px; flex-shrink: 0; }
-      table.raport tbody.date-header th { background: #8A2B29; color: white; }
-      table.raport tfoot { display: table-footer-group; }
-      table.raport tfoot td { border: none; padding-top: 10px; font-size: 12pt; color: #78716c; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; }
-      .nume-parohie-arhaic-alb { font-family: 'Arhaic Romanesc', Georgia, serif; color: white; }
-      .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 20px; letter-spacing: 0.02em; }
-      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
-    </style>`;
+  const doc = new jsPDF({
+    orientation: orientare === "landscape" ? "landscape" : "portrait",
+    unit: "mm",
+    format: (formatHartie || "A4").toLowerCase(),
+  });
 
-  const coperta = `
-    <div class="coperta">
-      <div class="coperta-antet">
-        <img class="sigla" src="data:image/png;base64,${SIGLA_ARHIEPISCOPIE_BASE64}" alt="" />
-        <h1>${xmlEscape(p.denumire || "Parohia")}</h1>
-      </div>
-      <table>
-        ${randuriCompleteDateParohie(p)}
-      </table>
-      ${extraCoperta}
-      <h2 class="titlu-raport-arhaic" style="margin-top:28px;">${xmlEscape(titlu)}</h2>
-      <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
-      <div class="coperta-logo-parteneri"><img src="data:image/png;base64,${LOGOURI_PARTENERI_BASE64}" alt="" /></div>
-    </div>`;
+  doc.addFileToVFS("NotoSans-Regular.ttf", NOTOSANS_REGULAR_BASE64);
+  doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
+  doc.addFileToVFS("NotoSans-Bold.ttf", NOTOSANS_BOLD_BASE64);
+  doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
+  doc.setFont("NotoSans", "normal");
+  doc.addFileToVFS("EBGaramond-Regular.ttf", EBGARAMOND_REGULAR_BASE64);
+  doc.addFont("EBGaramond-Regular.ttf", "EBGaramond", "normal");
+  doc.addFileToVFS("EBGaramond-Bold.ttf", EBGARAMOND_BOLD_BASE64);
+  doc.addFont("EBGaramond-Bold.ttf", "EBGaramond", "bold");
 
-  // O coloană e "numerică" dacă TOATE valorile ei ne-goale sunt numerice (sumă formatată, întreg
-  // simplu, sau cantitate cu unitate/procent) — coloanele astfel detectate se aliniază la dreapta,
-  // atât antetul cât și celulele.
+  const latimePagina = doc.internal.pageSize.getWidth();
+  const CULOARE_FUNDAL = [138, 44, 40];
+  const CULOARE_AUR = [180, 145, 60];
+  const CULOARE_GRI = [110, 116, 122];
+  const CULOARE_GRI_INCHIS = [55, 60, 66];
+  const MARGINE = 14;
+  const latimeUtila = latimePagina - 2 * MARGINE;
+
+  const potrivesteText = (text, fontStyle, fontSizeMax, fontSizeMin, latimeMaxima, fontFamily = "NotoSans") => {
+    doc.setFont(fontFamily, fontStyle);
+    let fs = fontSizeMax;
+    doc.setFontSize(fs);
+    while (doc.getTextWidth(text) > latimeMaxima && fs > fontSizeMin) {
+      fs -= 1;
+      doc.setFontSize(fs);
+    }
+    const linii = doc.splitTextToSize(text, latimeMaxima);
+    return { linii, fontSize: fs };
+  };
+
+  const numeParohie = uni(p.denumire || "Parohia");
+  const latimeSigla = 16;
+  const inaltimeSigla = 16;
+  const spatiuDupaSigla = 4;
+  const { linii: liniiNume, fontSize: fsNume } = potrivesteText(numeParohie, "bold", 20, 13, latimeUtila - latimeSigla - spatiuDupaSigla);
+  doc.setFontSize(fsNume);
+  const inaltimeLinieNume = fsNume * 0.42;
+  const yNumeStart = 20;
+  const ySubtitlu = yNumeStart + (liniiNume.length - 1) * inaltimeLinieNume + 7;
+  const yImgSigla = 3;
+  const inaltimeBanda = Math.max(ySubtitlu + 5, yImgSigla + inaltimeSigla + 3);
+
+  doc.setFillColor(...CULOARE_FUNDAL);
+  doc.rect(0, 0, latimePagina, inaltimeBanda, "F");
+  doc.setFillColor(...CULOARE_AUR);
+  doc.rect(0, inaltimeBanda, latimePagina, 1.1, "F");
+  doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", MARGINE, yImgSigla, latimeSigla, inaltimeSigla);
+
+  doc.setFont("NotoSans", "bold");
+  doc.setFontSize(fsNume);
+  doc.setTextColor(255, 255, 255);
+  liniiNume.forEach((linie, i) => doc.text(linie, MARGINE + latimeSigla + spatiuDupaSigla, yNumeStart + i * inaltimeLinieNume));
+
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(215, 222, 235);
+  doc.text(uni(`${p.eparhie || "—"}${p.protoierie ? "  ·  " + p.protoierie : ""}`), MARGINE + latimeSigla + spatiuDupaSigla, ySubtitlu);
+
+  let y = inaltimeBanda + 9;
+  const campuriParohie = [];
+  if (p.hram) campuriParohie.push(`Hram: ${p.hram}`);
+  campuriParohie.push(`CIF: ${p.cif || "—"}`);
+  if (p.nrAnaf) campuriParohie.push(`Nr. Registrul ANAF: ${p.nrAnaf}`);
+  if (p.codLMI) campuriParohie.push(`Cod LMI: ${p.codLMI}`);
+  campuriParohie.push(`Adresă: ${[p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", ") || "—"}`);
+  if (p.telefon || p.email) campuriParohie.push(`Telefon / E-mail: ${[p.telefon, p.email].filter(Boolean).join(" / ")}`);
+  campuriParohie.push(`Preot paroh: ${p.preotParoh || "—"}`);
+  if (p.telefonPreot || p.emailPreot) campuriParohie.push(`Contact preot paroh: ${[p.telefonPreot, p.emailPreot].filter(Boolean).join(" / ")}`);
+  if (p.banca || p.iban) campuriParohie.push(`Bancă / IBAN: ${[p.banca, p.iban].filter(Boolean).join(" / ")}`);
+  if (p.dataInfiintare) campuriParohie.push(`Data înființării: ${fmtDataJurnal(p.dataInfiintare)}`);
+
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...CULOARE_GRI);
+  campuriParohie.forEach((text) => {
+    const linii = doc.splitTextToSize(uni(text), latimeUtila - 5);
+    linii.forEach((linie) => { doc.text(linie, MARGINE, y); y += 4.5; });
+  });
+
+  // extraCoperta (folosit azi doar la "Registru Pangar", pentru totalurile pe categorii) e un
+  // fragment HTML simplu — un <p> introductiv, urmat de rânduri <tr><td>etichetă</td><td>
+  // valoare</td></tr>. Nu construim un motor HTML complet; extragem doar acest tipar predictibil,
+  // suficient pentru singurul apel real existent, și îl desenăm ca text simplu.
+  if (extraCoperta) {
+    const intro = /<p[^>]*>(.*?)<\/p>/is.exec(extraCoperta);
+    const randuriExtra = [...extraCoperta.matchAll(/<tr[^>]*>\s*<td[^>]*>(.*?)<\/td>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/gis)]
+      .map((m) => [m[1].replace(/<[^>]+>/g, "").trim(), m[2].replace(/<[^>]+>/g, "").trim()]);
+    if (intro || randuriExtra.length > 0) {
+      y += 6;
+      if (intro) {
+        doc.setFont("NotoSans", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(...CULOARE_GRI);
+        doc.text(uni(intro[1].replace(/<[^>]+>/g, "").trim()), MARGINE, y);
+        y += 5;
+      }
+      doc.setFontSize(9.5);
+      randuriExtra.forEach(([eticheta, valoare], i) => {
+        const eTotal = /bold/i.test(extraCoperta.split(eticheta)[0].split("\n").pop() || "") || /total/i.test(eticheta);
+        doc.setFont("NotoSans", eTotal ? "bold" : "normal");
+        doc.setTextColor(...(eTotal ? CULOARE_GRI_INCHIS : CULOARE_GRI));
+        doc.text(uni(eticheta), MARGINE, y);
+        doc.text(uni(valoare), latimePagina - MARGINE, y, { align: "right" });
+        y += 4.5;
+      });
+    }
+  }
+
+  y += 6;
+  doc.setDrawColor(224, 226, 230);
+  doc.setLineWidth(0.3);
+  doc.line(MARGINE, y, latimePagina - MARGINE, y);
+
+  y += 8;
+  const latimeTitluDisponibila = latimeUtila - 5;
+  const { linii: liniiTitlu, fontSize: fsTitlu } = potrivesteText(uni(titlu), "bold", 16, 11, latimeTitluDisponibila, "EBGaramond");
+  const inaltimeLinieTitlu = fsTitlu * 0.42;
+  doc.setFillColor(...CULOARE_AUR);
+  doc.rect(MARGINE, y, 1.4, Math.max(8, liniiTitlu.length * inaltimeLinieTitlu), "F");
+  doc.setFont("EBGaramond", "bold");
+  doc.setFontSize(fsTitlu);
+  doc.setTextColor(...CULOARE_GRI_INCHIS);
+  liniiTitlu.forEach((linie, i) => doc.text(linie, MARGINE + 5, y + 6 + i * inaltimeLinieTitlu));
+  y += Math.max(13, liniiTitlu.length * inaltimeLinieTitlu + 5);
+
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...CULOARE_GRI);
+  doc.text(uni(`Document generat automat la data de ${azi}.`), MARGINE + 5, y);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+  doc.setFillColor(0, 0, 0);
+  doc.addPage();
+
+  // O coloană e "numerică" dacă TOATE valorile ei ne-goale sunt numerice — se aliniază la dreapta,
+  // atât antetul cât și celulele (identic cu vechea variantă bazată pe print()).
   const coloaneNumerice = columns.map((c) => {
     const valoriNegoale = rows.map((r) => r[c.key]).filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
     return valoriNegoale.length > 0 && valoriNegoale.every(esteValoareNumericaAfisata);
   });
+  const columnStyles = {};
+  coloaneNumerice.forEach((eNumerica, i) => { if (eNumerica) columnStyles[i] = { halign: "right" }; });
 
-  const headRepetat = `
-    <thead class="antet-repetat">
-      <tr><th colspan="${columns.length}" style="text-align:left;">
-        <div class="antet-repetat-linie">
-          <img class="sigla-mica" src="data:image/png;base64,${SIGLA_ARHIEPISCOPIE_BASE64}" alt="" />
-          <span>Denumirea unității de cult: <span class="nume-parohie-arhaic-alb">${xmlEscape(p.denumire)}</span> &nbsp;&nbsp;|&nbsp;&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</span>
-        </div>
-      </th></tr>
-      <tr>${columns.map((c, i) => `<th${coloaneNumerice[i] ? ' style="text-align:right;"' : ""}>${xmlEscape(c.label)}</th>`).join("")}</tr>
-    </thead>`;
+  autoTable(doc, {
+    startY: 8,
+    margin: { top: 8, bottom: 8 },
+    rowPageBreak: "avoid",
+    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
+    headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+    columnStyles,
+    head: [columns.map((c) => c.label)],
+    body: rows.map((r) => columns.map((c) => uni(r[c.key]))),
+    showHead: "everyPage",
+    didParseCell: (data) => {
+      if (data.section === "body" && rows[data.row.index]?._sectiune) {
+        data.cell.styles.fillColor = [231, 229, 228];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
+    didDrawPage: () => {
+      doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", MARGINE, 2, 6, 6);
+    },
+  });
 
-  // Un rând poate fi marcat drept "titlu de secțiune" (ex. sinteza unui articol bugetar, urmată
-  // de detalierea tranzacțiilor lui) — se afișează îngroșat, cu fundal distinct, fără dungare.
-  const body = rows.map((r, i) => {
-    const eSectiune = r._sectiune === true;
-    const stilRand = eSectiune ? "background:#e7e5e4; font-weight:bold;" : `background:${i % 2 ? "#f5f5f4" : "white"};`;
-    return `<tr style="${stilRand}">${columns.map((c, j) => `<td${coloaneNumerice[j] ? ' style="text-align:right;"' : ""}>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`;
-  }).join("");
+  const totalPaginiDoc = doc.internal.getNumberOfPages();
+  for (let pg = 1; pg <= totalPaginiDoc; pg++) {
+    doc.setPage(pg);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text(uni(`Pagina ${pg} din ${totalPaginiDoc}`), doc.internal.pageSize.getWidth() - MARGINE, doc.internal.pageSize.getHeight() - 6, { align: "right" });
+  }
 
-  const footerRepetat = `
-    <tfoot>
-      <tr><td colspan="${columns.length}">
-        <div class="footer-line">
-          <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
-          <span>Data: ${azi}</span>
-        </div>
-      </td></tr>
-    </tfoot>`;
+  doc.setFontSize(8);
+  const INALTIME_BLOC_FINAL = 10 + 10 + 24;
+  let yDupaTabel = doc.lastAutoTable.finalY + 8;
+  if (yDupaTabel + INALTIME_BLOC_FINAL > doc.internal.pageSize.getHeight()) {
+    doc.addPage();
+    yDupaTabel = 20;
+  }
+  doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), MARGINE, yDupaTabel);
+  doc.text(uni(`Data: ${azi}`), doc.internal.pageSize.getWidth() - 40, yDupaTabel);
+  {
+    const latimePaginaTotal = doc.internal.pageSize.getWidth();
+    const inaltimePagina = doc.internal.pageSize.getHeight();
+    const latimeLogo = latimePaginaTotal - 2 * MARGINE;
+    const inaltimeLogo = latimeLogo * (101 / 1200);
+    const xLogo = (latimePaginaTotal - latimeLogo) / 2;
+    const yLogo = Math.max(yDupaTabel + 10, inaltimePagina - 22 - inaltimeLogo);
+    doc.addImage(LOGOURI_PARTENERI_BASE64, "PNG", xLogo, yLogo, latimeLogo, inaltimeLogo);
+  }
 
-  imprimaHtmlFaraPopup(titlu, `${style}
-    ${coperta}
-    <div class="continut">
-      <table class="raport">
-        ${headRepetat}
-        ${footerRepetat}
-        <tbody>${body}</tbody>
-      </table>
-    </div>
-  `);
+  const blobUrl = doc.output("bloburl");
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `${titlu.replace(/[^a-zA-Z0-9ăâîșțĂÂÎȘȚ ]/g, "").trim().slice(0, 80)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // Variantă DEDICATĂ, pe jsPDF + AutoTable, doar pentru Jurnalul de Venituri și Cheltuieli —
 // singurul raport unde userul a cerut explicit total CUMULAT (de la documentul nr. 1) pe ultima
 // linie a fiecărei pagini, reportat identic pe prima linie a paginii următoare (ca "soldul
-// reportat" dintr-un registru contabil fizic). Restul rapoartelor din aplicație folosesc în
-// continuare exportPDF (tipărire HTML via browser), care nu poate face asta: la acea variantă,
-// paginarea o decide motorul de printare al browserului, iar JS-ul care generează tabelul nu
-// știe niciodată unde anume cade o pagină — deci nu poate calcula "ultimul rând de pe pagina N".
-// Aici, jsPDF+AutoTable calculează exact paginarea, ceea ce permite hook-uri (didParseCell la
-// rânduri, willDrawCell la subsol/antet) care actualizează un total viu, rulant, în timp ce
-// tabelul se desenează — subsolul arată mereu totalul de la nr. 1 până la ultimul rând desenat pe
-// acea pagină; la începutul paginii următoare, un rând special de antet arată același total,
-// "înghețat" chiar înainte ca pagina nouă să înceapă (nu se mai schimbă până la propriul ei subsol).
+// reportat" dintr-un registru contabil fizic). exportPDF (mai sus) acoperă generic restul
+// rapoartelor; aici jsPDF+AutoTable calculează exact paginarea, ceea ce permite hook-uri
+// (didParseCell la rânduri, willDrawCell la subsol/antet) care actualizează un total viu, rulant,
+// în timp ce tabelul se desenează — subsolul arată mereu totalul de la nr. 1 până la ultimul rând
+// desenat pe acea pagină; la începutul paginii următoare, un rând special de antet arată același
+// total, "înghețat" chiar înainte ca pagina nouă să înceapă (nu se mai schimbă până la propriul ei
+// subsol).
 function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, parohie, anSelectat, dataRaportCurenta, orientare, formatHartie, infoSelectie) {
   const p = parohie || {};
   const esteSelectie = !!(infoSelectie && infoSelectie.criterii && infoSelectie.criterii.length > 0);
@@ -3113,97 +3231,199 @@ function exportXMLGrupat(titlu, grupuri, parohie, dataRaportCurenta) {
   URL.revokeObjectURL(url);
 }
 
+// Rapoarte cu tabele SEPARATE per grup (ex. sinteză pe articole bugetare) — aceeași copertă și
+// mecanism de livrare ca exportPDF (jsPDF + AutoTable, descărcare directă, fără print()), dar cu
+// câte un tabel mic, cu titlu propriu, pentru fiecare grup din `grupuri` ([{eticheta, columns,
+// rows}, ...]) — desenate succesiv, cu paginare automată între ele.
 function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, formatHartie) {
   const p = parohie || {};
   const azi = calculeazaDataRaport(titlu, dataRaportCurenta);
+  const uni = (s) => String(s ?? "").normalize("NFC");
 
-  const style = `
-    <style>
-      ${ARHAIC_FONT_FACE_CSS}
-      ${NOTOSANS_FONT_FACE_CSS}
-      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      body { font-family: 'NotoSans', Arial, sans-serif; color: #292524; margin: 0; font-size: 12pt; }
-      h2 { color: #1F3864; }
-      .coperta { padding: 32px 24px; page-break-after: always; min-height: 250mm; display: flex; flex-direction: column; }
-      .coperta-antet { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
-      .coperta-antet img.sigla { width: 56px; height: 56px; flex-shrink: 0; }
-      .coperta-antet h1 { margin: 0; }
-      .coperta-logo-parteneri { margin-top: auto; padding-top: 24px; text-align: center; }
-      .coperta-logo-parteneri img { max-width: 100%; height: auto; }
-      .coperta h1 { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; font-size: 24px; margin-bottom: 4px; }
-      .coperta .hram { color: #8a6a2f; font-style: italic; margin-bottom: 20px; }
-      .coperta table { width: 100%; border-collapse: collapse; font-size: 14px; }
-      .coperta td { padding: 5px 6px; border-bottom: 1px solid #e7e5e4; }
-      .coperta td.label { color: #78716c; width: 45%; }
-      .continut { padding: 0 24px; }
-      .grup-articol { margin-bottom: 18px; page-break-inside: avoid; }
-      .grup-articol h3 { color: #1F3864; font-size: 13px; margin: 0 0 4px; }
-      table.raport-grupat { width: 100%; border-collapse: collapse; }
-      table.raport-grupat > thead { display: table-header-group; }
-      table.raport-grupat > thead td { padding: 0 0 10px; border: none; }
-      .antet-grupat { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #78716c; }
-      .antet-grupat img.sigla-mica { width: 20px; height: 20px; flex-shrink: 0; }
-      .antet-grupat .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; }
-      table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; }
-      table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 4px 7px; text-align: left; }
-      table.raport thead th { background: #8A2B29; color: white; font-weight: normal; padding: 6px 8px; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 4px; margin-top: 10px; }
-      .nume-parohie-arhaic-alb { font-family: 'Arhaic Romanesc', Georgia, serif; color: white; }
-      .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 20px; letter-spacing: 0.02em; }
-      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
-    </style>`;
+  const doc = new jsPDF({
+    orientation: orientare === "landscape" ? "landscape" : "portrait",
+    unit: "mm",
+    format: (formatHartie || "A4").toLowerCase(),
+  });
 
-  const coperta = `
-    <div class="coperta">
-      <div class="coperta-antet">
-        <img class="sigla" src="data:image/png;base64,${SIGLA_ARHIEPISCOPIE_BASE64}" alt="" />
-        <h1>${xmlEscape(p.denumire || "Parohia")}</h1>
-      </div>
-      <table>
-        ${randuriCompleteDateParohie(p)}
-      </table>
-      <h2 class="titlu-raport-arhaic" style="margin-top:28px;">${xmlEscape(titlu)}</h2>
-      <p style="color:#78716c; font-size:12px;">Document generat automat la data de ${azi}.</p>
-      <div class="coperta-logo-parteneri"><img src="data:image/png;base64,${LOGOURI_PARTENERI_BASE64}" alt="" /></div>
-    </div>`;
+  doc.addFileToVFS("NotoSans-Regular.ttf", NOTOSANS_REGULAR_BASE64);
+  doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
+  doc.addFileToVFS("NotoSans-Bold.ttf", NOTOSANS_BOLD_BASE64);
+  doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
+  doc.setFont("NotoSans", "normal");
+  doc.addFileToVFS("EBGaramond-Regular.ttf", EBGARAMOND_REGULAR_BASE64);
+  doc.addFont("EBGaramond-Regular.ttf", "EBGaramond", "normal");
+  doc.addFileToVFS("EBGaramond-Bold.ttf", EBGARAMOND_BOLD_BASE64);
+  doc.addFont("EBGaramond-Bold.ttf", "EBGaramond", "bold");
 
-  const corpGrupuri = grupuri.map((g) => {
+  const latimePagina = doc.internal.pageSize.getWidth();
+  const inaltimePagina = doc.internal.pageSize.getHeight();
+  const CULOARE_FUNDAL = [138, 44, 40];
+  const CULOARE_AUR = [180, 145, 60];
+  const CULOARE_GRI = [110, 116, 122];
+  const CULOARE_GRI_INCHIS = [55, 60, 66];
+  const CULOARE_ALBASTRU = [31, 56, 100];
+  const MARGINE = 14;
+  const latimeUtila = latimePagina - 2 * MARGINE;
+
+  const potrivesteText = (text, fontStyle, fontSizeMax, fontSizeMin, latimeMaxima, fontFamily = "NotoSans") => {
+    doc.setFont(fontFamily, fontStyle);
+    let fs = fontSizeMax;
+    doc.setFontSize(fs);
+    while (doc.getTextWidth(text) > latimeMaxima && fs > fontSizeMin) {
+      fs -= 1;
+      doc.setFontSize(fs);
+    }
+    const linii = doc.splitTextToSize(text, latimeMaxima);
+    return { linii, fontSize: fs };
+  };
+
+  const numeParohie = uni(p.denumire || "Parohia");
+  const latimeSigla = 16;
+  const inaltimeSigla = 16;
+  const spatiuDupaSigla = 4;
+  const { linii: liniiNume, fontSize: fsNume } = potrivesteText(numeParohie, "bold", 20, 13, latimeUtila - latimeSigla - spatiuDupaSigla);
+  doc.setFontSize(fsNume);
+  const inaltimeLinieNume = fsNume * 0.42;
+  const yNumeStart = 20;
+  const ySubtitlu = yNumeStart + (liniiNume.length - 1) * inaltimeLinieNume + 7;
+  const yImgSigla = 3;
+  const inaltimeBanda = Math.max(ySubtitlu + 5, yImgSigla + inaltimeSigla + 3);
+
+  doc.setFillColor(...CULOARE_FUNDAL);
+  doc.rect(0, 0, latimePagina, inaltimeBanda, "F");
+  doc.setFillColor(...CULOARE_AUR);
+  doc.rect(0, inaltimeBanda, latimePagina, 1.1, "F");
+  doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", MARGINE, yImgSigla, latimeSigla, inaltimeSigla);
+
+  doc.setFont("NotoSans", "bold");
+  doc.setFontSize(fsNume);
+  doc.setTextColor(255, 255, 255);
+  liniiNume.forEach((linie, i) => doc.text(linie, MARGINE + latimeSigla + spatiuDupaSigla, yNumeStart + i * inaltimeLinieNume));
+
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(215, 222, 235);
+  doc.text(uni(`${p.eparhie || "—"}${p.protoierie ? "  ·  " + p.protoierie : ""}`), MARGINE + latimeSigla + spatiuDupaSigla, ySubtitlu);
+
+  let y = inaltimeBanda + 9;
+  const campuriParohie = [];
+  if (p.hram) campuriParohie.push(`Hram: ${p.hram}`);
+  campuriParohie.push(`CIF: ${p.cif || "—"}`);
+  if (p.nrAnaf) campuriParohie.push(`Nr. Registrul ANAF: ${p.nrAnaf}`);
+  if (p.codLMI) campuriParohie.push(`Cod LMI: ${p.codLMI}`);
+  campuriParohie.push(`Adresă: ${[p.strada, p.localitate, p.judet, p.codPostal].filter(Boolean).join(", ") || "—"}`);
+  if (p.telefon || p.email) campuriParohie.push(`Telefon / E-mail: ${[p.telefon, p.email].filter(Boolean).join(" / ")}`);
+  campuriParohie.push(`Preot paroh: ${p.preotParoh || "—"}`);
+  if (p.telefonPreot || p.emailPreot) campuriParohie.push(`Contact preot paroh: ${[p.telefonPreot, p.emailPreot].filter(Boolean).join(" / ")}`);
+  if (p.banca || p.iban) campuriParohie.push(`Bancă / IBAN: ${[p.banca, p.iban].filter(Boolean).join(" / ")}`);
+  if (p.dataInfiintare) campuriParohie.push(`Data înființării: ${fmtDataJurnal(p.dataInfiintare)}`);
+
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...CULOARE_GRI);
+  campuriParohie.forEach((text) => {
+    const linii = doc.splitTextToSize(uni(text), latimeUtila - 5);
+    linii.forEach((linie) => { doc.text(linie, MARGINE, y); y += 4.5; });
+  });
+
+  y += 6;
+  doc.setDrawColor(224, 226, 230);
+  doc.setLineWidth(0.3);
+  doc.line(MARGINE, y, latimePagina - MARGINE, y);
+
+  y += 8;
+  const latimeTitluDisponibila = latimeUtila - 5;
+  const { linii: liniiTitlu, fontSize: fsTitlu } = potrivesteText(uni(titlu), "bold", 16, 11, latimeTitluDisponibila, "EBGaramond");
+  const inaltimeLinieTitlu = fsTitlu * 0.42;
+  doc.setFillColor(...CULOARE_AUR);
+  doc.rect(MARGINE, y, 1.4, Math.max(8, liniiTitlu.length * inaltimeLinieTitlu), "F");
+  doc.setFont("EBGaramond", "bold");
+  doc.setFontSize(fsTitlu);
+  doc.setTextColor(...CULOARE_GRI_INCHIS);
+  liniiTitlu.forEach((linie, i) => doc.text(linie, MARGINE + 5, y + 6 + i * inaltimeLinieTitlu));
+  y += Math.max(13, liniiTitlu.length * inaltimeLinieTitlu + 5);
+
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...CULOARE_GRI);
+  doc.text(uni(`Document generat automat la data de ${azi}.`), MARGINE + 5, y);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+  doc.setFillColor(0, 0, 0);
+  doc.addPage();
+  doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", MARGINE, 2, 6, 6);
+
+  let yGrup = 12;
+  grupuri.forEach((g) => {
+    // Titlul de grup, cu propriile 6mm rezervate — dacă nu mai încape pe pagina curentă, trece
+    // curat pe una nouă (cu siglă mică proprie), înainte de a desena eticheta.
+    if (yGrup + 6 > inaltimePagina - 20) {
+      doc.addPage();
+      doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", MARGINE, 2, 6, 6);
+      yGrup = 12;
+    }
+    doc.setFont("NotoSans", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...CULOARE_ALBASTRU);
+    doc.text(uni(g.eticheta), MARGINE, yGrup);
+    yGrup += 3;
+
     const coloaneNumerice = g.columns.map((c) => {
       const valoriNegoale = g.rows.map((r) => r[c.key]).filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
       return valoriNegoale.length > 0 && valoriNegoale.every(esteValoareNumericaAfisata);
     });
-    const head = `<thead><tr>${g.columns.map((c, i) => `<th${coloaneNumerice[i] ? ' style="text-align:right;"' : ""}>${xmlEscape(c.label)}</th>`).join("")}</tr></thead>`;
-    const body = g.rows.map((r, i) => `<tr style="background:${i % 2 ? "#f5f5f4" : "white"};">${g.columns.map((c, j) => `<td${coloaneNumerice[j] ? ' style="text-align:right;"' : ""}>${xmlEscape(r[c.key])}</td>`).join("")}</tr>`).join("");
-    return `
-      <div class="grup-articol">
-        <h3>${xmlEscape(g.eticheta)}</h3>
-        <table class="raport">
-          ${head}
-          <tbody>${body}</tbody>
-        </table>
-      </div>`;
-  }).join("");
+    const columnStyles = {};
+    coloaneNumerice.forEach((eNumerica, i) => { if (eNumerica) columnStyles[i] = { halign: "right" }; });
 
-  imprimaHtmlFaraPopup(titlu, `${style}
-    ${coperta}
-    <div class="continut">
-      <table class="raport-grupat">
-        <thead><tr><td>
-          <div class="antet-grupat">
-            <img class="sigla-mica" src="data:image/png;base64,${SIGLA_ARHIEPISCOPIE_BASE64}" alt="" />
-            <span>Denumirea unității de cult: <span class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</span> &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</span>
-          </div>
-        </td></tr></thead>
-        <tbody><tr><td>
-          ${corpGrupuri}
-        </td></tr></tbody>
-      </table>
-      <div class="footer-line">
-        <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
-        <span>Data: ${azi}</span>
-      </div>
-    </div>
-  `);
+    autoTable(doc, {
+      startY: yGrup,
+      margin: { top: 8, bottom: 8 },
+      rowPageBreak: "avoid",
+      styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
+      headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+      columnStyles,
+      head: [g.columns.map((c) => c.label)],
+      body: g.rows.map((r) => g.columns.map((c) => uni(r[c.key]))),
+      didDrawPage: () => { doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", MARGINE, 2, 6, 6); },
+    });
+    yGrup = doc.lastAutoTable.finalY + 10;
+  });
+
+  const totalPaginiDoc = doc.internal.getNumberOfPages();
+  for (let pg = 1; pg <= totalPaginiDoc; pg++) {
+    doc.setPage(pg);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text(uni(`Pagina ${pg} din ${totalPaginiDoc}`), latimePagina - MARGINE, inaltimePagina - 6, { align: "right" });
+  }
+
+  doc.setFontSize(8);
+  const INALTIME_BLOC_FINAL = 10 + 10 + 24;
+  let yDupaTabel = yGrup - 2;
+  if (yDupaTabel + INALTIME_BLOC_FINAL > inaltimePagina) {
+    doc.addPage();
+    yDupaTabel = 20;
+  }
+  doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), MARGINE, yDupaTabel);
+  doc.text(uni(`Data: ${azi}`), latimePagina - 40, yDupaTabel);
+  {
+    const latimeLogo = latimePagina - 2 * MARGINE;
+    const inaltimeLogo = latimeLogo * (101 / 1200);
+    const xLogo = (latimePagina - latimeLogo) / 2;
+    const yLogo = Math.max(yDupaTabel + 10, inaltimePagina - 22 - inaltimeLogo);
+    doc.addImage(LOGOURI_PARTENERI_BASE64, "PNG", xLogo, yLogo, latimeLogo, inaltimeLogo);
+  }
+
+  const blobUrl = doc.output("bloburl");
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `${titlu.replace(/[^a-zA-Z0-9ăâîșțĂÂÎȘȚ ]/g, "").trim().slice(0, 80)}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // Reconstituie documentele (Chitanță/Ordin de plată) din operațiunile-linie individuale,
@@ -3225,12 +3445,8 @@ function grupeazaDocumente(operatiuni, tip) {
 function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocumentele, dataTiparireCurenta, orientare, formatHartie) {
   const p = parohie || {};
   const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
+  const uni = (s) => String(s ?? "").normalize("NFC");
 
-  // Soldul cumulat trebuie calculat mereu pe TOT registrul anului (nu doar pe ce se tipărește
-  // acum) — altfel, printarea unei singure chitanțe/selecții ar arăta un sold greșit, redus
-  // doar la subsetul tipărit. Precalculăm o hartă nr→sold, din setul complet de documente.
-  // Aceeași logică pentru ambele tipuri — Ordin de plată (sold cumulat plăți) și Chitanță
-  // (sold cumulat încasări) — diferă doar eticheta rândului, mai jos.
   const soldCumulatPeDoc = {};
   if (tipEtichetat === "Ordin de plată" || tipEtichetat === "Chitanță") {
     let sold = 0;
@@ -3242,66 +3458,128 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
     }
   }
 
-  const style = `
-    <style>
-      ${ARHAIC_FONT_FACE_CSS}
-      ${NOTOSANS_FONT_FACE_CSS}
-      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
-      body { font-family: 'NotoSans', Arial, sans-serif; color: #292524; margin: 0; font-size: 12pt; }
-      .pagina-doc { padding: 0 8mm; page-break-after: always; }
-      .pagina-doc:last-child { page-break-after: auto; }
-      table.doc { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 10px; }
-      table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
-      table.doc th { background: #8A2B29; color: white; font-weight: normal; }
-      .total-row td { font-weight: bold; background: #f5f5f4; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
-      .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 14px; color: #1F3864; }
-    </style>`;
+  const doc = new jsPDF({
+    orientation: orientare === "landscape" ? "landscape" : "portrait",
+    unit: "mm",
+    format: (formatHartie || "A4").toLowerCase(),
+  });
 
-  const paginile = docs
-    .map((doc) => {
-      const total = doc.linii.reduce((s, l) => s + l.suma, 0);
-      const soldCumulat = soldCumulatPeDoc[`${doc.an}-${doc.nr}`];
-      // Documentele din ani anteriori celui curent se datează la reprintare 31.12.{an} — data
-      // firească de închidere a acelui exercițiu — nu data reală a reprintării (azi).
-      const dataTiparire = doc.an < new Date().getFullYear() ? fmtDataJurnal(`${doc.an}-12-31`) : azi;
-      const randuri = doc.linii
-        .map((l) => `<tr><td>${xmlEscape(contById[l.contId]?.simbol || l.contId)}</td><td>${xmlEscape(contById[l.contId]?.denumire || "")}</td><td>${xmlEscape(l.explicatie || "")}</td><td style="text-align:right;">${fmt(l.suma)}</td></tr>`)
-        .join("");
-      return `
-        <div class="pagina-doc">
-          <div style="border:2px solid #1F3864; border-radius:4px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; background:#1F3864/5;">
-            <span style="font-size:18px; color:#1F3864; text-transform:uppercase; letter-spacing:0.5px;">${xmlEscape(tipEtichetat)}</span>
-            <div style="text-align:right;">
-              <span style="font-family: 'NotoSans', Arial, sans-serif; font-size:14px; color:#1F3864; font-weight:bold;">Nr. ${doc.nr}/${doc.an}</span>
-              ${doc.serie && doc.numarIdentificare ? `<br/><span style="font-family: 'NotoSans', Arial, sans-serif; font-size:12px; color:#78716c;">Serie ${xmlEscape(doc.serie)} nr. ${doc.numarIdentificare}</span>` : ""}
-            </div>
-          </div>
-          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: <span class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</span> &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
-          <table style="width:100%; border-collapse:collapse; margin-bottom:8px;">
-            <tr><td style="color:#78716c; padding:3px 0;">Denumire partener</td><td colspan="3">${xmlEscape(doc.tert || "—")}</td></tr>
-            <tr><td style="color:#78716c; padding:3px 0;">${tipEtichetat === "Ordin de plată" ? "Modalitatea de plată" : "Modalitatea de încasare"}</td><td colspan="3">${doc.modPlata === "numerar" ? "Numerar" : "Virament bancar"}</td></tr>
-            <tr><td style="color:#78716c; padding:3px 0;">${tipEtichetat === "Ordin de plată" ? "Sursa plății" : "Destinația sumei încasate"}</td><td colspan="3">${doc.modPlata === "numerar" ? "Casă" : "Cont bancar"}</td></tr>
-          </table>
-          <table class="doc">
-            <thead><tr><th>Art. bug. nr.</th><th>Denumire</th><th>Explicație</th><th style="text-align:right;">Sumă (lei)</th></tr></thead>
-            <tbody>
-              ${randuri}
-              <tr class="total-row"><td colspan="3">Total</td><td style="text-align:right;">${fmt(total)}</td></tr>
-              ${tipEtichetat === "Ordin de plată" ? `<tr class="total-row" style="background:#fef3c7;"><td colspan="3">Sold cumulat plăți (an ${doc.an})</td><td style="text-align:right;">${fmt(soldCumulat)}</td></tr>` : ""}
-              ${tipEtichetat === "Chitanță" ? `<tr class="total-row" style="background:#fef3c7;"><td colspan="3">Sold cumulat încasări (an ${doc.an})</td><td style="text-align:right;">${fmt(soldCumulat)}</td></tr>` : ""}
-            </tbody>
-          </table>
-          <div class="footer-line">
-            <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
-            <span>Data tipăririi: ${dataTiparire}</span>
-          </div>
-        </div>`;
-    })
-    .join("");
+  doc.addFileToVFS("NotoSans-Regular.ttf", NOTOSANS_REGULAR_BASE64);
+  doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
+  doc.addFileToVFS("NotoSans-Bold.ttf", NOTOSANS_BOLD_BASE64);
+  doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
+  doc.setFont("NotoSans", "normal");
 
-  imprimaHtmlFaraPopup(tipEtichetat, `${style}${paginile}`);
+  const CULOARE_ALBASTRU = [31, 56, 100];
+  const CULOARE_GRI = [120, 113, 108];
+  const CULOARE_GRI_INCHIS = [41, 37, 36];
+  const MARGINE = 14;
+  const latimePagina = doc.internal.pageSize.getWidth();
+  const latimeUtila = latimePagina - 2 * MARGINE;
+
+  docs.forEach((d, idxDoc) => {
+    if (idxDoc > 0) doc.addPage();
+    const total = d.linii.reduce((s, l) => s + l.suma, 0);
+    const soldCumulat = soldCumulatPeDoc[`${d.an}-${d.nr}`];
+    const dataTiparire = d.an < new Date().getFullYear() ? fmtDataJurnal(`${d.an}-12-31`) : azi;
+
+    let y = 16;
+    // Caseta de antet, cu chenar albastru — tip document (stânga) + nr/an + serie (dreapta).
+    doc.setDrawColor(...CULOARE_ALBASTRU);
+    doc.setLineWidth(0.5);
+    const inaltimeCaseta = d.serie && d.numarIdentificare ? 16 : 12;
+    doc.roundedRect(MARGINE, y, latimeUtila, inaltimeCaseta, 1.5, 1.5);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(13);
+    doc.setTextColor(...CULOARE_ALBASTRU);
+    doc.text(uni(tipEtichetat.toUpperCase()), MARGINE + 5, y + inaltimeCaseta / 2 + (d.serie ? -1 : 1.5));
+    doc.setFont("NotoSans", "bold");
+    doc.setFontSize(11);
+    doc.text(uni(`Nr. ${d.nr}/${d.an}`), latimePagina - MARGINE - 5, y + (d.serie ? 7 : inaltimeCaseta / 2 + 1.5), { align: "right" });
+    if (d.serie && d.numarIdentificare) {
+      doc.setFont("NotoSans", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...CULOARE_GRI);
+      doc.text(uni(`Serie ${d.serie} nr. ${d.numarIdentificare}`), latimePagina - MARGINE - 5, y + 12, { align: "right" });
+    }
+    y += inaltimeCaseta + 7;
+
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(uni(`Denumirea unității de cult: ${p.denumire || "—"}   |   Cod fiscal: ${p.cif || "—"}`), MARGINE, y);
+    y += 7;
+
+    // Trei linii cheie: partener / mod plată-încasare / sursă-destinație.
+    const randuriCheie = [
+      ["Denumire partener", d.tert || "—"],
+      [tipEtichetat === "Ordin de plată" ? "Modalitatea de plată" : "Modalitatea de încasare", d.modPlata === "numerar" ? "Numerar" : "Virament bancar"],
+      [tipEtichetat === "Ordin de plată" ? "Sursa plății" : "Destinația sumei încasate", d.modPlata === "numerar" ? "Casă" : "Cont bancar"],
+    ];
+    doc.setFontSize(9.5);
+    randuriCheie.forEach(([eticheta, valoare]) => {
+      doc.setFont("NotoSans", "normal");
+      doc.setTextColor(...CULOARE_GRI);
+      doc.text(uni(eticheta), MARGINE, y);
+      doc.setTextColor(...CULOARE_GRI_INCHIS);
+      doc.text(uni(valoare), MARGINE + 55, y);
+      y += 5;
+    });
+    y += 2;
+
+    const corpuriExtra = [
+      ["Total", "", "", fmt(total)],
+    ];
+    if (tipEtichetat === "Ordin de plată") corpuriExtra.push([`Sold cumulat plăți (an ${d.an})`, "", "", fmt(soldCumulat)]);
+    if (tipEtichetat === "Chitanță") corpuriExtra.push([`Sold cumulat încasări (an ${d.an})`, "", "", fmt(soldCumulat)]);
+
+    autoTable(doc, {
+      startY: y,
+      margin: { top: 8, bottom: 8 },
+      rowPageBreak: "avoid",
+      styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
+      headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+      columnStyles: { 3: { halign: "right" } },
+      head: [["Art. bug. nr.", "Denumire", "Explicație", "Sumă (lei)"]],
+      body: [
+        ...d.linii.map((l) => [contById[l.contId]?.simbol || l.contId, contById[l.contId]?.denumire || "", l.explicatie || "", fmt(l.suma)]),
+        ...corpuriExtra,
+      ],
+      didParseCell: (data) => {
+        if (data.section === "body" && data.row.index >= d.linii.length) {
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.fillColor = data.row.index === d.linii.length ? [245, 245, 244] : [254, 243, 199];
+        }
+      },
+    });
+
+    const yFooter = doc.lastAutoTable.finalY + 10;
+    doc.setDrawColor(214, 211, 209);
+    doc.setLineWidth(0.3);
+    doc.line(MARGINE, yFooter - 4, latimePagina - MARGINE, yFooter - 4);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), MARGINE, yFooter);
+    doc.text(uni(`Data tipăririi: ${dataTiparire}`), latimePagina - MARGINE, yFooter, { align: "right" });
+  });
+
+  const totalPaginiDoc = doc.internal.getNumberOfPages();
+  for (let pg = 1; pg <= totalPaginiDoc; pg++) {
+    doc.setPage(pg);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 113, 108);
+    doc.text(uni(`Pagina ${pg} din ${totalPaginiDoc}`), latimePagina - MARGINE, doc.internal.pageSize.getHeight() - 6, { align: "right" });
+  }
+
+  const blobUrl = doc.output("bloburl");
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `${tipEtichetat.replace(/[^a-zA-Z0-9ăâîșțĂÂÎȘȚ ]/g, "").trim()}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // Versiune generică: tipărește orice tip de document (NRCD, Bon de consum, Proces-verbal, Corespondență),
@@ -3358,102 +3636,188 @@ function construiesteRaportAnualComplet(state, an) {
 
 function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
   const p = parohie || {};
-  // Raportul anual de sinteză e prin definiție un document de sfârșit de exercițiu — datat mereu
-  // 31.12.{an}, indiferent de data reală la care se generează/reprintă (azi).
   const azi = fmtDataJurnal(`${raport.an}-12-31`);
+  const uni = (s) => String(s ?? "").normalize("NFC");
 
-  const style = `
-    <style>
-      ${ARHAIC_FONT_FACE_CSS}
-      ${NOTOSANS_FONT_FACE_CSS}
-      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
-      body { font-family: 'NotoSans', Arial, sans-serif; color: #292524; margin: 0; font-size: 12pt; }
-      .pagina { padding: 0 8mm; page-break-after: always; }
-      .pagina:last-child { page-break-after: auto; }
-      h2 { color: #1F3864; font-size: 18px; border-bottom: 2px solid #1F3864; padding-bottom: 4px; margin-top: 24px; }
-      table.raport { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 8px; }
-      table.raport th, table.raport td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
-      table.raport th { background: #8A2B29; color: white; font-weight: normal; }
-      .kpi { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
-      .kpi div { border: 1px solid #d6d3d1; border-radius: 4px; padding: 8px 14px; flex: 1; min-width: 140px; }
-      .kpi .label { font-size: 12pt; color: #78716c; text-transform: uppercase; }
-      .kpi .value { font-size: 16px; color: #1F3864; font-weight: bold; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
-      .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; color: #1F3864; }
-      .titlu-raport-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; letter-spacing: 0.02em; }
-    </style>`;
+  const doc = new jsPDF({
+    orientation: orientare === "landscape" ? "landscape" : "portrait",
+    unit: "mm",
+    format: (formatHartie || "A4").toLowerCase(),
+  });
 
-  const coperta = `
-    <div class="pagina" style="min-height:250mm; display:flex; flex-direction:column;">
-      <div style="text-align:center; margin-top:60px;">
-        <div style="width:70px;height:70px;border-radius:50%;background:#B8860B;margin:0 auto 16px;"></div>
-        <h1 class="nume-parohie-arhaic" style="font-size:24px; margin-bottom:4px;">${xmlEscape(p.denumire || "Parohia")}</h1>
-        <h2 class="titlu-raport-arhaic" style="border:none; margin-top:4px; font-size:18px;">RAPORT ANUAL DE SINTEZĂ PE ANUL ${raport.an}</h2>
-        <p style="color:#78716c;">Toate modulele: Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență</p>
-      </div>
-      <table class="raport" style="margin-top:40px;">
-        ${randuriCompleteDateParohie(p)}
-        <tr><td style="color:#78716c;">Exercițiu financiar ${raport.an}</td><td>${raport.exercitiuInchis ? "Închis" : "Deschis"}</td></tr>
-      </table>
-      <div style="margin-top:auto; padding-top:24px; text-align:center;"><img src="data:image/png;base64,${LOGOURI_PARTENERI_BASE64}" alt="" style="max-width:100%; height:auto;" /></div>
-    </div>`;
+  doc.addFileToVFS("NotoSans-Regular.ttf", NOTOSANS_REGULAR_BASE64);
+  doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
+  doc.addFileToVFS("NotoSans-Bold.ttf", NOTOSANS_BOLD_BASE64);
+  doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
+  doc.setFont("NotoSans", "normal");
+  doc.addFileToVFS("EBGaramond-Regular.ttf", EBGARAMOND_REGULAR_BASE64);
+  doc.addFont("EBGaramond-Regular.ttf", "EBGaramond", "normal");
+  doc.addFileToVFS("EBGaramond-Bold.ttf", EBGARAMOND_BOLD_BASE64);
+  doc.addFont("EBGaramond-Bold.ttf", "EBGaramond", "bold");
 
-  const paginaFinanciar = `
-    <div class="pagina">
-      <h2>Sinteză financiară — anul ${raport.an}</h2>
-      <div class="kpi">
-        <div><div class="label">Total venituri</div><div class="value">${fmt(raport.financiar.totalVenituri)} lei</div></div>
-        <div><div class="label">Total cheltuieli</div><div class="value">${fmt(raport.financiar.totalCheltuieli)} lei</div></div>
-        <div><div class="label">Excedent/deficit</div><div class="value">${fmt(raport.financiar.excedent)} lei</div></div>
-      </div>
-      <h2>Execuție bugetară</h2>
-      <table class="raport">
-        <thead><tr><th>Art. bug. nr.</th><th>Denumire</th><th style="text-align:right;">Bugetat</th><th style="text-align:right;">Realizat</th><th style="text-align:right;">Diferență</th></tr></thead>
-        <tbody>
-          ${raport.executieBugetara.map((r) => `<tr><td>${xmlEscape(r.simbol)}</td><td>${xmlEscape(r.denumire)}</td><td style="text-align:right;">${fmt(r.bugetat)}</td><td style="text-align:right;">${fmt(r.realizat)}</td><td style="text-align:right;">${fmt(r.bugetat - r.realizat)}</td></tr>`).join("")}
-        </tbody>
-      </table>
-    </div>`;
+  const latimePagina = doc.internal.pageSize.getWidth();
+  const inaltimePagina = doc.internal.pageSize.getHeight();
+  const MARGINE = 14;
+  const latimeUtila = latimePagina - 2 * MARGINE;
+  const CULOARE_ALBASTRU = [31, 56, 100];
+  const CULOARE_AUR = [180, 145, 60];
+  const CULOARE_GRI = [120, 113, 108];
+  const CULOARE_GRI_INCHIS = [41, 37, 36];
 
-  const paginaModule = `
-    <div class="pagina">
-      <h2>Pangar</h2>
-      <div class="kpi">
-        <div><div class="label">Vânzări din anul ${raport.an}</div><div class="value">${fmt(raport.pangar.vanzariAn)} lei</div></div>
-        <div><div class="label">Valoare stoc (curent)</div><div class="value">${fmt(raport.pangar.valoareStocCurent)} lei</div></div>
-        <div><div class="label">Produse active</div><div class="value">${raport.pangar.produseActive}</div></div>
-      </div>
-      <h2>Consum intern / Filantropie / Protocol</h2>
-      <div class="kpi">
-        <div><div class="label">Bonuri emise în ${raport.an}</div><div class="value">${raport.consumIntern.numarBonuriAn}</div></div>
-        <div><div class="label">Valoare consumată</div><div class="value">${fmt(raport.consumIntern.valoareAn)} lei</div></div>
-      </div>
-      <h2>Inventar &amp; Patrimoniu</h2>
-      <div class="kpi">
-        <div><div class="label">Bunuri active (curent)</div><div class="value">${raport.patrimoniu.numarBunuriActive}</div></div>
-        <div><div class="label">Valoare curentă</div><div class="value">${fmt(raport.patrimoniu.valoareCurenta)} lei</div></div>
-        <div><div class="label">Casate în ${raport.an}</div><div class="value">${raport.patrimoniu.casateAn}</div></div>
-      </div>
-      <h2>Cimitir Parohial</h2>
-      <div class="kpi">
-        <div><div class="label">Concesiuni noi în ${raport.an}</div><div class="value">${raport.cimitir.concesiuniNoiAn}</div></div>
-        <div><div class="label">Concesiuni active (curent)</div><div class="value">${raport.cimitir.concesiuniActiveCurent}</div></div>
-        <div><div class="label">Venit concesiuni ${raport.an}</div><div class="value">${fmt(raport.cimitir.venitAn)} lei</div></div>
-      </div>
-      <h2>Corespondență &amp; Arhivă</h2>
-      <div class="kpi">
-        <div><div class="label">Intrări în ${raport.an}</div><div class="value">${raport.corespondenta.intrariAn}</div></div>
-        <div><div class="label">Ieșiri în ${raport.an}</div><div class="value">${raport.corespondenta.iesiriAn}</div></div>
-        <div><div class="label">Nerezolvate</div><div class="value">${raport.corespondenta.nerezolvateAn}</div></div>
-      </div>
-      <div class="footer-line">
-        <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
-        <span>Data generării: ${azi}</span>
-      </div>
-    </div>`;
+  // Copertă — siglă reală (nu placeholder), nume parohie, titlu, subtitlu, câteva date-cheie,
+  // logo parteneri la baza paginii.
+  doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", latimePagina / 2 - 12, 40, 24, 24);
+  doc.setFont("EBGaramond", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...CULOARE_ALBASTRU);
+  doc.text(uni(p.denumire || "Parohia"), latimePagina / 2, 76, { align: "center" });
+  doc.setFont("NotoSans", "bold");
+  doc.setFontSize(14);
+  doc.text(uni(`RAPORT ANUAL DE SINTEZĂ PE ANUL ${raport.an}`), latimePagina / 2, 86, { align: "center" });
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...CULOARE_GRI);
+  doc.text(uni("Toate modulele: Contabilitate, Pangar, Consum intern, Patrimoniu, Cimitir, Corespondență"), latimePagina / 2, 93, { align: "center", maxWidth: latimeUtila });
 
-  imprimaHtmlFaraPopup(`Raport anual de sinteză ${raport.an}`, `${style}${coperta}${paginaFinanciar}${paginaModule}`);
+  let yC = 115;
+  const randuriCoperta = [
+    ["Denumirea unității de cult", p.denumire || "—"],
+    ["Cod fiscal (CIF)", p.cif || "—"],
+    ["Preot paroh", p.preotParoh || "—"],
+    [`Exercițiu financiar ${raport.an}`, raport.exercitiuInchis ? "Închis" : "Deschis"],
+  ];
+  doc.setFontSize(10);
+  randuriCoperta.forEach(([eticheta, valoare]) => {
+    doc.setFont("NotoSans", "normal");
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(uni(eticheta), MARGINE + 20, yC);
+    doc.setTextColor(...CULOARE_GRI_INCHIS);
+    doc.text(uni(valoare), latimePagina - MARGINE - 20, yC, { align: "right" });
+    doc.setDrawColor(231, 229, 228);
+    doc.line(MARGINE + 20, yC + 2, latimePagina - MARGINE - 20, yC + 2);
+    yC += 8;
+  });
+
+  {
+    const latimeLogo = latimeUtila * 0.85;
+    const inaltimeLogo = latimeLogo * (101 / 1200);
+    doc.addImage(LOGOURI_PARTENERI_BASE64, "PNG", (latimePagina - latimeLogo) / 2, inaltimePagina - 30 - inaltimeLogo, latimeLogo, inaltimeLogo);
+  }
+
+  // Desenează un rând de casete KPI (etichetă + valoare), înfășurate automat pe lățimea paginii —
+  // întoarce y-ul de după rând, ca apelantul să continue de acolo.
+  function deseneazaKPI(items, yStart) {
+    const gap = 4;
+    const latimeCaseta = (latimeUtila - gap * (items.length - 1)) / items.length;
+    const inaltimeCaseta = 16;
+    items.forEach((item, i) => {
+      const x = MARGINE + i * (latimeCaseta + gap);
+      doc.setDrawColor(214, 211, 209);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(x, yStart, latimeCaseta, inaltimeCaseta, 1, 1);
+      doc.setFont("NotoSans", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...CULOARE_GRI);
+      doc.text(uni(item.label.toUpperCase()), x + 3, yStart + 6, { maxWidth: latimeCaseta - 6 });
+      doc.setFont("NotoSans", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...CULOARE_ALBASTRU);
+      doc.text(uni(item.value), x + 3, yStart + 12.5, { maxWidth: latimeCaseta - 6 });
+    });
+    return yStart + inaltimeCaseta + 10;
+  }
+
+  function titluSectiune(text, yStart) {
+    doc.setDrawColor(...CULOARE_ALBASTRU);
+    doc.setLineWidth(0.5);
+    doc.line(MARGINE, yStart + 1, latimePagina - MARGINE, yStart + 1);
+    doc.setFont("NotoSans", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(...CULOARE_ALBASTRU);
+    doc.text(uni(text), MARGINE, yStart);
+    return yStart + 8;
+  }
+
+  // Pagina financiară — KPI + execuție bugetară.
+  doc.addPage();
+  let y = 16;
+  y = titluSectiune(`Sinteză financiară — anul ${raport.an}`, y);
+  y = deseneazaKPI([
+    { label: "Total venituri", value: `${fmt(raport.financiar.totalVenituri)} lei` },
+    { label: "Total cheltuieli", value: `${fmt(raport.financiar.totalCheltuieli)} lei` },
+    { label: "Excedent/deficit", value: `${fmt(raport.financiar.excedent)} lei` },
+  ], y);
+  y = titluSectiune("Execuție bugetară", y);
+
+  autoTable(doc, {
+    startY: y,
+    margin: { top: 8, bottom: 8 },
+    rowPageBreak: "avoid",
+    styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
+    headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+    columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
+    head: [["Art. bug. nr.", "Denumire", "Bugetat", "Realizat", "Diferență"]],
+    body: raport.executieBugetara.map((r) => [r.simbol, r.denumire, fmt(r.bugetat), fmt(r.realizat), fmt(r.bugetat - r.realizat)]),
+  });
+
+  // Pagina de module — câte o secțiune KPI per modul, apoi subsolul final al întregului raport.
+  doc.addPage();
+  y = 16;
+  y = titluSectiune("Pangar", y);
+  y = deseneazaKPI([
+    { label: `Vânzări din anul ${raport.an}`, value: `${fmt(raport.pangar.vanzariAn)} lei` },
+    { label: "Valoare stoc (curent)", value: `${fmt(raport.pangar.valoareStocCurent)} lei` },
+    { label: "Produse active", value: String(raport.pangar.produseActive) },
+  ], y);
+  y = titluSectiune("Consum intern / Filantropie / Protocol", y);
+  y = deseneazaKPI([
+    { label: `Bonuri emise în ${raport.an}`, value: String(raport.consumIntern.numarBonuriAn) },
+    { label: "Valoare consumată", value: `${fmt(raport.consumIntern.valoareAn)} lei` },
+  ], y);
+  y = titluSectiune("Inventar & Patrimoniu", y);
+  y = deseneazaKPI([
+    { label: "Bunuri active (curent)", value: String(raport.patrimoniu.numarBunuriActive) },
+    { label: "Valoare curentă", value: `${fmt(raport.patrimoniu.valoareCurenta)} lei` },
+    { label: `Casate în ${raport.an}`, value: String(raport.patrimoniu.casateAn) },
+  ], y);
+  y = titluSectiune("Cimitir Parohial", y);
+  y = deseneazaKPI([
+    { label: `Concesiuni noi în ${raport.an}`, value: String(raport.cimitir.concesiuniNoiAn) },
+    { label: "Concesiuni active (curent)", value: String(raport.cimitir.concesiuniActiveCurent) },
+    { label: `Venit concesiuni ${raport.an}`, value: `${fmt(raport.cimitir.venitAn)} lei` },
+  ], y);
+  y = titluSectiune("Corespondență & Arhivă", y);
+  y = deseneazaKPI([
+    { label: `Intrări în ${raport.an}`, value: String(raport.corespondenta.intrariAn) },
+    { label: `Ieșiri în ${raport.an}`, value: String(raport.corespondenta.iesiriAn) },
+    { label: "Nerezolvate", value: String(raport.corespondenta.nerezolvateAn) },
+  ], y);
+
+  doc.setDrawColor(214, 211, 209);
+  doc.setLineWidth(0.3);
+  doc.line(MARGINE, y - 4, latimePagina - MARGINE, y - 4);
+  doc.setFont("NotoSans", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...CULOARE_GRI);
+  doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), MARGINE, y);
+  doc.text(uni(`Data generării: ${azi}`), latimePagina - MARGINE, y, { align: "right" });
+
+  const totalPaginiDoc = doc.internal.getNumberOfPages();
+  for (let pg = 1; pg <= totalPaginiDoc; pg++) {
+    doc.setPage(pg);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(uni(`Pagina ${pg} din ${totalPaginiDoc}`), latimePagina - MARGINE, inaltimePagina - 6, { align: "right" });
+  }
+
+  const blobUrl = doc.output("bloburl");
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `Raport-anual-sinteza-${raport.an}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function exportRaportAnualXLSX(raport, parohie) {
@@ -3503,63 +3867,122 @@ function exportRaportAnualXLSX(raport, parohie) {
 function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLinii, parohie, dataTiparireCurenta, orientare, formatHartie) {
   const p = parohie || {};
   const azi = fmtDataJurnal(dataTiparireCurenta || todayISO());
+  const uni = (s) => String(s ?? "").normalize("NFC");
 
-  const style = `
-    <style>
-      ${ARHAIC_FONT_FACE_CSS}
-      ${NOTOSANS_FONT_FACE_CSS}
-      @page { size: ${formatHartie || "A4"} ${orientare === "landscape" ? "landscape" : "portrait"}; margin: 20mm 14mm 22mm 14mm; }
-      @page { @bottom-right { content: "Pagina " counter(page) " din " counter(pages); font-size: 12px; color: #78716c; } }
-      body { font-family: 'NotoSans', Arial, sans-serif; color: #292524; margin: 0; font-size: 12pt; }
-      .pagina-doc { padding: 0 8mm; page-break-after: always; }
-      .pagina-doc:last-child { page-break-after: auto; }
-      table.doc { width: 100%; border-collapse: collapse; font-size: 12pt; margin-top: 10px; }
-      table.doc th, table.doc td { border: 1px solid #d6d3d1; padding: 5px 8px; text-align: left; }
-      table.doc th { background: #8A2B29; color: white; font-weight: normal; }
-      .total-row td { font-weight: bold; background: #f5f5f4; }
-      .footer-line { display: flex; justify-content: space-between; border-top: 1px solid #d6d3d1; padding-top: 6px; margin-top: 20px; font-size: 12pt; color: #78716c; }
-      .nume-parohie-arhaic { font-family: 'Arhaic Romanesc', Georgia, serif; font-size: 14px; color: #1F3864; }
-    </style>`;
+  const doc = new jsPDF({
+    orientation: orientare === "landscape" ? "landscape" : "portrait",
+    unit: "mm",
+    format: (formatHartie || "A4").toLowerCase(),
+  });
 
-  const paginile = docs
-    .map((doc) => {
-      const antetRanduri = campuriAntet
-        .map((c) => `<tr><td style="width:30%; color:#78716c;">${xmlEscape(c.label)}</td><td colspan="${coloaneLinii ? coloaneLinii.length - 1 : 3}">${xmlEscape(c.value(doc))}</td></tr>`)
-        .join("");
+  doc.addFileToVFS("NotoSans-Regular.ttf", NOTOSANS_REGULAR_BASE64);
+  doc.addFont("NotoSans-Regular.ttf", "NotoSans", "normal");
+  doc.addFileToVFS("NotoSans-Bold.ttf", NOTOSANS_BOLD_BASE64);
+  doc.addFont("NotoSans-Bold.ttf", "NotoSans", "bold");
+  doc.setFont("NotoSans", "normal");
 
-      let tabelLinii = "";
-      if (coloaneLinii && Array.isArray(doc.linii)) {
-        const capete = coloaneLinii.map((c) => `<th${c.right ? ' style="text-align:right;"' : ""}>${xmlEscape(c.label)}</th>`).join("");
-        const randuri = doc.linii
-          .map((l) => `<tr>${coloaneLinii.map((c) => `<td${c.right ? ' style="text-align:right;"' : ""}>${xmlEscape(c.value(l))}</td>`).join("")}</tr>`)
-          .join("");
-        const total = coloaneLinii.some((c) => c.total)
-          ? `<tr class="total-row">${coloaneLinii.map((c, i) => (i === coloaneLinii.length - 1 ? `<td style="text-align:right;">${xmlEscape(c.totalValue ? c.totalValue(doc) : "")}</td>` : i === 0 ? `<td colspan="${coloaneLinii.length - 1}">Total</td>` : "")).filter(Boolean).join("")}</tr>`
-          : "";
-        tabelLinii = `<table class="doc"><thead><tr>${capete}</tr></thead><tbody>${randuri}${total}</tbody></table>`;
-      }
+  const CULOARE_ALBASTRU = [31, 56, 100];
+  const CULOARE_GRI = [120, 113, 108];
+  const CULOARE_GRI_INCHIS = [41, 37, 36];
+  const MARGINE = 14;
+  const latimePagina = doc.internal.pageSize.getWidth();
+  const latimeUtila = latimePagina - 2 * MARGINE;
 
-      // Documentele din ani anteriori celui curent se datează la reprintare 31.12.{an} — vezi
-      // explicația identică din printeazaDocumente.
-      const dataTiparire = doc.an < new Date().getFullYear() ? fmtDataJurnal(`${doc.an}-12-31`) : azi;
+  docs.forEach((d, idxDoc) => {
+    if (idxDoc > 0) doc.addPage();
 
-      return `
-        <div class="pagina-doc">
-          <div style="border:2px solid #1F3864; border-radius:4px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:18px; color:#1F3864; text-transform:uppercase; letter-spacing:0.5px;">${xmlEscape(tipEtichetat)}</span>
-            <span style="font-family: 'NotoSans', Arial, sans-serif; font-size:14px; color:#1F3864; font-weight:bold;">Nr. ${doc.nr}/${doc.an}</span>
-          </div>
-          <p style="font-size:12px; color:#78716c;">Denumirea unității de cult: <span class="nume-parohie-arhaic">${xmlEscape(p.denumire)}</span> &nbsp;|&nbsp; Cod fiscal: ${xmlEscape(p.cif)}</p>
-          ${tabelLinii}
-          <div class="footer-line">
-            <span>Preot Paroh: ${xmlEscape(p.preotParoh)}</span>
-            <span>Data tipăririi: ${dataTiparire}</span>
-          </div>
-        </div>`;
-    })
-    .join("");
+    let y = 16;
+    doc.setDrawColor(...CULOARE_ALBASTRU);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(MARGINE, y, latimeUtila, 12, 1.5, 1.5);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(13);
+    doc.setTextColor(...CULOARE_ALBASTRU);
+    doc.text(uni(tipEtichetat.toUpperCase()), MARGINE + 5, y + 7.5);
+    doc.setFont("NotoSans", "bold");
+    doc.setFontSize(11);
+    doc.text(uni(`Nr. ${d.nr}/${d.an}`), latimePagina - MARGINE - 5, y + 7.5, { align: "right" });
+    y += 19;
 
-  imprimaHtmlFaraPopup(tipEtichetat, `${style}${paginile}`);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(uni(`Denumirea unității de cult: ${p.denumire || "—"}   |   Cod fiscal: ${p.cif || "—"}`), MARGINE, y);
+    y += 7;
+
+    doc.setFontSize(9.5);
+    campuriAntet.forEach((c) => {
+      const valoare = c.value(d);
+      const linii = doc.splitTextToSize(uni(String(valoare ?? "—")), latimeUtila - 55);
+      doc.setFont("NotoSans", "normal");
+      doc.setTextColor(...CULOARE_GRI);
+      doc.text(uni(c.label), MARGINE, y);
+      doc.setTextColor(...CULOARE_GRI_INCHIS);
+      linii.forEach((linie, i) => doc.text(linie, MARGINE + 55, y + i * 4.5));
+      y += Math.max(5, linii.length * 4.5);
+    });
+    y += 2;
+
+    // Tabelul de linii (opțional) — dacă lipsește, documentul se oprește doar la antet.
+    if (coloaneLinii && Array.isArray(d.linii)) {
+      const eColoanaTotal = coloaneLinii.some((c) => c.total);
+      const corpTotal = eColoanaTotal
+        ? [coloaneLinii.map((c, i) => (i === 0 ? "Total" : i === coloaneLinii.length - 1 ? uni(String((c.totalValue ? c.totalValue(d) : "") ?? "")) : ""))]
+        : [];
+      const columnStyles = {};
+      coloaneLinii.forEach((c, i) => { if (c.right) columnStyles[i] = { halign: "right" }; });
+
+      autoTable(doc, {
+        startY: y,
+        margin: { top: 8, bottom: 8 },
+        rowPageBreak: "avoid",
+        styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
+        headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+        columnStyles,
+        head: [coloaneLinii.map((c) => c.label)],
+        body: [
+          ...d.linii.map((l) => coloaneLinii.map((c) => uni(String(c.value(l) ?? "")))),
+          ...corpTotal,
+        ],
+        didParseCell: (data) => {
+          if (eColoanaTotal && data.section === "body" && data.row.index === d.linii.length) {
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.fillColor = [245, 245, 244];
+          }
+        },
+      });
+      y = doc.lastAutoTable.finalY + 10;
+    } else {
+      y += 6;
+    }
+
+    const dataTiparire = d.an < new Date().getFullYear() ? fmtDataJurnal(`${d.an}-12-31`) : azi;
+    doc.setDrawColor(214, 211, 209);
+    doc.setLineWidth(0.3);
+    doc.line(MARGINE, y - 4, latimePagina - MARGINE, y - 4);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(uni(`Preot Paroh: ${p.preotParoh || "—"}`), MARGINE, y);
+    doc.text(uni(`Data tipăririi: ${dataTiparire}`), latimePagina - MARGINE, y, { align: "right" });
+  });
+
+  const totalPaginiDoc = doc.internal.getNumberOfPages();
+  for (let pg = 1; pg <= totalPaginiDoc; pg++) {
+    doc.setPage(pg);
+    doc.setFont("NotoSans", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...CULOARE_GRI);
+    doc.text(uni(`Pagina ${pg} din ${totalPaginiDoc}`), latimePagina - MARGINE, doc.internal.pageSize.getHeight() - 6, { align: "right" });
+  }
+
+  const blobUrl = doc.output("bloburl");
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = `${tipEtichetat.replace(/[^a-zA-Z0-9ăâîșțĂÂÎȘȚ ]/g, "").trim()}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [], extraCoperta = "", infoSelectie = null }) {
@@ -6168,6 +6591,11 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
       </header>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard
+          label={`Sold final (total) (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`}
+          value={`${fmt(soldCasa + soldBancaAjustat + soldDepozit)} RON`}
+          tone={soldCasa + soldBancaAjustat + soldDepozit < PRAG_SOLD ? "bad" : "good"}
+        />
         <StatCard label={`Sold casă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldCasa)} RON`} tone={soldCasa < PRAG_SOLD ? "bad" : "good"} />
         <StatCard
           label={`Sold bancă (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`}
@@ -6178,6 +6606,9 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
         {soldDepozit !== 0 && (
           <StatCard label={`Sold depozit bancar (${anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`})`} value={`${fmt(soldDepozit)} RON`} tone="good" />
         )}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label={`Total venituri ${anTablou}`} value={`${fmt(totalVenituri)} RON`} tone="neutral" />
         <StatCard label={`Total cheltuieli ${anTablou}`} value={`${fmt(totalCheltuieli)} RON`} tone="neutral" />
       </div>
