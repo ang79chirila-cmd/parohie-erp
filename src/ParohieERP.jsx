@@ -6550,22 +6550,35 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
 
   const excedent = totalVenituri - totalCheltuieli;
 
-  // Stocuri Pangar curente, structurate pe categoriile de afișare (aceeași taxonomie ca în Pangar
-  // însuși — ORDINE_CATEGORII_PANGAR/categorieAfisarePangar), doar cele cu stoc diferit de zero.
-  // Cantitatea se însumează separat pe fiecare UM întâlnit în categorie (majoritatea categoriilor
-  // au un singur UM, dar nu presupunem asta necondiționat — un produs nou, cu alt UM, tot s-ar
-  // afișa corect, ca o linie separată de cantitate în aceeași categorie).
+  // Stocuri Pangar, structurate pe categoriile de afișare (aceeași taxonomie ca în Pangar însuși
+  // — ORDINE_CATEGORII_PANGAR/categorieAfisarePangar), doar cele cu stoc diferit de zero.
+  //
+  // CRITIC: respectă anul din selector, NU stocul curent al aplicației. `state.articole[].stoc`
+  // e mereu stocul de AZI, indiferent ce an ai selectat mai sus — folosirea lui directă arăta
+  // aceleași cifre și la 2025, și la 2026, contrazicând tot restul tabloului (care corect arată
+  // solduri diferite pe an). Reconstruim în schimb stocul, per articol, prin reluarea cronologică
+  // a tuturor mișcărilor din `state.miscariStoc` până la data-limită a anului selectat (31.12.{an}
+  // pentru un an închis/trecut, azi pentru anul curent) — exact același principiu ca la
+  // soldCasaBancaLaData, aplicat aici pe mișcări de stoc, nu pe operațiuni financiare.
   const stocuriPangarPeCategorie = useMemo(() => {
+    const dataLimita = anTablou >= anCurent ? todayISO() : `${anTablou}-12-31`;
+    const stocPerArticol = {};
+    for (const m of state.miscariStoc) {
+      if (m.data > dataLimita) continue;
+      const semn = m.tip === "intrare" ? 1 : -1;
+      stocPerArticol[m.articolId] = (stocPerArticol[m.articolId] || 0) + semn * m.cantitate;
+    }
     const grupuri = {};
     for (const a of state.articole) {
-      if (!a.stoc) continue;
+      const stoc = stocPerArticol[a.id] || 0;
+      if (!stoc) continue;
       const cat = categorieAfisarePangar(a.bazaCod);
       if (!grupuri[cat]) grupuri[cat] = { cantitatePeUM: {}, valoare: 0 };
-      grupuri[cat].cantitatePeUM[a.um] = (grupuri[cat].cantitatePeUM[a.um] || 0) + a.stoc;
-      grupuri[cat].valoare += a.stoc * (a.pretVanzare || 0);
+      grupuri[cat].cantitatePeUM[a.um] = (grupuri[cat].cantitatePeUM[a.um] || 0) + stoc;
+      grupuri[cat].valoare += stoc * (a.pretVanzare || 0);
     }
     return ORDINE_CATEGORII_PANGAR.filter((cat) => grupuri[cat]).map((cat) => ({ eticheta: cat, ...grupuri[cat] }));
-  }, [state.articole]);
+  }, [state.miscariStoc, state.articole, anTablou, anCurent]);
   const valoareTotalaStocPangar = stocuriPangarPeCategorie.reduce((s, c) => s + c.valoare, 0);
   const [instantePrevederiUrmator, setInstantePrevederiUrmator] = useState([]);
   const [instantePrevederiPrecedent, setInstantePrevederiPrecedent] = useState([]);
@@ -6644,7 +6657,9 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
 
       {stocuriPangarPeCategorie.length > 0 && (
         <div>
-          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-2">Stocuri Pangar curente (la preț de vânzare) — doar categoriile cu stoc</div>
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-2">
+            Stocuri Pangar ({anTablou >= anCurent ? "la zi" : `31.12.${anTablou}`}), la preț de vânzare — doar categoriile cu stoc
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {stocuriPangarPeCategorie.map((c) => (
               <StatCard
