@@ -9268,18 +9268,14 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // obișnuite (FIFO, ca la orice recepție) și liniile de Consum intern gestionate local (ca la
   // receptieMultipla), dar legate de ACELAȘI documentId — astfel datoria către furnizor rămâne
   // una singură, urmărită unitar, achitabilă printr-un singur mecanism, indiferent de destinație.
+  // Datoria completă (sumă + defalcare pe conturi, Pangar și Consum intern combinate) vine deja
+  // gata calculată din receptioneazaFacturaMixta — nu se mai reconstruiește nimic aici.
   async function receptieFacturaMixta({ liniiPangar, liniiConsumIntern, data, furnizor, nrFactura, plataAcum, modPlata, dataScadenta }) {
     const categoriiAchizitie = { ...CATEGORII_PANGAR, ...MOTIVE_CA_CATEGORII_ACHIZITIE };
     const rezultat = await receptioneazaFacturaMixta(parohieId, {
       liniiPangar, liniiConsumIntern, data, furnizor, nrFactura,
       plataAcum, modPlata, dataScadenta, categoriiAchizitie,
     });
-
-    const valoareConsumIntern = (liniiConsumIntern || []).reduce((s, l) => s + Number(l.cantitate) * Number(l.costUnitar), 0);
-    const sumePeMotiv = {};
-    for (const l of liniiConsumIntern || []) {
-      sumePeMotiv[l.motiv] = (sumePeMotiv[l.motiv] || 0) + Number(l.cantitate) * Number(l.costUnitar);
-    }
 
     const denumiriPangar = (liniiPangar || [])
       .map((l) => state.articole.find((a) => a.id === l.articolId)?.cod)
@@ -9289,20 +9285,8 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
 
     setState((s) => {
       const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
-      const datorieNoua = !plataAcum
-        ? {
-            id: rezultat.documentId, documentId: rezultat.documentId, furnizor,
-            suma: (rezultat.datorieNoua?.suma || 0) + valoareConsumIntern,
-            sumaAchitata: 0,
-            sumaRamasa: (rezultat.datorieNoua?.suma || 0) + valoareConsumIntern,
-            platiExistente: [],
-            liniiAchizitie: [
-              ...(rezultat.datorieNoua?.liniiAchizitie || []),
-              ...Object.entries(sumePeMotiv).map(([categorieBVC, suma]) => ({ categorieBVC, suma })),
-            ],
-            nrFactura, nrNRCD: rezultat.nrNRCD, anNRCD: rezultat.anNRCD,
-            dataFactura: data, dataScadenta, status: "neachitata",
-          }
+      const datorieNoua = rezultat.datorieNoua
+        ? { ...rezultat.datorieNoua, id: rezultat.documentId, sumaAchitata: 0, sumaRamasa: rezultat.datorieNoua.suma, platiExistente: [] }
         : null;
       return {
         ...sPatched,
@@ -9656,11 +9640,17 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
   // Grupare pe denumire+UM a articolelor de Consum intern — aceeași logică ca în ConsumInternTab
   // (grupeConsumIntern de-acolo) — necesară aici pentru formularul de recepție a facturii mixte,
   // ca produsele de Consum intern deja existente în nomenclator să apară ca sugestii la alegere.
+  // Costul unitar reținut pentru fiecare produs e cel al lotului CEL MAI RECENT (seq maxim) — nu
+  // primul găsit — ca pre-completarea la o recepție nouă să reflecte ultimul preț real plătit,
+  // nu un cost vechi, posibil depășit.
   const grupeConsumInternPentruMixt = useMemo(() => {
     const map = new Map();
     for (const a of state.articoleConsumIntern) {
       const key = `${a.denumire}|||${a.um}|||${a.an ?? ""}`;
-      if (!map.has(key)) map.set(key, { denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: !!a.esteVin });
+      const existent = map.get(key);
+      if (!existent || (a.seq || 0) > (existent.seq || 0)) {
+        map.set(key, { denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: !!a.esteVin, costUnitar: Number(a.costUnitar), seq: a.seq || 0 });
+      }
     }
     return Array.from(map.values()).sort((a, b) => (b.an || 0) - (a.an || 0) || a.denumire.localeCompare(b.denumire, "ro"));
   }, [state.articoleConsumIntern]);
@@ -11526,10 +11516,10 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
   // ajunge, la aceeași factură, fie la vânzare (Pangar), fie la uz liturgic intern (fără preț de
   // vânzare acolo), fără să fie nevoie să fie re-introduse ca produse noi, separate.
   const grupeConsumInternSortate = useMemo(() => {
-    const dinConsumIntern = [...(grupeConsumIntern || [])].map((g) => ({ denumire: g.denumire, um: g.um, an: g.an ?? null, esteVin: !!g.esteVin }));
+    const dinConsumIntern = [...(grupeConsumIntern || [])].map((g) => ({ denumire: g.denumire, um: g.um, an: g.an ?? null, esteVin: !!g.esteVin, costUnitar: g.costUnitar }));
     const dinPangarVin = (articole || [])
       .filter((a) => a.categorieBVC === "vin")
-      .map((a) => ({ denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: true }));
+      .map((a) => ({ denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: true, costUnitar: a.pretAchizitie }));
     const combinate = new Map();
     for (const g of [...dinConsumIntern, ...dinPangarVin]) {
       combinate.set(`${g.denumire}|||${g.um}|||${g.an ?? ""}`, g);
@@ -11538,8 +11528,9 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
   }, [grupeConsumIntern, articole]);
 
   // O linie e "de Pangar" (articol din nomenclator, cost = preț achiziție) sau "de Consum intern"
-  // (denumire/UM liber alese, cost introdus manual, motiv obligatoriu — determină, mai târziu, la
-  // achitare, contul bugetar pe care se recunoaște cheltuiala; vezi MOTIVE_CA_CATEGORII_ACHIZITIE).
+  // (denumire/UM liber alese, cost pre-completat cu ultimul cunoscut pentru acel produs, dar rămas
+  // complet editabil — prețul de pe factura curentă poate diferi — motiv obligatoriu — determină,
+  // mai târziu, la achitare, contul bugetar pe care se recunoaște cheltuiala; vezi MOTIVE_CA_CATEGORII_ACHIZITIE).
   const liniiPangarValide = linii.filter((l) => l.destinatie !== "consumIntern" && l.articolId && Number(l.cantitate) > 0);
   const liniiConsumInternValide = linii.filter((l) => l.destinatie === "consumIntern" && l.denumire?.trim() && Number(l.cantitate) > 0 && Number(l.costUnitar) > 0 && l.motiv);
   const valoareAchizitieTotala =
@@ -11659,7 +11650,10 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
                             onChange={(e) => {
                               const [denumire, um, anText] = e.target.value.split("|||");
                               const grupPotrivit = grupeConsumInternSortate.find((g) => g.denumire === denumire && g.um === um && String(g.an ?? "") === anText);
-                              actualizeazaLinie(l.id, { denumire, um, an: anText || "", esteVin: !!grupPotrivit?.esteVin });
+                              actualizeazaLinie(l.id, {
+                                denumire, um, an: anText || "", esteVin: !!grupPotrivit?.esteVin,
+                                costUnitar: grupPotrivit?.costUnitar != null ? String(grupPotrivit.costUnitar) : l.costUnitar,
+                              });
                             }}
                           >
                             <option value="">— selectați / introduceți nou —</option>
@@ -13336,6 +13330,23 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   const [instanteEditReceptie, setInstanteEditReceptie] = useState([]); // [{id, miscare}]
   const [instanteEditBon, setInstanteEditBon] = useState([]); // [{id, bon}]
   const [confirmareStergereReceptie, setConfirmareStergereReceptie] = useState(null); // miscareId | null
+  const [instanteAchitare, setInstanteAchitare] = useState([]); // [{id, datorie}]
+
+  // Documente (NRCD-uri) cu linii de Consum intern, din anul selectat — grupate din mișcările în
+  // sine (care păstrează furnizor/nrFactura/nrNRCD direct pe fiecare rând), NU din datoriiFurnizori,
+  // pentru că o datorie deja achitată integral DISPARE din acea listă. Starea de achitare se
+  // determină exact ca la Pangar: dacă mai există o datorie vie -> Achită; altfel -> ACHITAT, cu
+  // data preluată din plata (plățile) legate de acel document.
+  const documenteConsumIntern = useMemo(() => {
+    const grupuri = {};
+    for (const m of state.miscariConsumIntern || []) {
+      if (!m.documentId || yearOf(m.data) !== anConsumIntern) continue;
+      if (!grupuri[m.documentId]) {
+        grupuri[m.documentId] = { documentId: m.documentId, furnizor: m.furnizor, nrFactura: m.nrFactura, nrNRCD: m.nrNRCD, anNRCD: yearOf(m.data), data: m.data };
+      }
+    }
+    return Object.values(grupuri).sort((a, b) => (a.nrNRCD || 0) - (b.nrNRCD || 0));
+  }, [state.miscariConsumIntern, anConsumIntern]);
 
   // Acțiune declanșată din meniul principal (bara de sus) — vezi explicația identică la Jurnal/Pangar.
   useEffect(() => {
@@ -13727,6 +13738,56 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
         </Card>
       )}
 
+      {documenteConsumIntern.length > 0 && (
+        <Card className="overflow-x-auto">
+          <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Recepții cu linii de Consum intern — {anConsumIntern}</div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                <th className="px-3 py-1 font-bold">Furnizor</th>
+                <th className="px-3 py-1 font-bold">Document</th>
+                <th className="px-3 py-1 font-bold"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {documenteConsumIntern.map((doc) => {
+                const datorie = (state.datoriiFurnizori || []).find((d) => d.documentId === doc.documentId);
+                return (
+                  <tr key={doc.documentId} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
+                    <td className="px-3 py-1">{doc.furnizor}</td>
+                    <td className="px-3 py-1 text-stone-500">{doc.nrFactura} (NRCD {doc.nrNRCD}/{doc.anNRCD})</td>
+                    <td className="px-3 py-1 text-right">
+                      {(() => {
+                        if (!datorie) {
+                          const platiLegate = (state.operatiuni || []).filter((op) => op.tip === "plata" && op.documentSursaId === doc.documentId);
+                          const dateDistincte = [...new Set(platiLegate.map((op) => op.data))].sort();
+                          const dataAfisata = dateDistincte.length > 0 ? fmtDataJurnal(dateDistincte[dateDistincte.length - 1]) : null;
+                          const titluTooltip = dateDistincte.length > 1
+                            ? `Achitat în ${dateDistincte.length} plăți: ${dateDistincte.map(fmtDataJurnal).join(", ")}`
+                            : undefined;
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white border border-emerald-500 whitespace-nowrap"
+                              title={titluTooltip}
+                            >
+                              ACHITAT{dataAfisata ? ` — ${dataAfisata}` : ""}
+                            </span>
+                          );
+                        }
+                        if (permisiuni.citireOnly) {
+                          return <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitat</span>;
+                        }
+                        return <Btn variant="rosu" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie }])}>Achită</Btn>;
+                      })()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
       <Card className="overflow-x-auto">
         <div className="px-3 pt-3 text-xs uppercase tracking-wide text-stone-500 font-medium">Gestiune curentă (FIFO — loturi la cost de intrare)</div>
         <BaraCautarePaginare
@@ -13918,6 +13979,13 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
 
       {instanteArticol.map((inst) => (
         <ArticolConsumInternForm key={inst.id} onClose={() => setInstanteArticol((l) => l.filter((i) => i.id !== inst.id))} onSave={async (denumire, um, an, esteVin) => { await addArticol(denumire, um, an, esteVin); setInstanteArticol((l) => l.filter((i) => i.id !== inst.id)); }} />
+      ))}
+      {instanteAchitare.map((inst) => (
+        <AchitareDatorieModal key={inst.id}
+          datorie={inst.datorie}
+          onClose={() => setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id))}
+          onSave={async (plati, data) => { await achitaDatoriePangar(parohieId, state, setState, inst.datorie.id, plati, data); setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id)); }}
+        />
       ))}
       {instanteReceptie.map((inst) => (
         <ReceptieConsumInternMultiForm
@@ -14259,10 +14327,13 @@ function ReceptieConsumInternMultiForm({ grupe, articole, onClose, onSave }) {
   // Sugestiile includ, pe lângă nomenclatorul propriu de Consum intern, și toate produsele de
   // Vin din nomenclatorul Pangar — vezi explicația identică la ReceptieNRCDForm.
   const grupeSortate = useMemo(() => {
-    const dinConsumIntern = [...(grupe || [])].map((g) => ({ denumire: g.denumire, um: g.um, an: g.an ?? null, esteVin: !!g.esteVin }));
+    const dinConsumIntern = [...(grupe || [])].map((g) => ({
+      denumire: g.denumire, um: g.um, an: g.an ?? null, esteVin: !!g.esteVin,
+      costUnitar: g.loturi?.length ? Number(g.loturi[g.loturi.length - 1].costUnitar) : undefined,
+    }));
     const dinPangarVin = (articole || [])
       .filter((a) => a.categorieBVC === "vin")
-      .map((a) => ({ denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: true }));
+      .map((a) => ({ denumire: a.denumire, um: a.um, an: a.an ?? null, esteVin: true, costUnitar: a.pretAchizitie }));
     const combinate = new Map();
     for (const g of [...dinConsumIntern, ...dinPangarVin]) combinate.set(`${g.denumire}|||${g.um}|||${g.an ?? ""}`, g);
     return Array.from(combinate.values()).sort((a, b) => (b.an || 0) - (a.an || 0) || a.denumire.localeCompare(b.denumire, "ro"));
@@ -14320,7 +14391,10 @@ function ReceptieConsumInternMultiForm({ grupe, articole, onClose, onSave }) {
                     onChange={(e) => {
                       const [denumire, um, anText] = e.target.value.split("|||");
                       const grupPotrivit = grupeSortate.find((g) => g.denumire === denumire && g.um === um && String(g.an ?? "") === anText);
-                      actualizeazaLinie(l.id, { denumire, um, an: anText || "", esteVin: !!grupPotrivit?.esteVin });
+                      actualizeazaLinie(l.id, {
+                        denumire, um, an: anText || "", esteVin: !!grupPotrivit?.esteVin,
+                        cost: grupPotrivit?.costUnitar != null ? String(grupPotrivit.costUnitar) : l.cost,
+                      });
                     }}
                   >
                     <option value="">— selectați din nomenclator —</option>
