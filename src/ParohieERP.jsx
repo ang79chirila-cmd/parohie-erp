@@ -89,15 +89,24 @@ const fmtCant = formateazaCantitate;
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-// Soldurile Casă și Bancă, calculate strict din operațiunile cu data <= dataLimitaInclusiv —
-// folosit pentru excedentul reportat la închiderea unui exercițiu (soldul de la 31.12.an), și
-// pentru recalcularea lui automată dacă un document din acel an e modificat ulterior.
+// Soldurile Casă/Bancă/Depozit la o dată exactă — folosite la Reconcilierea bancară, care
+// compară soldul aplicației cu soldul unui extras de bancă, la o dată calendaristică precisă.
+//
+// CRITIC: restrânsă strict la ANUL datei cerute (nu cumulează și operațiunile din anii anteriori)
+// — pentru că fiecare an își începe propriul registru cu o linie de „Excedent reportat"/„Sold la
+// 31.12.{an anterior}" (vezi seteazaExcedentReportat), care already reprezintă corect tot ce s-a
+// acumulat până atunci. Dacă s-ar mai aduna și tranzacțiile brute din anii anteriori peste acea
+// linie de reportare, aceiași bani ar fi numărați de două ori — o dată prin tranzacțiile reale
+// care i-au construit, a doua oară prin linia care doar îi reportează. Caz real, găsit în
+// producție: 5.400.000 RON depozit, construiți organic în 2025, apoi reportați printr-o linie
+// nouă la 01.01.2026 — cumularea peste granița de an arăta 10.800.000 RON, dublu față de real.
 function soldCasaBancaLaData(operatiuni, dataLimitaInclusiv) {
+  const anLimita = yearOf(dataLimitaInclusiv);
   let soldCasa = 0;
   let soldBanca = 0;
   let soldDepozit = 0;
   for (const op of operatiuni) {
-    if (op.data > dataLimitaInclusiv) continue;
+    if (op.an !== anLimita || op.data > dataLimitaInclusiv) continue;
     const semn = op.tip === "incasare" ? 1 : -1;
     if (op.modPlata === "numerar") soldCasa += semn * op.suma;
     else if (op.modPlata === "depozit") soldDepozit += semn * op.suma;
@@ -106,28 +115,30 @@ function soldCasaBancaLaData(operatiuni, dataLimitaInclusiv) {
   return { soldCasa, soldBanca, soldDepozit };
 }
 
-// Sold cumulat prin anul de numerotare `anLimita` (inclusiv) — criteriul de apartenență la an
-// e `op.an` (anul din numerotarea documentului, ex. "27/2025"), NU `op.data` (data calendaristică
-// efectivă a operațiunii). E deliberat același criteriu ca la Registrul Jurnal (care filtrează tot
-// după `op.an === anSelectat`), NU cel din `soldCasaBancaLaData` de mai sus (care e pe dată).
+// Soldul Casă/Bancă/Depozit al anului `anLimita` — STRICT pe acel an (nu cumulativ prin anii
+// anteriori). Criteriul de apartenență la an e `op.an` (anul din numerotarea documentului, ex.
+// "27/2025"), NU `op.data` (data calendaristică efectivă a operațiunii) — deliberat același
+// criteriu ca la Registrul Jurnal, care filtrează tot după `op.an === anSelectat`.
 //
-// De ce contează diferența: un document poate avea, din greșeală de introducere, anul de
-// numerotare diferit de anul calendaristic al datei lui (ex. numerotat "1/2026", dar cu data
-// efectivă 16.07.2025) — caz real, găsit și corectat direct în producție. Cât timp Jurnalul și
-// verificarea de sold foloseau criterii diferite (an vs. dată), o asemenea greșeală rămânea
-// invizibilă: Jurnalul arăta un sold, validarea de Ordin de plată arăta altul, fără nicio eroare
-// vizibilă care să semnaleze problema — doar o discrepanță silențioasă între ecrane.
+// CRITIC — de ce NU e cumulativă prin toți anii (cum a fost înainte, greșit): fiecare an își
+// începe registrul cu o linie de „Excedent reportat"/„Sold la 31.12.{an anterior}", care deja
+// reprezintă corect tot ce s-a acumulat în anii anteriori. O sumă cumulativă suplimentară, peste
+// acea linie, ar număra aceiași bani de două ori — vezi explicația completă la
+// soldCasaBancaLaData, mai sus, unde a fost găsit exact acest bug în producție (depozit dublat,
+// 5.400.000 → 10.800.000, la trecerea dintre 2025 și 2026). Mai grav, funcția asta e folosită și
+// la ÎNCHIDEREA unui exercițiu, pentru a calcula excedentul reportat în anul următor — o versiune
+// cumulativă ar fi COMPUS eroarea an de an (dublu în 2026, apoi triplu în 2027, etc.).
 //
-// Folosită peste tot unde e nevoie de soldul curent/total (Tablou de bord, validarea de Ordin de
-// plată, calculul excedentului la închiderea unui exercițiu) — NU la Reconcilierea bancară, care
-// compară explicit soldul aplicației la o dată calendaristică exactă (data extrasului de bancă),
-// unde `soldCasaBancaLaData` (pe dată) rămâne criteriul corect.
+// Folosită peste tot unde e nevoie de soldul curent al anului (Tablou de bord, validarea de Ordin
+// de plată, calculul excedentului la închiderea unui exercițiu) — NU la Reconcilierea bancară,
+// care compară explicit soldul aplicației la o dată calendaristică exactă (data extrasului de
+// bancă), unde `soldCasaBancaLaData` (pe dată, tot restrânsă la propriul an) rămâne criteriul corect.
 function soldCasaBancaLaAn(operatiuni, anLimita) {
   let soldCasa = 0;
   let soldBanca = 0;
   let soldDepozit = 0;
   for (const op of operatiuni) {
-    if (op.an > anLimita) continue;
+    if (op.an !== anLimita) continue;
     const semn = op.tip === "incasare" ? 1 : -1;
     if (op.modPlata === "numerar") soldCasa += semn * op.suma;
     else if (op.modPlata === "depozit") soldDepozit += semn * op.suma;
