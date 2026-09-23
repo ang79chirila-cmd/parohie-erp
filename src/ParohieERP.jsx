@@ -2607,12 +2607,15 @@ function exportPDF(titlu, columns, rows, parohie, dataRaportCurenta, orientare, 
     margin: { top: 8, bottom: 8 },
     rowPageBreak: "avoid",
     styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
-    headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+    headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
     columnStyles,
     head: [columns.map((c) => c.label)],
     body: rows.map((r) => columns.map((c) => uni(r[c.key]))),
     showHead: "everyPage",
     didParseCell: (data) => {
+      if (data.section === "head") {
+        data.cell.text = data.cell.text.map((t) => t.toUpperCase());
+      }
       if (data.section === "body" && rows[data.row.index]?._sectiune) {
         data.cell.styles.fillColor = [231, 229, 228];
         data.cell.styles.fontStyle = "bold";
@@ -3021,6 +3024,11 @@ function genereazaJurnalPDFCuTotalCumulat(randuri, coloane, soldDepozitAn, paroh
         data.cell.styles.fillColor = [231, 229, 228];
         data.cell.styles.textColor = [41, 37, 36];
       }
+      // Rândul real de titluri de coloană (al doilea rând de antet, sub rândul "Report") — MAJUSCULE,
+      // cerute explicit, pentru toate rapoartele PDF ale aplicației.
+      if (data.section === "head" && data.row.index === 1) {
+        data.cell.text = data.cell.text.map((t) => t.toUpperCase());
+      }
       // Rezervăm din timp o înălțime minimă pe rândul cu eticheta, diferențiat: rândul "Report"
       // păstrează eticheta mai lungă (3 linii distincte quando parohia are depozit bancar),
       // rândul "Total" primește aceeași înălțime — valori recalculate pentru corpul de literă
@@ -3402,10 +3410,13 @@ function exportPDFGrupat(titlu, grupuri, parohie, dataRaportCurenta, orientare, 
       margin: { top: 8, bottom: 8 },
       rowPageBreak: "avoid",
       styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
-      headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+      headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
       columnStyles,
       head: [g.columns.map((c) => c.label)],
       body: g.rows.map((r) => g.columns.map((c) => uni(r[c.key]))),
+      didParseCell: (data) => {
+        if (data.section === "head") data.cell.text = data.cell.text.map((t) => t.toUpperCase());
+      },
       didDrawPage: () => { doc.addImage(SIGLA_ARHIEPISCOPIE_BASE64, "PNG", MARGINE, 2, 6, 6); },
     });
     yGrup = doc.lastAutoTable.finalY + 10;
@@ -3558,7 +3569,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
       margin: { top: 8, bottom: 8 },
       rowPageBreak: "avoid",
       styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
-      headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+      headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
       columnStyles: { 3: { halign: "right" } },
       head: [["Art. bug. nr.", "Denumire", "Explicație", "Sumă (lei)"]],
       body: [
@@ -3566,6 +3577,7 @@ function printeazaDocumente(docs, tipEtichetat, contById, parohie, toateDocument
         ...corpuriExtra,
       ],
       didParseCell: (data) => {
+        if (data.section === "head") data.cell.text = data.cell.text.map((t) => t.toUpperCase());
         if (data.section === "body" && data.row.index >= d.linii.length) {
           data.cell.styles.fontStyle = "bold";
           data.cell.styles.fillColor = data.row.index === d.linii.length ? [245, 245, 244] : [254, 243, 199];
@@ -3774,10 +3786,13 @@ function printeazaRaportAnualComplet(raport, parohie, orientare, formatHartie) {
     margin: { top: 8, bottom: 8 },
     rowPageBreak: "avoid",
     styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
-    headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+    headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
     columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
     head: [["Art. bug. nr.", "Denumire", "Bugetat", "Realizat", "Diferență"]],
     body: raport.executieBugetara.map((r) => [r.simbol, r.denumire, fmt(r.bugetat), fmt(r.realizat), fmt(r.bugetat - r.realizat)]),
+    didParseCell: (data) => {
+      if (data.section === "head") data.cell.text = data.cell.text.map((t) => t.toUpperCase());
+    },
   });
 
   // Pagina de module — câte o secțiune KPI per modul, apoi subsolul final al întregului raport.
@@ -3957,7 +3972,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
         margin: { top: 8, bottom: 8 },
         rowPageBreak: "avoid",
         styles: { font: "NotoSans", fontStyle: "normal", fontSize: 9, cellPadding: 1.5, overflow: "linebreak" },
-        headStyles: { font: "NotoSans", fontStyle: "normal", fillColor: [138, 43, 41], textColor: 255 },
+        headStyles: { font: "NotoSans", fontStyle: "bold", fillColor: [138, 43, 41], textColor: 255 },
         columnStyles,
         head: [coloaneLinii.map((c) => c.label)],
         body: [
@@ -3965,6 +3980,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
           ...corpTotal,
         ],
         didParseCell: (data) => {
+          if (data.section === "head") data.cell.text = data.cell.text.map((t) => t.toUpperCase());
           if (eColoanaTotal && data.section === "body" && data.row.index === d.linii.length) {
             data.cell.styles.fontStyle = "bold";
             data.cell.styles.fillColor = [245, 245, 244];
