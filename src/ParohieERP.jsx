@@ -12853,6 +12853,39 @@ function construiesteRaportDetaliatPartizi(operatiuni, conturi, tip, interval) {
     .filter((g) => g.randuri.length > 0);
 }
 
+// Dialog mic, reutilizabil — cere orientarea și formatul de pagină înainte de a genera un PDF,
+// pentru rapoartele (Partizi Venituri/Cheltuieli, Fișe de cont, Buget Prevederi/Execuție) care nu
+// au propria pagină cu selectoare inline (spre deosebire de ExportMenu). Fără el, aceste rapoarte
+// nu ofereau nicio posibilitate de alegere înainte de generare — mereu portret A4, implicit.
+function ConfirmarePaginaPDFModal({ onClose, onConfirm }) {
+  const [orientare, setOrientare] = useState("portrait");
+  const [formatHartie, setFormatHartie] = useState("A4");
+  return (
+    <Modal title="Format pagină PDF" onClose={onClose}>
+      <div className="p-4 space-y-4">
+        <div>
+          <label className="block text-sm text-stone-600 mb-1">Orientare</label>
+          <select className={`${inputCls} w-full`} value={orientare} onChange={(e) => setOrientare(e.target.value)}>
+            <option value="portrait">Portret</option>
+            <option value="landscape">Peisaj</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm text-stone-600 mb-1">Format hârtie</label>
+          <select className={`${inputCls} w-full`} value={formatHartie} onChange={(e) => setFormatHartie(e.target.value)}>
+            <option value="A4">A4</option>
+            <option value="A3">A3</option>
+          </select>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
+          <Btn variant="primary" onClick={() => onConfirm(orientare, formatHartie)}>Generează PDF</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiuneInitiala, anSelectat, setAnSelectat }) {
   const aniDisponibili = useMemo(() => {
     const ani = new Set(state.operatiuni.map((op) => op.an));
@@ -12876,6 +12909,12 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
   // pe ecran) se schimbă; bifele rămân.
   const [tabFisaCont, setTabFisaCont] = useState("venituri"); // doar ce listă e vizibilă — "venituri" | "cheltuieli"
   const [conturiSelectateVenituri, setConturiSelectateVenituri] = useState(new Set());
+  // Confirmare orientare/format pagină, cerută explicit înainte de generarea PDF — aceste 5
+  // rapoarte (Partizi Venituri/Cheltuieli, Fișe de cont, Buget Prevederi/Execuție) se declanșează
+  // direct din meniu sau dintr-un buton simplu, fără nicio pagină intermediară cu opțiuni (spre
+  // deosebire de ExportMenu, care are propriul dropdown Portret/Peisaj) — fără acest dialog,
+  // orientarea rămânea mereu portret, fără nicio posibilitate de alegere.
+  const [confirmarePDFGrupat, setConfirmarePDFGrupat] = useState(null); // { onConfirm(orientare, formatHartie) } | null
   const [conturiSelectateCheltuieli, setConturiSelectateCheltuieli] = useState(new Set());
   function comutaContFisaVenituri(id) {
     setConturiSelectateVenituri((prev) => {
@@ -12901,10 +12940,18 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
     if (tip === "raportAnual") {
       if (format === "pdf") printeazaRaportAnualComplet(raportAnual, state.parohie, orientareRaportAnual, formatHartieRaportAnual);
       else if (format === "xlsx") exportRaportAnualXLSX(raportAnual, state.parohie);
-    } else if (tip === "partiziVenituri") genereazaPartiziVenituri(format);
-    else if (tip === "partiziCheltuieli") genereazaPartiziCheltuieli(format);
-    else if (tip === "bugetPrevederi") genereazaBugetPrevederi(format);
-    else if (tip === "bugetExecutie") genereazaBugetExecutie(format);
+    } else if (format !== "pdf") {
+      if (tip === "partiziVenituri") genereazaPartiziVenituri(format);
+      else if (tip === "partiziCheltuieli") genereazaPartiziCheltuieli(format);
+      else if (tip === "bugetPrevederi") genereazaBugetPrevederi(format);
+      else if (tip === "bugetExecutie") genereazaBugetExecutie(format);
+    } else {
+      // Format PDF — nu se generează direct; se cere întâi orientarea/formatul paginii,
+      // exact ca la ExportMenu, dar aici printr-un mic dialog, pentru că aceste rapoarte
+      // nu au propria pagină cu selectoare inline.
+      const generator = { partiziVenituri: genereazaPartiziVenituri, partiziCheltuieli: genereazaPartiziCheltuieli, bugetPrevederi: genereazaBugetPrevederi, bugetExecutie: genereazaBugetExecutie }[tip];
+      if (generator) setConfirmarePDFGrupat({ onConfirm: (orientare, formatHartie) => generator("pdf", orientare, formatHartie) });
+    }
     onConsumaActiuneInitiala();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actiuneInitiala]);
@@ -12966,7 +13013,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
     return rez;
   }, [state.operatiuni, anSelectat]);
 
-  function genereazaPartiziVenituri(format = "pdf") {
+  function genereazaPartiziVenituri(format = "pdf", orientare, formatHartie) {
     const coloane = [
       { key: "data", label: "Data" },
       { key: "nrDoc", label: "Nr. chitanță" },
@@ -12994,10 +13041,10 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
       : `PARTIZI VENITURI - INCASARI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
     if (format === "xlsx") exportXLSXGrupat(titlu, grupuriRaport, state.parohie);
     else if (format === "xml") exportXMLGrupat(titlu, grupuriRaport, state.parohie);
-    else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
+    else exportPDFGrupat(titlu, grupuriRaport, state.parohie, undefined, orientare, formatHartie);
   }
 
-  function genereazaPartiziCheltuieli(format = "pdf") {
+  function genereazaPartiziCheltuieli(format = "pdf", orientare, formatHartie) {
     const coloane = [
       { key: "data", label: "Data" },
       { key: "nrDoc", label: "Nr. OP" },
@@ -13025,7 +13072,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
       : `PARTIZI CHELTUIELI - PLATI (${fmtDataJurnal(interval.start)} - ${fmtDataJurnal(interval.final)})`;
     if (format === "xlsx") exportXLSXGrupat(titlu, grupuriRaport, state.parohie);
     else if (format === "xml") exportXMLGrupat(titlu, grupuriRaport, state.parohie);
-    else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
+    else exportPDFGrupat(titlu, grupuriRaport, state.parohie, undefined, orientare, formatHartie);
   }
 
   function construiesteGrupuriConturi(conturiAlese, eVenituri) {
@@ -13051,7 +13098,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
     });
   }
 
-  function genereazaFisaConturi(format = "pdf") {
+  function genereazaFisaConturi(format = "pdf", orientare, formatHartie) {
     const conturiAleseVenituri = venituriConturi.filter((c) => conturiSelectateVenituri.has(c.id));
     const conturiAleseCheltuieli = cheltuieliConturi.filter((c) => conturiSelectateCheltuieli.has(c.id));
     const nrTotal = conturiAleseVenituri.length + conturiAleseCheltuieli.length;
@@ -13096,10 +13143,10 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
 
     if (format === "xlsx") exportXLSXGrupat(titlu, grupuriRaport, state.parohie);
     else if (format === "xml") exportXMLGrupat(titlu, grupuriRaport, state.parohie);
-    else exportPDFGrupat(titlu, grupuriRaport, state.parohie);
+    else exportPDFGrupat(titlu, grupuriRaport, state.parohie, undefined, orientare, formatHartie);
   }
 
-  function genereazaBugetPrevederi(format = "pdf") {
+  function genereazaBugetPrevederi(format = "pdf", orientare, formatHartie) {
     const toate = [...venituriConturi, ...cheltuieliConturi];
     const rows = toate.map((c) => ({
       cont: c.simbol, denumire: c.denumire, clasa: c.clasa === "venit" ? "Venit" : "Cheltuială",
@@ -13109,10 +13156,10 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
     const titlu = `BUGET - PREVEDERI PE ANUL ${anSelectat}`;
     if (format === "xlsx") exportXLSX(titlu, coloane, rows, state.parohie);
     else if (format === "xml") exportXML(titlu, coloane, rows, state.parohie);
-    else exportPDF(titlu, coloane, rows, state.parohie);
+    else exportPDF(titlu, coloane, rows, state.parohie, undefined, orientare, formatHartie);
   }
 
-  function genereazaBugetExecutie(format = "pdf") {
+  function genereazaBugetExecutie(format = "pdf", orientare, formatHartie) {
     const toate = [...venituriConturi, ...cheltuieliConturi];
     const rows = toate.map((c) => {
       const bugetat = (state.buget[c.id] || {})[anSelectat] || 0;
@@ -13132,7 +13179,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
     const titlu = `BUGET - EXECUTIE PE ANUL ${anSelectat}`;
     if (format === "xlsx") exportXLSX(titlu, coloane, rows, state.parohie);
     else if (format === "xml") exportXML(titlu, coloane, rows, state.parohie);
-    else exportPDF(titlu, coloane, rows, state.parohie);
+    else exportPDF(titlu, coloane, rows, state.parohie, undefined, orientare, formatHartie);
   }
 
   return (
@@ -13236,7 +13283,7 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
           )}
         </div>
         <div className="flex gap-2">
-          <Btn variant="ghost" disabled={conturiSelectateVenituri.size === 0 && conturiSelectateCheltuieli.size === 0} onClick={() => genereazaFisaConturi("pdf")}>
+          <Btn variant="ghost" disabled={conturiSelectateVenituri.size === 0 && conturiSelectateCheltuieli.size === 0} onClick={() => setConfirmarePDFGrupat({ onConfirm: (orientare, formatHartie) => genereazaFisaConturi("pdf", orientare, formatHartie) })}>
             <Download size={14} /> PDF
           </Btn>
           <Btn variant="ghost" disabled={conturiSelectateVenituri.size === 0 && conturiSelectateCheltuieli.size === 0} onClick={() => genereazaFisaConturi("xlsx")}>
@@ -13257,6 +13304,13 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
           <StatCard label="Sold depozit bancar la dată" value={`${fmt(stats.soldDepozitLaData)} RON`} />
         )}
       </div>
+
+      {confirmarePDFGrupat && (
+        <ConfirmarePaginaPDFModal
+          onClose={() => setConfirmarePDFGrupat(null)}
+          onConfirm={(orientare, formatHartie) => { confirmarePDFGrupat.onConfirm(orientare, formatHartie); setConfirmarePDFGrupat(null); }}
+        />
+      )}
     </div>
   );
 }
