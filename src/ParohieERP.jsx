@@ -2305,8 +2305,17 @@ function esteSumaFormatata(v) {
 // ... convertim înapoi în număr real doar dacă textul chiar respectă exact acest tipar (altfel îl
 // lăsăm neatins — text, cod, dată etc.) — corect pentru PDF, dar greșit pentru XLSX, unde Excel
 // le-ar trata drept text, needitabil ca număr.
+//
+// CRITIC pentru viramentele interne (581/5081): valoarea vine formatată cu paranteze — "(1.234,00)"
+// — convenția contabilă pentru sumă negativă. `Number("(1234.00)")` (fără eliminarea parantezelor
+// mai întâi) dă NaN, nu -1234 — bug real, găsit în producție: toate sumele de viramente ieșeau NaN
+// în XLSX. Eliminăm parantezele explicit și aplicăm semnul negativ manual, ca rezultatul să rămână
+// un număr real editabil în Excel, nu text și nu NaN.
 function parseSumaFormatata(v) {
-  return esteSumaFormatata(v) ? Number(v.replace(/\./g, "").replace(",", ".")) : v;
+  if (!esteSumaFormatata(v)) return v;
+  const eNegativa = v.startsWith("(");
+  const numar = Number(v.replace(/[()]/g, "").replace(/\./g, "").replace(",", "."));
+  return eNegativa ? -numar : numar;
 }
 
 // Pentru alinierea în PDF (nu pentru conversia XLSX de mai sus): "valoare numerică" e mai larg
@@ -3996,7 +4005,7 @@ function printeazaDocumenteGenerice(docs, tipEtichetat, campuriAntet, coloaneLin
   document.body.removeChild(a);
 }
 
-function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [], extraCoperta = "", infoSelectie = null }) {
+function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDinSelectie = [], extraCoperta = "", infoSelectie = null, xlsxColumns = null, xlsxRows = null }) {
   const [open, setOpen] = useState(false);
   const [dataRaport, setDataRaport] = useState(todayISO());
   const [orientare, setOrientare] = useState("portrait");
@@ -4017,6 +4026,15 @@ function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDi
 
   function run(fn) {
     fn(titlu, columns, rows, parohie, dataRaport, orientare, formatHartie, infoSelectie);
+    setOpen(false);
+  }
+
+  // XLSX-ul poate folosi un set de coloane/rânduri diferit de PDF/XML — folosit, de exemplu, ca
+  // să despartă în coloane separate informații combinate într-o singură coloană la PDF/XML (ex.
+  // Nr. chitanță + serie), util pentru sortare/filtrare directă în Excel. Dacă nu sunt furnizate,
+  // folosește exact aceleași coloane/rânduri ca PDF/XML — niciun apel existent nu e afectat.
+  function runXlsx() {
+    exportXLSX(titlu, xlsxColumns || columns, xlsxRows || rows, parohie, dataRaport, orientare, formatHartie, infoSelectie);
     setOpen(false);
   }
 
@@ -4081,7 +4099,7 @@ function ExportMenu({ titlu, columns, rows, parohie, customPdf, coloaneExcluseDi
             <button onClick={deschideSelectieColoane} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
               <FileText size={14} className="text-rose-600" /> PDF
             </button>
-            <button onClick={() => run(exportXLSX)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
+            <button onClick={() => runXlsx()} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
               <FileSpreadsheet size={14} className="text-emerald-700" /> XLSX
             </button>
             <button onClick={() => run(exportXML)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-stone-50">
@@ -7366,15 +7384,61 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
   const randuri = useMemo(() => {
     const operatiuniAn = state.operatiuni.filter((op) => op.an === anSelectat);
     // Criteriu 1: cronologic ascendent (cel mai vechi primul).
-    // Criteriu 2, la egalitate de dată: întâi toate încasările (ordonate crescător după nr.
-    // chitanței), apoi toate plățile (ordonate crescător după nr. ordinului de plată).
+    // Criteriu 2, la egalitate de dată: viramentele interne (581/5081) — care nu au număr nici de
+    // chitanță, nici de OP, ci propriul bazin de numerotare, izolat — trec mereu LA FINALUL zilei
+    // respective, după toate tranzacțiile obișnuite ale acelei zile.
+    // Criteriu 3, între tranzacțiile obișnuite (needatate de virament): întâi toate încasările
+    // (ordonate crescător după nr. chitanței), apoi toate plățile (ordonate crescător după nr. OP).
     const indexate = operatiuniAn.map((op, idx) => ({ op, idx }));
     indexate.sort((a, b) => {
       if (a.op.data !== b.op.data) return a.op.data < b.op.data ? -1 : 1;
+      const aEVirament = derived.contById[a.op.contId]?.clasa === "viramente";
+      const bEVirament = derived.contById[b.op.contId]?.clasa === "viramente";
+      if (aEVirament !== bEVirament) return aEVirament ? 1 : -1;
       if (a.op.tip !== b.op.tip) return a.op.tip === "incasare" ? -1 : 1;
       if (a.op.nr !== b.op.nr) return a.op.nr - b.op.nr;
       return a.idx - b.idx;
     });
+
+    // Alăturarea perechilor de viramente interne (581/5081) — un transfer creează DOUĂ documente
+    // separate (o plată + o încasare), fără nicio legătură stocată explicit între ele (doar aceeași
+    // dată și aceeași sumă). Sortarea de mai sus, corectă pentru chitanțe/OP obișnuite ("toate
+    // încasările înaintea tuturor plăților"), le despărțea ori de câte ori exista o altă tranzacție
+    // reală, needată de virament, la aceeași dată, între cele două jumătăți. Aici, DUPĂ sortare,
+    // mutăm partenerul fiecărei perechi imediat lângă prima ei jumătate întâlnită — fără să schimbăm
+    // nimic din ordinea relativă a restului tranzacțiilor. Trebuie să se întâmple înainte de calculul
+    // soldurilor de mai jos, ca soldul afișat pe fiecare linie să reflecte exact ordinea finală.
+    const candidatiVirament = indexate.filter(({ op }) => derived.contById[op.contId]?.clasa === "viramente");
+    if (candidatiVirament.length > 0) {
+      const partenerPentruId = new Map();
+      const disponibile = [...candidatiVirament];
+      for (const { op } of candidatiVirament) {
+        if (partenerPentruId.has(op.id)) continue;
+        const pozitie = disponibile.findIndex(
+          (c) => c.op.id !== op.id && !partenerPentruId.has(c.op.id) && c.op.tip !== op.tip && c.op.data === op.data && c.op.suma === op.suma
+        );
+        if (pozitie !== -1) {
+          partenerPentruId.set(op.id, disponibile[pozitie].op.id);
+          partenerPentruId.set(disponibile[pozitie].op.id, op.id);
+        }
+      }
+      if (partenerPentruId.size > 0) {
+        const rezultat = [];
+        const plasate = new Set();
+        for (const item of indexate) {
+          if (plasate.has(item.op.id)) continue;
+          rezultat.push(item);
+          plasate.add(item.op.id);
+          const idPartener = partenerPentruId.get(item.op.id);
+          if (idPartener && !plasate.has(idPartener)) {
+            const itemPartener = indexate.find((x) => x.op.id === idPartener);
+            if (itemPartener) { rezultat.push(itemPartener); plasate.add(idPartener); }
+          }
+        }
+        indexate.length = 0;
+        indexate.push(...rezultat);
+      }
+    }
 
     // Criteriu 3: soldurile actualizate pe fiecare linie respectă exact această ordine.
     let soldCasa = 0;
@@ -7500,6 +7564,21 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     soldDepozit: fmt(r.soldDepozit),
   }));
 
+  // Variantă doar pentru XLSX — desparte "Nr. chitanță" (rămasă la PDF/XML combinată, pentru
+  // lizibilitate compactă pe hârtie) în două coloane separate: numărul pur și seria chitanțierului
+  // fizic — utile ca să poți sorta/filtra direct în Excel după oricare din ele, fără să mai despici
+  // manual un text combinat.
+  const coloaneJurnalXlsx = coloaneJurnal.flatMap((c) =>
+    c.key === "nrChitanta"
+      ? [{ key: "nrChitanta", label: "Nr. chitanță" }, { key: "serieChitanta", label: "Serie chitanță" }]
+      : [c]
+  );
+  const randuriExportJurnalXlsx = filtrate.map((r, i) => ({
+    ...randuriExportJurnal[i],
+    nrChitanta: r.op.tip === "incasare" && r.cont?.clasa !== "viramente" ? String(r.op.nr) : "",
+    serieChitanta: r.op.tip === "incasare" && r.cont?.clasa !== "viramente" && r.op.serie && r.op.numarIdentificare ? `${r.op.serie} ${r.op.numarIdentificare}` : "",
+  }));
+
   // Registrul viramentelor interne — toate tranzacțiile pe conturile de viramente (581 — Casă ↔
   // Bancă; 5081 — Deschidere/Închidere depozit bancar), strict limitat la anul curent selectat
   // (același an ca al Jurnalului afișat) — reutilizează soldurile deja calculate în `randuri`
@@ -7587,6 +7666,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
               titlu={`JURNAL DE VENITURI SI CHELTUIELI PE ANUL ${anSelectat}`}
               columns={coloaneJurnal}
               rows={randuriExportJurnal}
+              xlsxColumns={coloaneJurnalXlsx}
+              xlsxRows={randuriExportJurnalXlsx}
               parohie={state.parohie}
               coloaneExcluseDinSelectie={["soldDepozit", "incasare", "plata", "explicatie"]}
               infoSelectie={{ criterii: criteriiSelectie, totalInregistrariAn: randuri.length }}
