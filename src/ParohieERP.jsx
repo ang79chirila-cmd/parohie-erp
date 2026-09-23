@@ -7061,7 +7061,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
         </div>
       </header>
 
-      <ScrollOrizontalSus inaltimeMaxima="65vh">
+      <ScrollOrizontalSus inaltimeMaxima="82vh">
       <Card className="w-full">
         <div ref={refBaraCautare} className="sticky top-0 z-20 bg-white">
           <BaraCautarePaginare
