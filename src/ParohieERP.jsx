@@ -6549,6 +6549,24 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
   }, [state.operatiuni, state.comisioaneBancareNeconsolidate, derived.contById, anTablou, anCurent]);
 
   const excedent = totalVenituri - totalCheltuieli;
+
+  // Stocuri Pangar curente, structurate pe categoriile de afișare (aceeași taxonomie ca în Pangar
+  // însuși — ORDINE_CATEGORII_PANGAR/categorieAfisarePangar), doar cele cu stoc diferit de zero.
+  // Cantitatea se însumează separat pe fiecare UM întâlnit în categorie (majoritatea categoriilor
+  // au un singur UM, dar nu presupunem asta necondiționat — un produs nou, cu alt UM, tot s-ar
+  // afișa corect, ca o linie separată de cantitate în aceeași categorie).
+  const stocuriPangarPeCategorie = useMemo(() => {
+    const grupuri = {};
+    for (const a of state.articole) {
+      if (!a.stoc) continue;
+      const cat = categorieAfisarePangar(a.bazaCod);
+      if (!grupuri[cat]) grupuri[cat] = { cantitatePeUM: {}, valoare: 0 };
+      grupuri[cat].cantitatePeUM[a.um] = (grupuri[cat].cantitatePeUM[a.um] || 0) + a.stoc;
+      grupuri[cat].valoare += a.stoc * (a.pretVanzare || 0);
+    }
+    return ORDINE_CATEGORII_PANGAR.filter((cat) => grupuri[cat]).map((cat) => ({ eticheta: cat, ...grupuri[cat] }));
+  }, [state.articole]);
+  const valoareTotalaStocPangar = stocuriPangarPeCategorie.reduce((s, c) => s + c.valoare, 0);
   const [instantePrevederiUrmator, setInstantePrevederiUrmator] = useState([]);
   const [instantePrevederiPrecedent, setInstantePrevederiPrecedent] = useState([]);
   const [instanteInchidere, setInstanteInchidere] = useState([]);
@@ -6623,6 +6641,23 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
         <StatCard label={`Total venituri ${anTablou}`} value={`${fmt(totalVenituri)} RON`} tone="neutral" />
         <StatCard label={`Total cheltuieli ${anTablou}`} value={`${fmt(totalCheltuieli)} RON`} tone="neutral" />
       </div>
+
+      {stocuriPangarPeCategorie.length > 0 && (
+        <div>
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-2">Stocuri Pangar curente (la preț de vânzare) — doar categoriile cu stoc</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {stocuriPangarPeCategorie.map((c) => (
+              <StatCard
+                key={c.eticheta}
+                label={c.eticheta}
+                value={Object.entries(c.cantitatePeUM).map(([um, cant]) => `${fmtCant(cant)} ${um}`).join(", ")}
+                sub={`${fmt(c.valoare)} RON`}
+              />
+            ))}
+            <StatCard label="TOTAL General" value={`${fmt(valoareTotalaStocPangar)} RON`} tone="good" />
+          </div>
+        </div>
+      )}
 
       <Card className="p-4">
         <div className="flex items-center justify-between">
