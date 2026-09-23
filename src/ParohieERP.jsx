@@ -24,7 +24,7 @@ import {
   ArrowDownCircle, ArrowUpCircle, AlertTriangle, ArrowLeftRight,
   Trash2, X, Church, Lock, User, Users, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil, Minus, Copy,
   Download, ChevronDown, FileText, FileSpreadsheet, FileCode, Building2, Boxes, Archive, ClipboardCheck, MapPin, Mail,
-  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload, Settings, Calendar,
+  Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload, Settings, Calendar, TrendingUp,
 } from "lucide-react";
 
 // Font arhaic românesc (Arhaic_rom.ttf, furnizat de utilizator) — încorporat direct ca
@@ -796,12 +796,12 @@ const ROL_DB_LA_LOCAL = {
 const ROLURI = {
   preot_paroh: {
     id: "preot_paroh", label: "Preot paroh / Administrator parohie",
-    tabs: ["dashboard", "operatiuni", "conturi", "parteneri", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte", "profil", "import"],
+    tabs: ["dashboard", "operatiuni", "conturi", "parteneri", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte", "analizaFinanciara", "profil", "import"],
     citireOnly: false, poateEmiteOP: true,
   },
   contabil: {
     id: "contabil", label: "Contabil parohie",
-    tabs: ["dashboard", "operatiuni", "conturi", "parteneri", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte"],
+    tabs: ["dashboard", "operatiuni", "conturi", "parteneri", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte", "analizaFinanciara"],
     citireOnly: false, poateEmiteOP: true,
   },
   casier: {
@@ -816,7 +816,7 @@ const ROLURI = {
   },
   auditor: {
     id: "auditor", label: "Auditor extern (read-only)",
-    tabs: ["dashboard", "operatiuni", "conturi", "parteneri", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte"],
+    tabs: ["dashboard", "operatiuni", "conturi", "parteneri", "pangar", "consumintern", "patrimoniu", "cimitir", "corespondenta", "organisme", "rapoarte", "analizaFinanciara"],
     citireOnly: true, poateEmiteOP: false,
   },
 };
@@ -5711,6 +5711,7 @@ export default function ParohieERP() {
       ],
     },
     { id: "import", label: "Import date", icon: Upload },
+    { id: "analizaFinanciara", label: "Analiză Financiară", icon: TrendingUp },
   ];
   const NAV = NAV_TOATE.filter((n) => permisiuni.tabs.includes(n.id) && (n.id !== "cimitir" || state.parohie?.areCimitir));
   const tabActiv = permisiuni.tabs.includes(tab) ? tab : NAV[0].id;
@@ -5947,6 +5948,7 @@ export default function ParohieERP() {
           <div style={{ display: tabActiv === "cimitir" ? undefined : "none" }}><CimitirTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} /></div>
           <div style={{ display: tabActiv === "corespondenta" ? undefined : "none" }}><CorespondentaTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} /></div>
           <div style={{ display: tabActiv === "rapoarte" ? undefined : "none" }}><RapoarteTab state={state} setState={setState} derived={derived} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} /></div>
+          <div style={{ display: tabActiv === "analizaFinanciara" ? undefined : "none" }}><AnalizaFinanciaraTab state={state} derived={derived} /></div>
           <div style={{ display: tabActiv === "organisme" ? undefined : "none" }}><OrganismeParohialeTab state={state} setState={setState} permisiuni={permisiuni} parohieId={contActiv.parohieId} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} /></div>
           <div style={{ display: tabActiv === "profil" ? undefined : "none" }}><ProfilParohieTab state={state} setState={setState} /></div>
           <div style={{ display: tabActiv === "import" ? undefined : "none" }}><ImportDateTab parohieId={contActiv.parohieId} conturi={state.conturi} permisiuni={permisiuni} onImportFinalizat={() => setRefreshTrigger((n) => n + 1)} onCreeazaOrdinPlata={creeazaOrdinPlataDinAI} /></div>
@@ -13408,6 +13410,398 @@ function RapoarteTab({ state, setState, derived, actiuneInitiala, onConsumaActiu
           onConfirm={(orientare, formatHartie) => { confirmarePDFGrupat.onConfirm(orientare, formatHartie); setConfirmarePDFGrupat(null); }}
         />
       )}
+    </div>
+  );
+}
+
+const LUNI_SCURT = ["Ian", "Feb", "Mar", "Apr", "Mai", "Iun", "Iul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const LUNI_LUNGI = ["Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie", "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie"];
+
+// Grafic simplu, pe SVG simplu (fără nicio bibliotecă externă — nicio dependență nouă adăugată în
+// package.json), cu bare perechi (venituri/cheltuieli) pe fiecare punct din axa orizontală.
+function GraficBarePerechi({ date, etichetaSerie1 = "Venituri", etichetaSerie2 = "Cheltuieli", culoare1 = "#059669", culoare2 = "#dc2626", inaltime = 220 }) {
+  const latime = Math.max(420, date.length * 64);
+  const maxima = Math.max(1, ...date.flatMap((d) => [d.serie1 || 0, d.serie2 || 0]));
+  const latimeGrup = latime / Math.max(1, date.length);
+  const latimeBara = Math.min(22, latimeGrup * 0.32);
+  const inaltimeUtila = inaltime - 36;
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${latime} ${inaltime}`} style={{ width: latime, height: inaltime }}>
+        <line x1={0} y1={inaltimeUtila} x2={latime} y2={inaltimeUtila} stroke="#e7e5e4" strokeWidth="1" />
+        {date.map((d, i) => {
+          const hV = maxima > 0 ? (d.serie1 / maxima) * inaltimeUtila : 0;
+          const hC = maxima > 0 ? (d.serie2 / maxima) * inaltimeUtila : 0;
+          const xGrup = i * latimeGrup;
+          return (
+            <g key={i}>
+              <rect x={xGrup + latimeGrup / 2 - latimeBara - 2} y={inaltimeUtila - hV} width={latimeBara} height={hV} fill={culoare1} rx={2}>
+                <title>{`${d.eticheta} — ${etichetaSerie1}: ${fmt(d.serie1)} lei`}</title>
+              </rect>
+              <rect x={xGrup + latimeGrup / 2 + 2} y={inaltimeUtila - hC} width={latimeBara} height={hC} fill={culoare2} rx={2}>
+                <title>{`${d.eticheta} — ${etichetaSerie2}: ${fmt(d.serie2)} lei`}</title>
+              </rect>
+              <text x={xGrup + latimeGrup / 2} y={inaltime - 6} textAnchor="middle" fontSize="11" fill="#57534e">{d.eticheta}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="flex items-center gap-4 mt-1 text-xs text-stone-500">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: culoare1 }} />{etichetaSerie1}</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: culoare2 }} />{etichetaSerie2}</span>
+      </div>
+    </div>
+  );
+}
+
+// Grafic-linie, pentru evoluția multianuală (venituri/cheltuieli/excedent an de an).
+function GraficLinieMultianuala({ date, serii }) {
+  const inaltime = 220;
+  const latime = Math.max(420, date.length * 80);
+  const maxima = Math.max(1, ...date.flatMap((d) => serii.map((s) => Math.abs(d[s.key]) || 0)));
+  const inaltimeUtila = inaltime - 36;
+  const zero = inaltimeUtila / 2;
+  const areNegative = serii.some((s) => date.some((d) => d[s.key] < 0));
+  const pasX = date.length > 1 ? latime / (date.length - 1) : 0;
+  const yPentru = (v) => (areNegative ? zero - (v / maxima) * zero : inaltimeUtila - (v / maxima) * inaltimeUtila);
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${latime} ${inaltime}`} style={{ width: latime, height: inaltime }}>
+        {areNegative && <line x1={0} y1={zero} x2={latime} y2={zero} stroke="#e7e5e4" strokeWidth="1" />}
+        {!areNegative && <line x1={0} y1={inaltimeUtila} x2={latime} y2={inaltimeUtila} stroke="#e7e5e4" strokeWidth="1" />}
+        {serii.map((s) => {
+          const puncte = date.map((d, i) => `${i * pasX},${yPentru(d[s.key])}`).join(" ");
+          return (
+            <g key={s.key}>
+              <polyline points={puncte} fill="none" stroke={s.culoare} strokeWidth="2.5" />
+              {date.map((d, i) => (
+                <circle key={i} cx={i * pasX} cy={yPentru(d[s.key])} r="3" fill={s.culoare}>
+                  <title>{`${d.an} — ${s.eticheta}: ${fmt(d[s.key])} lei`}</title>
+                </circle>
+              ))}
+            </g>
+          );
+        })}
+        {date.map((d, i) => (
+          <text key={i} x={i * pasX} y={inaltime - 6} textAnchor="middle" fontSize="11" fill="#57534e">{d.an}</text>
+        ))}
+      </svg>
+      <div className="flex items-center gap-4 mt-1 text-xs text-stone-500">
+        {serii.map((s) => (
+          <span key={s.key} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: s.culoare }} />{s.eticheta}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Modulul de Analiză Financiară — construit peste datele deja existente în aplicație (operațiuni,
+// buget, nomenclatorul de conturi), fără nicio colectare nouă de date. Acoperă, la cererea
+// explicită a utilizatorului: (1) evoluție multianuală venituri/cheltuieli/excedent; (2) structura
+// veniturilor/cheltuielilor pe articole bugetare, pentru anul selectat; (3) execuție bugetară —
+// depășirile/restanțele cele mai mari; (4) evoluția lichidității (Casă/Bancă/Depozit), lunar, pe
+// ultimele 24 de luni; (5) contribuția Pangar și Consum Intern la rezultatul anului selectat;
+// (6) comparație multianuală pe lunile Ianuarie/Aprilie/Decembrie, plus statistici lunare complete
+// (venituri/cheltuieli perechi) pentru oricare din ultimii 5 ani cu date.
+function AnalizaFinanciaraTab({ state, derived }) {
+  const operatiuni = state.operatiuni;
+  const anCurent = new Date().getFullYear();
+  const aniDisponibili = useMemo(() => [...new Set(operatiuni.map((op) => op.an))].sort((a, b) => a - b), [operatiuni]);
+  const [anSelectat, setAnSelectat] = useState(aniDisponibili[aniDisponibili.length - 1] || anCurent);
+  useEffect(() => {
+    if (aniDisponibili.length > 0 && !aniDisponibili.includes(anSelectat)) setAnSelectat(aniDisponibili[aniDisponibili.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aniDisponibili]);
+
+  // 1. Evoluție multianuală — venituri/cheltuieli/excedent, exclude viramentele interne (581/5081),
+  // care nu sunt venit/cheltuială reală, doar mutare de bani între Casă/Bancă/Depozit.
+  const evolutieMultianuala = useMemo(() => {
+    const peAn = {};
+    for (const op of operatiuni) {
+      if (derived.contById[op.contId]?.clasa === "viramente") continue;
+      if (!peAn[op.an]) peAn[op.an] = { venituri: 0, cheltuieli: 0 };
+      if (op.tip === "incasare") peAn[op.an].venituri += op.suma; else peAn[op.an].cheltuieli += op.suma;
+    }
+    return aniDisponibili.map((an) => {
+      const d = peAn[an] || { venituri: 0, cheltuieli: 0 };
+      return { an, venituri: d.venituri, cheltuieli: d.cheltuieli, excedent: d.venituri - d.cheltuieli };
+    });
+  }, [operatiuni, aniDisponibili, derived.contById]);
+
+  // 2. Structura veniturilor/cheltuielilor pe articole bugetare, pentru anul selectat.
+  const structuraAn = useMemo(() => {
+    const venituri = {};
+    const cheltuieli = {};
+    for (const op of operatiuni) {
+      if (op.an !== anSelectat) continue;
+      const cont = derived.contById[op.contId];
+      if (cont?.clasa === "viramente") continue;
+      const eticheta = cont ? `${cont.simbol} — ${cont.denumire}` : op.contId;
+      const tinta = op.tip === "incasare" ? venituri : cheltuieli;
+      tinta[eticheta] = (tinta[eticheta] || 0) + op.suma;
+    }
+    const construieste = (obiect) => {
+      const total = Object.values(obiect).reduce((s, v) => s + v, 0);
+      return Object.entries(obiect)
+        .map(([eticheta, suma]) => ({ eticheta, suma, procent: total > 0 ? (suma / total) * 100 : 0 }))
+        .sort((a, b) => b.suma - a.suma);
+    };
+    return { venituri: construieste(venituri), cheltuieli: construieste(cheltuieli) };
+  }, [operatiuni, anSelectat, derived.contById]);
+
+  // 3. Execuție bugetară — cele mai mari depășiri și restanțe, pentru anul selectat (doar
+  // articolele care au o prevedere bugetară nenulă în acel an).
+  const executieAn = useMemo(() => {
+    const rezultate = [];
+    for (const cont of Object.values(derived.contById)) {
+      if (cont.clasa === "viramente" || cont.special) continue;
+      const bugetat = (state.buget[cont.id] || {})[anSelectat] || 0;
+      if (bugetat === 0) continue;
+      const realizat = operatiuni
+        .filter((op) => op.an === anSelectat && op.contId === cont.id && op.tip === (cont.clasa === "venit" ? "incasare" : "plata"))
+        .reduce((s, op) => s + op.suma, 0);
+      rezultate.push({ cont, bugetat, realizat, procent: bugetat > 0 ? (realizat / bugetat) * 100 : 0, diferenta: realizat - bugetat });
+    }
+    return rezultate.sort((a, b) => b.procent - a.procent);
+  }, [operatiuni, anSelectat, state.buget, derived.contById]);
+  const depasiri = executieAn.filter((r) => r.cont.clasa === "cheltuiala" && r.procent > 100).slice(0, 5);
+  const restante = executieAn.filter((r) => r.procent < 70).slice(-5).reverse();
+
+  // 4. Lichiditate lunară — soldul Casă/Bancă/Depozit la finalul fiecăreia din ultimele 24 de luni
+  // (sau mai puține, dacă parohia are mai puțin istoric) — reutilizează exact soldCasaBancaLaData,
+  // deja corectată să nu cumuleze peste granița de an.
+  const lichiditateLunara = useMemo(() => {
+    const azi = todayISO();
+    const puncte = [];
+    const acum = new Date();
+    for (let i = 23; i >= 0; i--) {
+      const d = new Date(acum.getFullYear(), acum.getMonth() - i, 1);
+      const an = d.getFullYear();
+      const luna = d.getMonth();
+      if (!aniDisponibili.includes(an)) continue;
+      const ultimaZi = new Date(an, luna + 1, 0).getDate();
+      let dataLimita = `${an}-${String(luna + 1).padStart(2, "0")}-${String(ultimaZi).padStart(2, "0")}`;
+      if (dataLimita > azi) dataLimita = azi;
+      const { soldCasa, soldBanca, soldDepozit } = soldCasaBancaLaData(operatiuni, dataLimita);
+      puncte.push({ eticheta: `${LUNI_SCURT[luna]} ${String(an).slice(2)}`, soldCasa, soldBanca, soldDepozit, total: soldCasa + soldBanca + soldDepozit });
+    }
+    return puncte;
+  }, [operatiuni, aniDisponibili]);
+
+  // 5. Contribuția Pangar / Consum Intern la rezultatul anului selectat — identificate după
+  // prefixul conturilor de vânzare/marjă Pangar (772/731) și, respectiv, conturile de motiv din
+  // MOTIVE_CONSUM (601.01, 623, 671).
+  const contributieModule = useMemo(() => {
+    const conturiConsumIntern = new Set(Object.values(MOTIVE_CONSUM).map((m) => m.contId));
+    let venituriPangar = 0, cheltuieliPangar = 0, venituriConsumIntern = 0, cheltuieliConsumIntern = 0;
+    for (const op of operatiuni) {
+      if (op.an !== anSelectat) continue;
+      const cont = derived.contById[op.contId];
+      if (cont?.clasa === "viramente") continue;
+      const ePangar = cont?.simbol?.startsWith("772") || cont?.simbol?.startsWith("731");
+      const eConsumIntern = conturiConsumIntern.has(op.contId);
+      if (ePangar) { if (op.tip === "incasare") venituriPangar += op.suma; else cheltuieliPangar += op.suma; }
+      if (eConsumIntern) { if (op.tip === "incasare") venituriConsumIntern += op.suma; else cheltuieliConsumIntern += op.suma; }
+    }
+    return { venituriPangar, cheltuieliPangar, venituriConsumIntern, cheltuieliConsumIntern };
+  }, [operatiuni, anSelectat, derived.contById]);
+  const evolutieAnCurent = evolutieMultianuala.find((d) => d.an === anSelectat) || { venituri: 0, cheltuieli: 0, excedent: 0 };
+
+  // 6a. Comparație multianuală — Ianuarie, Aprilie, Decembrie (aceleași luni, an de an).
+  const comparatieLuniSpeciale = useMemo(() => {
+    const luniTinta = [0, 3, 11];
+    const calculeazaLuna = (an, luna) => {
+      let venituri = 0, cheltuieli = 0;
+      for (const op of operatiuni) {
+        if (op.an !== an || Number(op.data.slice(5, 7)) - 1 !== luna) continue;
+        if (derived.contById[op.contId]?.clasa === "viramente") continue;
+        if (op.tip === "incasare") venituri += op.suma; else cheltuieli += op.suma;
+      }
+      return { venituri, cheltuieli };
+    };
+    return luniTinta.map((luna) => ({
+      luna: LUNI_LUNGI[luna],
+      date: aniDisponibili.map((an) => ({ eticheta: String(an), an, ...calculeazaLuna(an, luna), serie1: calculeazaLuna(an, luna).venituri, serie2: calculeazaLuna(an, luna).cheltuieli })),
+    }));
+  }, [operatiuni, aniDisponibili, derived.contById]);
+
+  // 6b. Statistici lunare complete — 12 perechi venituri/cheltuieli, pentru oricare din ultimii 5
+  // ani cu date (selectabil), câte un grafic pentru fiecare.
+  const ultimii5Ani = aniDisponibili.slice(-5);
+  const [anGraficLunar, setAnGraficLunar] = useState(ultimii5Ani[ultimii5Ani.length - 1] || anCurent);
+  useEffect(() => {
+    if (ultimii5Ani.length > 0 && !ultimii5Ani.includes(anGraficLunar)) setAnGraficLunar(ultimii5Ani[ultimii5Ani.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aniDisponibili]);
+  const statisticiLunarePeAn = useMemo(() => {
+    const rezultat = {};
+    for (const an of ultimii5Ani) {
+      const peLuna = Array.from({ length: 12 }, () => ({ venituri: 0, cheltuieli: 0 }));
+      for (const op of operatiuni) {
+        if (op.an !== an) continue;
+        if (derived.contById[op.contId]?.clasa === "viramente") continue;
+        const luna = Number(op.data.slice(5, 7)) - 1;
+        if (op.tip === "incasare") peLuna[luna].venituri += op.suma; else peLuna[luna].cheltuieli += op.suma;
+      }
+      rezultat[an] = peLuna.map((d, i) => ({ eticheta: LUNI_SCURT[i], serie1: d.venituri, serie2: d.cheltuieli }));
+    }
+    return rezultat;
+  }, [operatiuni, ultimii5Ani, derived.contById]);
+
+  if (aniDisponibili.length === 0) {
+    return (
+      <div className="p-6">
+        <h1 className="font-serif text-2xl text-[#1F3864] mb-1">Analiză Financiară</h1>
+        <p className="text-stone-500">Nu există încă nicio operațiune înregistrată — analiza va apărea aici de îndată ce apar date.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="font-serif text-2xl text-[#1F3864] mb-1">Analiză Financiară</h1>
+        <p className="text-stone-500 text-sm">Evoluție multianuală, structură, execuție bugetară, lichiditate și comparații lunare — pe baza tuturor operațiunilor înregistrate.</p>
+      </div>
+
+      {/* 1. Evoluție multianuală */}
+      <Card className="p-4">
+        <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Evoluție multianuală — venituri, cheltuieli, excedent/deficit</div>
+        <GraficLinieMultianuala
+          date={evolutieMultianuala}
+          serii={[
+            { key: "venituri", eticheta: "Venituri", culoare: "#059669" },
+            { key: "cheltuieli", eticheta: "Cheltuieli", culoare: "#dc2626" },
+            { key: "excedent", eticheta: "Excedent/deficit", culoare: "#1F3864" },
+          ]}
+        />
+      </Card>
+
+      {/* Selector de an, folosit de secțiunile 2, 3 și 5 */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-stone-600">An de referință pentru secțiunile de mai jos:</span>
+        <select className={`${inputCls} w-28`} value={anSelectat} onChange={(e) => setAnSelectat(Number(e.target.value))}>
+          {aniDisponibili.map((an) => <option key={an} value={an}>{an}</option>)}
+        </select>
+      </div>
+
+      {/* 2. Structura veniturilor/cheltuielilor */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="p-4">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Structura veniturilor — {anSelectat}</div>
+          <div className="space-y-1.5 max-h-80 overflow-y-auto">
+            {structuraAn.venituri.length === 0 && <div className="text-sm text-stone-400">Niciun venit înregistrat în {anSelectat}.</div>}
+            {structuraAn.venituri.map((r) => (
+              <div key={r.eticheta} className="text-sm">
+                <div className="flex justify-between"><span className="text-stone-700 truncate pr-2">{r.eticheta}</span><span className="tabular-nums font-medium">{fmt(r.suma)} lei ({r.procent.toFixed(0)}%)</span></div>
+                <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-emerald-600" style={{ width: `${r.procent}%` }} /></div>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Structura cheltuielilor — {anSelectat}</div>
+          <div className="space-y-1.5 max-h-80 overflow-y-auto">
+            {structuraAn.cheltuieli.length === 0 && <div className="text-sm text-stone-400">Nicio cheltuială înregistrată în {anSelectat}.</div>}
+            {structuraAn.cheltuieli.map((r) => (
+              <div key={r.eticheta} className="text-sm">
+                <div className="flex justify-between"><span className="text-stone-700 truncate pr-2">{r.eticheta}</span><span className="tabular-nums font-medium">{fmt(r.suma)} lei ({r.procent.toFixed(0)}%)</span></div>
+                <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-rose-600" style={{ width: `${r.procent}%` }} /></div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* 3. Execuție bugetară — evidențieri */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="p-4">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Cele mai mari depășiri de buget — {anSelectat}</div>
+          {depasiri.length === 0 && <div className="text-sm text-stone-400">Nicio depășire de buget în {anSelectat}.</div>}
+          {depasiri.map((r) => (
+            <div key={r.cont.id} className="flex justify-between text-sm py-1 border-b border-stone-100 last:border-0">
+              <span className="text-stone-700 truncate pr-2">{r.cont.simbol} — {r.cont.denumire}</span>
+              <span className="tabular-nums font-medium text-rose-700">{r.procent.toFixed(0)}% ({fmt(r.diferenta)} lei)</span>
+            </div>
+          ))}
+        </Card>
+        <Card className="p-4">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Cele mai mari restanțe față de prevederi — {anSelectat}</div>
+          {restante.length === 0 && <div className="text-sm text-stone-400">Nicio restanță notabilă în {anSelectat}.</div>}
+          {restante.map((r) => (
+            <div key={r.cont.id} className="flex justify-between text-sm py-1 border-b border-stone-100 last:border-0">
+              <span className="text-stone-700 truncate pr-2">{r.cont.simbol} — {r.cont.denumire}</span>
+              <span className="tabular-nums font-medium text-amber-700">{r.procent.toFixed(0)}% realizat ({fmt(r.bugetat)} lei prevăzut)</span>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      {/* 4. Lichiditate lunară */}
+      <Card className="p-4">
+        <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Evoluția lichidității — sold Casă/Bancă/Depozit, la finalul fiecărei luni (ultimele {lichiditateLunara.length} luni)</div>
+        <div className="overflow-x-auto">
+          <svg viewBox={`0 0 ${Math.max(420, lichiditateLunara.length * 44)} 220`} style={{ width: Math.max(420, lichiditateLunara.length * 44), height: 220 }}>
+            {(() => {
+              const latime = Math.max(420, lichiditateLunara.length * 44);
+              const maxima = Math.max(1, ...lichiditateLunara.map((p) => p.total));
+              const inaltimeUtila = 184;
+              const pasX = lichiditateLunara.length > 1 ? latime / (lichiditateLunara.length - 1) : 0;
+              const yPentru = (v) => inaltimeUtila - (v / maxima) * inaltimeUtila;
+              const serii = [{ key: "soldCasa", culoare: "#B8860B" }, { key: "soldBanca", culoare: "#1F3864" }, { key: "soldDepozit", culoare: "#059669" }];
+              return (
+                <>
+                  <line x1={0} y1={inaltimeUtila} x2={latime} y2={inaltimeUtila} stroke="#e7e5e4" strokeWidth="1" />
+                  {serii.map((s) => (
+                    <polyline key={s.key} points={lichiditateLunara.map((p, i) => `${i * pasX},${yPentru(p[s.key])}`).join(" ")} fill="none" stroke={s.culoare} strokeWidth="2" />
+                  ))}
+                  {lichiditateLunara.map((p, i) => (i % 2 === 0 ? <text key={i} x={i * pasX} y={214} textAnchor="middle" fontSize="10" fill="#78716c">{p.eticheta}</text> : null))}
+                </>
+              );
+            })()}
+          </svg>
+          <div className="flex items-center gap-4 mt-1 text-xs text-stone-500">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#B8860B" }} />Casă</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#1F3864" }} />Bancă</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#059669" }} />Depozit</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* 5. Contribuția Pangar / Consum Intern */}
+      <Card className="p-4">
+        <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Contribuția Pangar și Consum Intern la rezultatul anului {anSelectat}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard label="Venituri Pangar" value={`${fmt(contributieModule.venituriPangar)} RON`} sub={evolutieAnCurent.venituri > 0 ? `${((contributieModule.venituriPangar / evolutieAnCurent.venituri) * 100).toFixed(0)}% din total venituri` : undefined} />
+          <StatCard label="Cheltuieli Pangar" value={`${fmt(contributieModule.cheltuieliPangar)} RON`} />
+          <StatCard label="Venituri Consum Intern" value={`${fmt(contributieModule.venituriConsumIntern)} RON`} sub={evolutieAnCurent.venituri > 0 ? `${((contributieModule.venituriConsumIntern / evolutieAnCurent.venituri) * 100).toFixed(0)}% din total venituri` : undefined} />
+          <StatCard label="Cheltuieli Consum Intern" value={`${fmt(contributieModule.cheltuieliConsumIntern)} RON`} />
+        </div>
+      </Card>
+
+      {/* 6a. Comparație multianuală — Ianuarie/Aprilie/Decembrie */}
+      <Card className="p-4">
+        <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Comparație multianuală — Ianuarie, Aprilie, Decembrie</div>
+        <div className="space-y-6">
+          {comparatieLuniSpeciale.map((s) => (
+            <div key={s.luna}>
+              <div className="text-sm font-medium text-stone-700 mb-1">{s.luna}</div>
+              <GraficBarePerechi date={s.date} />
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* 6b. Statistici lunare complete, ultimii 5 ani */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Statistici lunare venituri/cheltuieli — {anGraficLunar}</div>
+          <select className={`${inputCls} w-28`} value={anGraficLunar} onChange={(e) => setAnGraficLunar(Number(e.target.value))}>
+            {ultimii5Ani.map((an) => <option key={an} value={an}>{an}</option>)}
+          </select>
+        </div>
+        <GraficBarePerechi date={statisticiLunarePeAn[anGraficLunar] || []} />
+      </Card>
     </div>
   );
 }
