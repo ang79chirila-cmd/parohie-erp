@@ -7,14 +7,14 @@ import { supabase, emailSintetic } from "./supabaseClient";
 
 // Pasul 1 — găsește parohia după CIF (informație publică, doar id + denumire, nimic sensibil).
 // Necesar înainte de logare, ca să confirmăm că CIF-ul există și să pregătim emailul sintetic.
+// Verificarea se face înainte de autentificare (rol anon). Tabelul "parohii" are RLS (fiecare
+// utilizator vede doar propria parohie), deci o interogare directă întoarce mereu „nimic" pentru
+// un vizitator nelogat. Folosim funcția SQL "exista_parohie_cif" (SECURITY DEFINER), care răspunde
+// doar true/false, fără să expună alte date. Întoarce true dacă CIF-ul există, altfel false.
 export async function gasesteParohieDupaCif(cif) {
-  const { data, error } = await supabase
-    .from("parohii")
-    .select("id, denumire")
-    .eq("cif", cif)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("exista_parohie_cif", { p_cif: cif });
   if (error) throw error;
-  return data; // null dacă nu există nicio parohie cu acest CIF
+  return data === true;
 }
 
 // Pasul 2 — logare efectivă: CIF + username + parolă -> sesiune Supabase Auth reală.
