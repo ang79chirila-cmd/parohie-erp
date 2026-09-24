@@ -7,6 +7,7 @@ import {
   inlocuiesteDocument,
   sincronizeazaContor,
 } from "./supabaseImportJurnal";
+import { supabase } from "./supabaseClient";
 
 /* ---------------------------------------------------------------------- *
  *  Import date — Registru Jurnal din Excel (ani anteriori)
@@ -155,6 +156,9 @@ function aplicaSursaPlati(documente, hartaSursa) {
   });
 }
 
+// Limita Vercel pentru corpul cererii e 4,5 MB; base64 adaugă ~33% → maximum 3 MB fișier original.
+const MAX_OCTETI_DOCUMENT_AI = 3 * 1024 * 1024;
+
 function fisierLaBase64(fisier) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -219,13 +223,23 @@ export default function ImportDateTab({ parohieId, conturi, permisiuni, onImport
     setTipDetectatAI(null);
     setRezultatCreareAI(null);
     try {
+      if (fisierAI.size > MAX_OCTETI_DOCUMENT_AI) {
+        setEroareAI(`Fișier prea mare (${(fisierAI.size / 1048576).toFixed(1)} MB) — maximum 3 MB. Scanați la rezoluție mai mică sau împărțiți PDF-ul.`);
+        return;
+      }
+      const { data: sesiune } = await supabase.auth.getSession();
+      const token = sesiune?.session?.access_token;
+      if (!token) {
+        setEroareAI("Sesiune expirată — reconectați-vă în aplicație.");
+        return;
+      }
       const base64 = await fisierLaBase64(fisierAI);
       const raspuns = await fetch("/api/citeste-document", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ fileBase64: base64, mediaType: fisierAI.type }),
       });
-      const rezultat = await raspuns.json();
+      const rezultat = await raspuns.json().catch(() => ({ error: `Eroare server (cod ${raspuns.status}).` }));
       if (!raspuns.ok) {
         setEroareAI(rezultat.error || "Eroare la citirea documentului.");
         return;
@@ -463,7 +477,7 @@ export default function ImportDateTab({ parohieId, conturi, permisiuni, onImport
             type="file"
             accept=".pdf,.jpg,.jpeg,.png,.webp"
             className="border border-stone-300 rounded-md px-2.5 py-1.5 text-sm"
-            onChange={(e) => { setFisierAI(e.target.files?.[0] || null); reseteazaAI(); }}
+            onChange={(e) => { const f = e.target.files?.[0] || null; reseteazaAI(); setFisierAI(f); }}
           />
         </label>
         {eroareAI && (
