@@ -2627,7 +2627,86 @@ export async function getDatoriiFurnizoriGenerale(parohieId) {
   });
 }
 
-// Comisioane bancare — vezi comisioane_bancare_pending. Un comision se înregistrează individual,
+// Toate facturile de furnizor, indiferent de starea de achitare (spre deosebire de
+// getDatoriiFurnizoriGenerale, care întoarce doar cele neachitate) — folosită pentru tabloul de
+// vizualizare/editare a tuturor facturilor înregistrate, nu doar a celor rămase de plată.
+export async function getFacturiFurnizori(parohieId) {
+  const { data: docs, error } = await supabase
+    .from("documente")
+    .select("id, an, nr, data, furnizor, nr_factura, data_scadenta, status")
+    .eq("parohie_id", parohieId)
+    .eq("tip", "factura_furnizor")
+    .order("an", { ascending: false })
+    .order("nr", { ascending: false });
+  if (error) throw error;
+  if (!docs || docs.length === 0) return [];
+
+  const docIds = docs.map((d) => d.id);
+  const linii = await inLoturi((lot) => supabase.from("linii_document").select("*").in("document_id", lot), docIds);
+  const platiDocs = await inLoturi(
+    (lot) => supabase.from("documente").select("id, nr, an, data, document_sursa_id").eq("tip", "ordin_plata").in("document_sursa_id", lot),
+    docIds
+  );
+
+  const platiPeFactura = {};
+  for (const p of platiDocs || []) (platiPeFactura[p.document_sursa_id] ||= []).push({ nr: p.nr, an: p.an, data: p.data });
+
+  return docs.map((d) => {
+    const liniiDoc = (linii || []).filter((l) => l.document_id === d.id);
+    const suma = liniiDoc.reduce((s, l) => s + Number(l.suma), 0);
+    return {
+      id: d.id, an: d.an, nr: d.nr, data: d.data, furnizor: d.furnizor,
+      nrFactura: d.nr_factura, dataScadenta: d.data_scadenta, status: d.status, suma,
+      linii: liniiDoc.map((l) => ({ id: l.id, contId: l.cont_id, suma: Number(l.suma), explicatie: l.explicatie })),
+      platiLegate: platiPeFactura[d.id] || [],
+    };
+  });
+}
+
+// Editează antetul și liniile unei facturi de furnizor deja înregistrate. BLOCATĂ dacă factura e
+// deja achitată (există un Ordin de plată legat prin document_sursa_id) — o corecție pe o factură
+// plătită ar desincroniza plata deja înregistrată; ștergerea și reintroducerea manuală e calea
+// corectă în acel caz, nu editarea directă.
+export async function editeazaFacturaFurnizor(documentId, { data, furnizor, nrFactura, dataScadenta, linii }) {
+  const { data: platiLegate, error: errPlati } = await supabase
+    .from("documente").select("id, nr, an").eq("document_sursa_id", documentId).eq("tip", "ordin_plata");
+  if (errPlati) throw errPlati;
+  if (platiLegate && platiLegate.length > 0) {
+    const lista = platiLegate.map((op) => `nr. ${op.nr}/${op.an}`).join(", ");
+    throw new Error(`Această factură este deja achitată (Ordin de plată ${lista}) — nu mai poate fi editată direct.`);
+  }
+
+  const { error: errUpd } = await supabase
+    .from("documente")
+    .update({ data, furnizor, nr_factura: nrFactura, data_scadenta: dataScadenta })
+    .eq("id", documentId);
+  if (errUpd) throw errUpd;
+
+  const { error: errDel } = await supabase.from("linii_document").delete().eq("document_id", documentId);
+  if (errDel) throw errDel;
+
+  const { error: errIns } = await supabase
+    .from("linii_document")
+    .insert(linii.map((l) => ({ document_id: documentId, cont_id: l.contId, suma: l.suma, explicatie: l.explicatie || null })));
+  if (errIns) throw errIns;
+
+  return { suma: linii.reduce((s, l) => s + Number(l.suma), 0) };
+}
+
+// Șterge o factură de furnizor — BLOCATĂ dacă e deja achitată (există un Ordin de plată legat).
+export async function stergeFacturaFurnizor(documentId) {
+  const { data: platiLegate, error: errPlati } = await supabase
+    .from("documente").select("id, nr, an").eq("document_sursa_id", documentId).eq("tip", "ordin_plata");
+  if (errPlati) throw errPlati;
+  if (platiLegate && platiLegate.length > 0) {
+    const lista = platiLegate.map((op) => `nr. ${op.nr}/${op.an}`).join(", ");
+    throw new Error(`Această factură este deja achitată (Ordin de plată ${lista}) — șterge întâi ordinul/ordinele de plată legate.`);
+  }
+  const { renumerotari } = await stergeDocument(documentId);
+  return { renumerotari };
+}
+
+
 // în momentul plății care l-a generat, dar NU intră în acel Ordin de plată — rămâne separat,
 // "neconsolidat", până la finalul lunii, când toate comisioanele lunii sunt adunate într-un singur
 // document nou (vezi consolideazaComisioaneLuna), cu câte o linie proprie pentru fiecare.

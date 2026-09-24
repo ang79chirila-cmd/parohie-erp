@@ -16,7 +16,7 @@ import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveaza
   creeazaStocInitialConsumIntern as creeazaStocInitialConsumInternBackend,
   editeazaStocInitialConsumIntern as editeazaStocInitialConsumInternBackend,
   stergeStocInitialConsumIntern as stergeStocInitialConsumInternBackend,
-  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, getBonuriConsum, getDatoriiFurnizoriGenerale, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
+  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, getBonuriConsum, getDatoriiFurnizoriGenerale, getFacturiFurnizori, editeazaFacturaFurnizor, stergeFacturaFurnizor, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import {
@@ -5523,9 +5523,13 @@ export default function ParohieERP() {
                 { label: "Ordine de plată emise", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "opEmise") },
               ],
             },
-            ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP
-              ? [{ label: "Facturi furnizori (Alt+F)", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "facturaFurnizor") }]
-              : []),
+            {
+              label: "Facturi furnizori", icon: FileText,
+              sub: [
+                ...(!permisiuni.citireOnly && permisiuni.poateEmiteOP ? [{ label: "Factură furnizor nouă (Alt+F)", icon: Plus, onClick: () => navigheazaCuActiune("operatiuni", "facturaFurnizor") }] : []),
+                { label: "Facturi furnizori — listă și editare", icon: FileText, onClick: () => navigheazaCuActiune("operatiuni", "facturiFurnizoriLista") },
+              ],
+            },
           ],
         },
         {
@@ -7162,10 +7166,198 @@ function fmtDataJurnal(iso) {
   return `${zi}.${luna}.${an}`;
 }
 
+// Tablou de vizualizare/editare pentru toate facturile de furnizor înregistrate (indiferent de
+// starea de achitare) — cerut explicit de user, separat de formularul de creare. Fiecare rând are
+// Modifică (editează antetul și liniile — corecție parțială) și Șterge (elimină factura întreagă —
+// ștergere totală). Ambele blocate dacă factura e deja achitată (Ordin de plată legat) — vezi
+// motivul exact în comentariul din supabaseData.js, la editeazaFacturaFurnizor/stergeFacturaFurnizor.
+function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose }) {
+  const [facturi, setFacturi] = useState(null); // null = încă se încarcă
+  const [eroare, setEroare] = useState(null);
+  const [factuaInEditare, setFacturaInEditare] = useState(null); // factura completă, sau null
+  const [confirmareStergere, setConfirmareStergere] = useState(null); // id | null
+  const [seSalveaza, setSeSalveaza] = useState(false);
+
+  const incarca = useCallback(async () => {
+    setFacturi(null);
+    try {
+      setFacturi(await getFacturiFurnizori(parohieId));
+    } catch (e) {
+      setEroare(e.message || "Eroare la încărcarea facturilor.");
+      setFacturi([]);
+    }
+  }, [parohieId]);
+  useEffect(() => { incarca(); }, [incarca]);
+
+  const conturiSelectabile = useMemo(
+    () => Object.values(derived.contById).filter((c) => c.clasa !== "viramente" && !c.special).sort((a, b) => a.simbol.localeCompare(b.simbol)),
+    [derived.contById]
+  );
+
+  async function confirmaStergere(id) {
+    setSeSalveaza(true);
+    try {
+      await stergeFacturaFurnizor(id);
+      await incarca();
+    } catch (e) {
+      setEroare(e.message || "Eroare la ștergere.");
+    }
+    setSeSalveaza(false);
+    setConfirmareStergere(null);
+  }
+
+  return (
+    <Modal title="Facturi furnizori — listă și editare" onClose={onClose} wide="xl">
+      <div className="p-4">
+        {eroare && (
+          <div className="mb-3 p-3 rounded-md border border-amber-300 bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
+            <span>{eroare}</span>
+            <button onClick={() => setEroare(null)} className="text-amber-600 hover:text-amber-900"><X size={14} /></button>
+          </div>
+        )}
+        {facturi === null && <div className="text-sm text-stone-500 py-6 text-center">Se încarcă...</div>}
+        {facturi !== null && facturi.length === 0 && <div className="text-sm text-stone-500 py-6 text-center">Nicio factură de furnizor înregistrată încă.</div>}
+        {facturi !== null && facturi.length > 0 && (
+          <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
+                  <th className="px-2 py-1.5 font-bold">Nr./An</th>
+                  <th className="px-2 py-1.5 font-bold">Data</th>
+                  <th className="px-2 py-1.5 font-bold">Furnizor</th>
+                  <th className="px-2 py-1.5 font-bold">Nr. factură</th>
+                  <th className="px-2 py-1.5 font-bold">Scadență</th>
+                  <th className="px-2 py-1.5 text-right font-bold">Sumă</th>
+                  <th className="px-2 py-1.5 font-bold">Stare</th>
+                  <th className="px-2 py-1.5 font-bold"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {facturi.map((f) => {
+                  const eAchitata = f.platiLegate.length > 0;
+                  return (
+                    <tr key={f.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50">
+                      <td className="px-2 py-1.5">{f.nr}/{f.an}</td>
+                      <td className="px-2 py-1.5">{fmtDataJurnal(f.data)}</td>
+                      <td className="px-2 py-1.5">{f.furnizor}</td>
+                      <td className="px-2 py-1.5 text-stone-500">{f.nrFactura || "—"}</td>
+                      <td className="px-2 py-1.5 text-stone-500">{f.dataScadenta ? fmtDataJurnal(f.dataScadenta) : "—"}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(f.suma)}</td>
+                      <td className="px-2 py-1.5">
+                        {eAchitata ? (
+                          <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium whitespace-nowrap" title={`Achitată prin OP ${f.platiLegate.map((p) => `${p.nr}/${p.an}`).join(", ")}`}>
+                            Achitată
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitată</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {!permisiuni.citireOnly && !eAchitata && (
+                          confirmareStergere === f.id ? (
+                            <div className="flex gap-1">
+                              <Btn variant="danger" onClick={() => confirmaStergere(f.id)}>Confirmă</Btn>
+                              <Btn variant="ghost" onClick={() => setConfirmareStergere(null)}>Anulează</Btn>
+                            </div>
+                          ) : (
+                            <div className="flex gap-1">
+                              <Btn variant="gold" onClick={() => setFacturaInEditare(f)}>Modifică</Btn>
+                              <Btn variant="danger" onClick={() => setConfirmareStergere(f.id)}>Șterge</Btn>
+                            </div>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {factuaInEditare && (
+        <FacturaFurnizorEditForm
+          factura={factuaInEditare}
+          conturiSelectabile={conturiSelectabile}
+          onClose={() => setFacturaInEditare(null)}
+          onSave={async (patch) => {
+            setSeSalveaza(true);
+            try {
+              await editeazaFacturaFurnizor(factuaInEditare.id, patch);
+              setFacturaInEditare(null);
+              await incarca();
+            } catch (e) {
+              setEroare(e.message || "Eroare la salvare.");
+            }
+            setSeSalveaza(false);
+          }}
+          seSalveaza={seSalveaza}
+        />
+      )}
+    </Modal>
+  );
+}
+
+// Formular de editare pentru o factură de furnizor — antet (furnizor, nr. factură, dată, scadență)
+// + liniile de defalcare pe conturi bugetare, cu adăugare/eliminare liberă de linii.
+function FacturaFurnizorEditForm({ factura, conturiSelectabile, onClose, onSave, seSalveaza }) {
+  const [furnizor, setFurnizor] = useState(factura.furnizor || "");
+  const [nrFactura, setNrFactura] = useState(factura.nrFactura || "");
+  const [data, setData] = useState(factura.data);
+  const [dataScadenta, setDataScadenta] = useState(factura.dataScadenta || "");
+  const [linii, setLinii] = useState(factura.linii.map((l) => ({ id: uid(), contId: l.contId, suma: String(l.suma), explicatie: l.explicatie || "" })));
+
+  const suma = linii.reduce((s, l) => s + (Number(l.suma) || 0), 0);
+  const valid = furnizor.trim() && data && linii.length > 0 && linii.every((l) => l.contId && Number(l.suma) > 0);
+
+  return (
+    <Modal title={`Modifică factura nr. ${factura.nr}/${factura.an}`} onClose={onClose}>
+      <div className="p-4 space-y-3">
+        <Field label="Denumire furnizor"><input className={inputCls} value={furnizor} onChange={(e) => setFurnizor(e.target.value)} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Nr. factură"><input className={inputCls} value={nrFactura} onChange={(e) => setNrFactura(e.target.value)} /></Field>
+          <Field label="Data"><input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} /></Field>
+        </div>
+        <Field label="Data scadenței (opțional)"><input type="date" className={inputCls} value={dataScadenta} onChange={(e) => setDataScadenta(e.target.value)} /></Field>
+
+        <div>
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-1">Defalcare pe articole bugetare</div>
+          {linii.map((l) => (
+            <div key={l.id} className="flex gap-2 items-center mb-1.5">
+              <select className={`${inputCls} flex-1`} value={l.contId} onChange={(e) => setLinii((ls) => ls.map((x) => (x.id === l.id ? { ...x, contId: e.target.value } : x)))}>
+                <option value="">— selectați —</option>
+                {conturiSelectabile.map((c) => <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>)}
+              </select>
+              <input type="number" className={`${inputCls} w-28`} value={l.suma} onChange={(e) => setLinii((ls) => ls.map((x) => (x.id === l.id ? { ...x, suma: e.target.value } : x)))} placeholder="Sumă" />
+              <input className={`${inputCls} w-36`} value={l.explicatie} onChange={(e) => setLinii((ls) => ls.map((x) => (x.id === l.id ? { ...x, explicatie: e.target.value } : x)))} placeholder="Explicație" />
+              <button onClick={() => setLinii((ls) => ls.filter((x) => x.id !== l.id))} className="text-rose-500 hover:text-rose-700 p-1"><Trash2 size={16} /></button>
+            </div>
+          ))}
+          <Btn variant="ghost" onClick={() => setLinii((ls) => [...ls, { id: uid(), contId: "", suma: "", explicatie: "" }])}>+ Adaugă linie</Btn>
+        </div>
+
+        <div className="text-right text-sm text-stone-600">Total: <span className="font-medium tabular-nums">{fmt(suma)} lei</span></div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
+          <Btn
+            variant="primary"
+            disabled={!valid || seSalveaza}
+            onClick={() => onSave({ furnizor, nrFactura, data, dataScadenta: dataScadenta || null, linii: linii.map((l) => ({ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie })) })}
+          >
+            {seSalveaza ? "Se salvează..." : "Salvează"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener, actiuneInitiala, onConsumaActiuneInitiala, anSelectat, setAnSelectat }) {
   const [instanteChitanta, setInstanteChitanta] = useState([]);
   const [instanteOP, setInstanteOP] = useState([]);
   const [instanteFacturaFurnizor, setInstanteFacturaFurnizor] = useState([]);
+  const [aratafacturiFurnizoriLista, setAratafacturiFurnizoriLista] = useState(false);
   const [instanteTransfer, setInstanteTransfer] = useState([]); // [{id, directieInitiala}]
   const [instanteEditareViramente, setInstanteEditareViramente] = useState([]);
   const [instanteEditareViramentFor, setInstanteEditareViramentFor] = useState([]); // [{id, perechea}]
@@ -7186,6 +7378,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     if (actiuneInitiala === "chitanta") setInstanteChitanta((l) => [...l, { id: uid() }]);
     else if (actiuneInitiala === "op") setInstanteOP((l) => [...l, { id: uid() }]);
     else if (actiuneInitiala === "facturaFurnizor") setInstanteFacturaFurnizor((l) => [...l, { id: uid() }]);
+    else if (actiuneInitiala === "facturiFurnizoriLista") setAratafacturiFurnizoriLista(true);
     else if (actiuneInitiala === "transfer") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "casa-banca" }]);
     else if (actiuneInitiala === "transferCasaBanca") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "casa-banca" }]);
     else if (actiuneInitiala === "transferBancaCasa") setInstanteTransfer((l) => [...l, { id: uid(), directieInitiala: "banca-casa" }]);
@@ -7885,6 +8078,15 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           }}
         />
       ))}
+
+      {aratafacturiFurnizoriLista && (
+        <FacturiFurnizoriListaModal
+          parohieId={parohieId}
+          derived={derived}
+          permisiuni={permisiuni}
+          onClose={() => setAratafacturiFurnizoriLista(false)}
+        />
+      )}
 
       {instanteTransfer.map((inst) => (
         <TransferForm
@@ -13539,29 +13741,47 @@ function naratiuneStructura(lista, listaAnterioara, etichetaTip, an) {
   return propozitii;
 }
 
-function GraficBarePerechi({ date, etichetaSerie1 = "Venituri", etichetaSerie2 = "Cheltuieli", culoare1 = "#059669", culoare2 = "#dc2626", inaltime = 220 }) {
-  const latime = Math.max(420, date.length * 64);
+function GraficBarePerechi({ date, etichetaSerie1 = "Venituri", etichetaSerie2 = "Cheltuieli", culoare1 = "#059669", culoare2 = "#dc2626", inaltime = 240 }) {
+  const PAD = { stanga: 64, dreapta: 10, sus: 22, jos: 30 };
+  const latimeTotala = Math.max(460, date.length * 70);
+  const latimeUtila = latimeTotala - PAD.stanga - PAD.dreapta;
+  const inaltimeUtila = inaltime - PAD.sus - PAD.jos;
   const maxima = Math.max(1, ...date.flatMap((d) => [d.serie1 || 0, d.serie2 || 0]));
-  const latimeGrup = latime / Math.max(1, date.length);
+  const pas = pasGrilaNatural(maxima);
+  const maximaAxa = Math.ceil(maxima / pas) * pas;
+  const liniiGrila = [];
+  for (let v = 0; v <= maximaAxa; v += pas) liniiGrila.push(v);
+  const latimeGrup = latimeUtila / Math.max(1, date.length);
   const latimeBara = Math.min(22, latimeGrup * 0.32);
-  const inaltimeUtila = inaltime - 36;
+  const yPentru = (v) => PAD.sus + inaltimeUtila - (maximaAxa > 0 ? (v / maximaAxa) * inaltimeUtila : 0);
   return (
     <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${latime} ${inaltime}`} style={{ width: latime, height: inaltime }}>
-        <line x1={0} y1={inaltimeUtila} x2={latime} y2={inaltimeUtila} stroke="#e7e5e4" strokeWidth="1" />
+      <svg viewBox={`0 0 ${latimeTotala} ${inaltime}`} style={{ width: latimeTotala, height: inaltime }}>
+        {liniiGrila.map((v) => (
+          <g key={v}>
+            <line x1={PAD.stanga} y1={yPentru(v)} x2={latimeTotala - PAD.dreapta} y2={yPentru(v)} stroke={v === 0 ? "#a8a29e" : "#f0efed"} strokeWidth={v === 0 ? 1.2 : 1} />
+            <text x={PAD.stanga - 6} y={yPentru(v) + 3} textAnchor="end" fontSize="10" fill="#78716c">{fmt(v)}</text>
+          </g>
+        ))}
         {date.map((d, i) => {
-          const hV = maxima > 0 ? (d.serie1 / maxima) * inaltimeUtila : 0;
-          const hC = maxima > 0 ? (d.serie2 / maxima) * inaltimeUtila : 0;
-          const xGrup = i * latimeGrup;
+          const xGrup = PAD.stanga + i * latimeGrup;
+          const yV = yPentru(d.serie1);
+          const yC = yPentru(d.serie2);
           return (
             <g key={i}>
-              <rect x={xGrup + latimeGrup / 2 - latimeBara - 2} y={inaltimeUtila - hV} width={latimeBara} height={hV} fill={culoare1} rx={2}>
+              <rect x={xGrup + latimeGrup / 2 - latimeBara - 2} y={yV} width={latimeBara} height={PAD.sus + inaltimeUtila - yV} fill={culoare1} rx={2}>
                 <title>{`${d.eticheta} — ${etichetaSerie1}: ${fmt(d.serie1)} lei`}</title>
               </rect>
-              <rect x={xGrup + latimeGrup / 2 + 2} y={inaltimeUtila - hC} width={latimeBara} height={hC} fill={culoare2} rx={2}>
+              {d.serie1 > 0 && (
+                <text x={xGrup + latimeGrup / 2 - latimeBara / 2 - 2} y={yV - 4} textAnchor="middle" fontSize="9" fill={culoare1} fontWeight="600">{fmt(d.serie1)}</text>
+              )}
+              <rect x={xGrup + latimeGrup / 2 + 2} y={yC} width={latimeBara} height={PAD.sus + inaltimeUtila - yC} fill={culoare2} rx={2}>
                 <title>{`${d.eticheta} — ${etichetaSerie2}: ${fmt(d.serie2)} lei`}</title>
               </rect>
-              <text x={xGrup + latimeGrup / 2} y={inaltime - 6} textAnchor="middle" fontSize="11" fill="#57534e">{d.eticheta}</text>
+              {d.serie2 > 0 && (
+                <text x={xGrup + latimeGrup / 2 + latimeBara / 2 + 2} y={yC - 4} textAnchor="middle" fontSize="9" fill={culoare2} fontWeight="600">{fmt(d.serie2)}</text>
+              )}
+              <text x={xGrup + latimeGrup / 2} y={inaltime - 8} textAnchor="middle" fontSize="11" fill="#57534e">{d.eticheta}</text>
             </g>
           );
         })}
