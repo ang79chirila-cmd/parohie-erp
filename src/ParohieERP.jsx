@@ -26,7 +26,9 @@ import {
   Trash2, X, Church, Lock, User, Users, LogOut, KeyRound, Check, Eye, EyeOff, RotateCcw, Pencil, Minus, Copy,
   Download, ChevronDown, FileText, FileSpreadsheet, FileCode, Building2, Boxes, Archive, ClipboardCheck, MapPin, Mail,
   Flame, HeartHandshake, Gem, Cross, ScrollText, ChevronUp, ShieldCheck, Smartphone, Printer, Unlock, Upload, Settings, Calendar, TrendingUp,
+  DatabaseBackup,
 } from "lucide-react";
+import { genereazaBackup, descarcaFisier, inregistreazaBackup, backupLunarNecesar, ultimeleBackupuri, marimeLizibila } from "./backupParohie";
 
 // Font arhaic românesc (Arhaic_rom.ttf, furnizat de utilizator) — încorporat direct ca
 // base64 pentru a nu necesita găzduire externă sau un fișier de asset separat în repo.
@@ -4176,6 +4178,147 @@ const faraAutocompletareParola = {
   autoComplete: "new-password",
 };
 
+// Fereastra „Backup date parohie” — backup complet la cerere + istoricul backup-urilor.
+// Disponibilă doar Administratorului parohiei (rol „preot”); serverul verifică același lucru la
+// înregistrarea backup-ului. `rezultatAutomat` (opțional) afișează rezultatul backup-ului lunar
+// automat abia efectuat, cu posibilitatea de a-l descărca din nou.
+function BackupModal({ contActiv, rezultatAutomat, onClose }) {
+  const [inCurs, setInCurs] = useState(false);
+  const [progres, setProgres] = useState("");
+  const [eroare, setEroare] = useState("");
+  const [rezultat, setRezultat] = useState(rezultatAutomat || null);
+  const [istoric, setIstoric] = useState(null);
+  const [eroareIstoric, setEroareIstoric] = useState("");
+
+  const incarcaIstoric = useCallback(async () => {
+    try {
+      setIstoric(await ultimeleBackupuri(12));
+      setEroareIstoric("");
+    } catch (e) {
+      setEroareIstoric(e.message || "Istoricul nu a putut fi citit.");
+    }
+  }, []);
+
+  useEffect(() => {
+    incarcaIstoric();
+  }, [incarcaIstoric]);
+
+  async function backupAcum() {
+    setEroare("");
+    setInCurs(true);
+    setRezultat(null);
+    try {
+      const r = await genereazaBackup({
+        tip: "manual",
+        utilizator: contActiv?.username,
+        rol: contActiv?.rol,
+        onProgres: setProgres,
+      });
+      descarcaFisier(r.blob, r.numeFisier);
+      setProgres("Se înregistrează backup-ul în evidență...");
+      await inregistreazaBackup({ tip: "manual", nrTabele: r.nrTabele, nrRanduri: r.nrRanduri, marime: r.marime, sha256: r.sha256 });
+      setRezultat({ ...r, tip: "manual" });
+      await incarcaIstoric();
+    } catch (e) {
+      setEroare(e.message || "Backup-ul nu a reușit.");
+    } finally {
+      setProgres("");
+      setInCurs(false);
+    }
+  }
+
+  const fmtMoment = (iso) =>
+    new Intl.DateTimeFormat("ro-RO", {
+      timeZone: "Europe/Bucharest", day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(new Date(iso));
+
+  return (
+    <Modal title="Backup date parohie" onClose={inCurs ? () => {} : onClose} wide>
+      <div className="flex flex-col gap-3 text-sm">
+        <p className="text-xs text-stone-600 leading-relaxed">
+          Backup-ul salvează <strong>toate datele parohiei</strong> (documente, registre, pangar, inventar, cimitir,
+          corespondență, organisme parohiale, jurnal de audit etc.) într-un <strong>singur fișier ZIP</strong>, descărcat pe
+          acest calculator (de regulă în dosarul „Descărcări”). Fișierul conține și o descriere (CITESTE-MA.txt) și amprenta
+          SHA-256 a fiecărui tabel, pentru verificarea integrității. Parolele și codurile 2FA nu sunt incluse.
+        </p>
+        <p className="text-xs text-stone-600 leading-relaxed">
+          <strong>Backup automat:</strong> la prima accesare a aplicației de către Administrator, începând cu data de 1 a
+          fiecărei luni, dacă în luna respectivă nu s-a făcut încă niciun backup.
+        </p>
+
+        {rezultat && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 text-xs text-emerald-900 flex flex-col gap-1">
+            <div className="font-semibold">
+              {rezultat.tip === "automat" ? "Backup-ul lunar automat a fost realizat." : "Backup-ul a fost realizat."}
+            </div>
+            <div>Fișier: <span className="font-mono">{rezultat.numeFisier}</span> ({rezultat.marimeLizibila})</div>
+            <div>{rezultat.nrTabele} tabele, {rezultat.nrRanduri} rânduri. SHA-256: <span className="font-mono break-all">{rezultat.sha256}</span></div>
+            <div className="text-emerald-800">
+              Dacă fișierul nu apare în „Descărcări”, browserul a blocat descărcarea automată — folosiți butonul de mai jos.
+            </div>
+            <div>
+              <Btn variant="ghost" onClick={() => descarcaFisier(rezultat.blob, rezultat.numeFisier)}>
+                <Download size={14} /> Descarcă din nou acest fișier
+              </Btn>
+            </div>
+          </div>
+        )}
+
+        {eroare && (
+          <div className="bg-rose-50 border border-rose-200 rounded-md p-3 text-xs text-rose-800 flex items-start gap-2">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span>{eroare}</span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Btn variant="primary" onClick={backupAcum} disabled={inCurs}>
+            <DatabaseBackup size={14} /> {inCurs ? "Backup în curs..." : "Creează și descarcă backup complet acum"}
+          </Btn>
+          {progres && <span className="text-xs text-stone-500">{progres}</span>}
+        </div>
+
+        <div className="border-t border-stone-200 pt-3">
+          <div className="text-xs font-semibold text-stone-700 mb-1.5">Ultimele backup-uri ale parohiei</div>
+          {eroareIstoric && <div className="text-xs text-rose-700">{eroareIstoric}</div>}
+          {!eroareIstoric && istoric === null && <div className="text-xs text-stone-500">Se încarcă...</div>}
+          {!eroareIstoric && istoric && istoric.length === 0 && (
+            <div className="text-xs text-stone-500">Nu există încă niciun backup înregistrat.</div>
+          )}
+          {!eroareIstoric && istoric && istoric.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-stone-500 border-b border-stone-200">
+                    <th className="py-1 pr-3 font-medium">Data și ora</th>
+                    <th className="py-1 pr-3 font-medium">Tip</th>
+                    <th className="py-1 pr-3 font-medium">Utilizator</th>
+                    <th className="py-1 pr-3 font-medium text-right">Rânduri</th>
+                    <th className="py-1 pr-3 font-medium text-right">Mărime</th>
+                    <th className="py-1 font-medium">SHA-256 (început)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {istoric.map((b) => (
+                    <tr key={b.id} className="border-b border-stone-100">
+                      <td className="py-1 pr-3 whitespace-nowrap">{fmtMoment(b.creat_la)}</td>
+                      <td className="py-1 pr-3">{b.tip === "automat" ? "automat" : "manual"}</td>
+                      <td className="py-1 pr-3">{b.utilizator || "—"}</td>
+                      <td className="py-1 pr-3 text-right tabular-nums">{b.nr_randuri}</td>
+                      <td className="py-1 pr-3 text-right tabular-nums whitespace-nowrap">{marimeLizibila(Number(b.marime_octeti))}</td>
+                      <td className="py-1 font-mono">{String(b.sha256).slice(0, 16)}…</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // Avertisment afișat doar în ultimul minut înainte de delogarea automată din inactivitate.
 // Componentă separată, cu propriul cronometru, ca actualizarea la fiecare secundă să nu
 // redeseneze întreaga aplicație. Orice activitate (mișcare de mouse, click, tastă, derulare)
@@ -4910,6 +5053,11 @@ export default function ParohieERP() {
   const [contActiv, setContActiv] = useState(null); // { cif, username, rol, parohieId } | null
   // Mesaj afișat pe ecranul de autentificare după delogarea automată din inactivitate.
   const [mesajDelogare, setMesajDelogare] = useState("");
+  // Backup: fereastra de backup și rezultatul backup-ului lunar automat (afișat o singură dată).
+  const [showBackup, setShowBackup] = useState(false);
+  const [rezultatBackupAutomat, setRezultatBackupAutomat] = useState(null);
+  const [eroareBackupAutomat, setEroareBackupAutomat] = useState("");
+  const backupAutomatVerificatRef = useRef(null);
   const ultimaActivitateRef = useRef(Date.now());
   const [modAdaugaParohie, setModAdaugaParohie] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
@@ -5524,6 +5672,38 @@ export default function ParohieERP() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
+  // Backup lunar automat: la prima accesare a Administratorului începând cu data de 1 a lunii,
+  // dacă în luna curentă (ora României) nu există încă niciun backup al parohiei. Decizia o ia
+  // serverul (funcția „backup_lunar_necesar”), deci funcționează indiferent de calculator/browser.
+  // Se verifică o singură dată pe sesiune; la eșec, se reîncearcă la următoarea accesare.
+  useEffect(() => {
+    if (!session || !loaded || contActiv?.rol !== "preot") return undefined;
+    if (backupAutomatVerificatRef.current === session) return undefined;
+    backupAutomatVerificatRef.current = session;
+    let anulat = false;
+    (async () => {
+      try {
+        if (!(await backupLunarNecesar())) return;
+        const r = await genereazaBackup({ tip: "automat", utilizator: contActiv?.username, rol: contActiv?.rol });
+        if (anulat) return;
+        descarcaFisier(r.blob, r.numeFisier);
+        await inregistreazaBackup({ tip: "automat", nrTabele: r.nrTabele, nrRanduri: r.nrRanduri, marime: r.marime, sha256: r.sha256 });
+        if (anulat) return;
+        setRezultatBackupAutomat({ ...r, tip: "automat" });
+        setShowBackup(true);
+      } catch (e) {
+        if (anulat) return;
+        setEroareBackupAutomat(
+          `Backup-ul lunar automat nu a reușit (${e.message || "eroare necunoscută"}). Va fi reîncercat la următoarea accesare; îl puteți face și manual din Setări → Backup date parohie.`
+        );
+      }
+    })();
+    return () => {
+      anulat = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, loaded, contActiv?.rol]);
+
   function handleLogout() {
     scrieUltimaActivitate(null);
     delogare();
@@ -5540,6 +5720,10 @@ export default function ParohieERP() {
     setForteazaReinrolareMfa(false);
     setShowSecuritate(false);
     setShowAdminMfaUnlock(false);
+    setShowBackup(false);
+    setRezultatBackupAutomat(null);
+    setEroareBackupAutomat("");
+    backupAutomatVerificatRef.current = null;
   }
 
   if (!authLoaded) {
@@ -5982,6 +6166,15 @@ export default function ParohieERP() {
               >
                 <ClipboardCheck size={15} /> Jurnal de audit
               </button>
+              {contActiv?.rol === "preot" && (
+                <button
+                  title="Backup date parohie — salvează toate datele parohiei într-un singur fișier ZIP, pe acest calculator"
+                  onClick={() => { setShowSetari(false); setShowBackup(true); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-md border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors"
+                >
+                  <DatabaseBackup size={15} /> Backup date parohie
+                </button>
+              )}
               {rolActiv === "preot_paroh" && (
                 <button
                   title="Deblocare 2FA utilizatori — resetează autentificarea în doi pași pentru un alt utilizator din parohie, dacă și-a pierdut accesul"
@@ -6190,6 +6383,23 @@ export default function ParohieERP() {
           utilizatorPropriuId={contActiv.id}
           onClose={() => setShowAdminMfaUnlock(false)}
         />
+      )}
+
+      {showBackup && contActiv?.rol === "preot" && (
+        <BackupModal
+          contActiv={contActiv}
+          rezultatAutomat={rezultatBackupAutomat}
+          onClose={() => { setShowBackup(false); setRezultatBackupAutomat(null); }}
+        />
+      )}
+      {eroareBackupAutomat && (
+        <div className="fixed bottom-4 right-4 z-[900] max-w-md bg-amber-50 border border-amber-300 rounded-md shadow-lg p-3 text-xs text-amber-900 flex items-start gap-2">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <span className="flex-1">{eroareBackupAutomat}</span>
+          <button onClick={() => setEroareBackupAutomat("")} className="shrink-0 text-amber-700 hover:text-amber-900" title="Închide">
+            <X size={14} />
+          </button>
+        </div>
       )}
 
       <AvertismentInactivitate ultimaActivitateRef={ultimaActivitateRef} />
@@ -14788,23 +14998,12 @@ function ProfilParohieTab({ state, setState, obligatoriu, setTab }) {
       {modEditare && (
       <>
       <Card className="p-4 flex flex-col gap-3">
-        <h3 className="font-serif text-base text-[#1F3864]">Salvare și restaurare bază de date</h3>
+        <h3 className="font-serif text-base text-[#1F3864]">Backup bază de date</h3>
         <p className="text-xs text-stone-500">
-          Baza de date a acestei parohii este distinctă și independentă (secțiunea 2.1). O poți salva ca fișier de
-          sine stătător, transferabil către altă instalare, sau o poți restaura dintr-o salvare anterioară.
+          Backup-ul complet al datelor parohiei (un singur fișier ZIP, salvat pe calculator) se face din
+          <strong> Setări → Backup date parohie</strong> — disponibil Administratorului parohiei. Backup-ul se face și
+          automat, lunar, la prima accesare a Administratorului începând cu data de 1 a fiecărei luni.
         </p>
-        <div className="flex flex-wrap gap-2">
-          <Btn variant="primary" onClick={() => exportBackup(state)}>
-            <Download size={14} /> Descarcă salvare completă (JSON)
-          </Btn>
-          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border border-stone-300 text-stone-600 hover:bg-stone-100 cursor-pointer">
-            <RotateCcw size={14} /> Restaurează dintr-o salvare
-            <input type="file" accept="application/json,.json" className="hidden" onChange={selecteazaFisier} />
-          </label>
-        </div>
-        {eroareImport && (
-          <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {eroareImport}</span>
-        )}
       </Card>
 
       <Card className="p-4 flex flex-col gap-3">
