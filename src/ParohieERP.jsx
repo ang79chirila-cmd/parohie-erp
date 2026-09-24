@@ -718,7 +718,6 @@ function emptyState() {
 }
 
 const DEMO_CIF = "00000000";
-const DEMO_PASSWORD = "Demo!2026";
 const DEMO_NUME_PAROHIE = "Parohia „Sfântul Nicolae” (fictivă — date de test)";
 
 // Roluri și permisiuni: un singur cont de acces (CIF), utilizatorul alege rolul activ după autentificare.
@@ -4145,7 +4144,7 @@ const faraAutocompletareParola = {
   autoComplete: "new-password",
 };
 
-function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin }) {
+function LoginScreen({ onSetup, onLogin, onVerifyMfa, onRecoveryLogin }) {
   const [pas, setPas] = useState("cif"); // "cif" | "login" | "setup" | "mfa-cod" | "mfa-recuperare"
   const [cif, setCif] = useState("");
   const [denumireParohie, setDenumireParohie] = useState("");
@@ -4279,19 +4278,6 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
               <Btn variant="gold" onClick={submitCif} disabled={verificand} className="justify-center mt-1">
                 {verificand ? "Se verifică..." : "Continuă"}
               </Btn>
-              {onDemo && (
-                <>
-                  <div className="flex items-center gap-2 text-[11px] text-stone-400 my-1">
-                    <span className="flex-1 h-px bg-stone-200" /> sau <span className="flex-1 h-px bg-stone-200" />
-                  </div>
-                  <Btn variant="ghost" onClick={onDemo} className="justify-center">
-                    Folosește o parohie fictivă (mediu de test)
-                  </Btn>
-                  <p className="text-[11px] text-stone-400 text-center">
-                    Încarcă contul de test (CIF {DEMO_CIF}), pentru explorarea aplicației.
-                  </p>
-                </>
-              )}
             </>
           )}
 
@@ -5234,19 +5220,6 @@ export default function ParohieERP() {
     return { ok: true };
   }
 
-  async function handleDemo() {
-    const rezultat = await logare(DEMO_CIF, "preot", DEMO_PASSWORD);
-    if (!rezultat.ok) {
-      console.error("Eroare la logarea în mediul demo:", rezultat.error);
-      return;
-    }
-    const { data: userData } = await supabase.auth.getUser();
-    setContActiv({ id: userData?.user?.id, cif: DEMO_CIF, username: rezultat.username, rol: rezultat.rol, parohieId: rezultat.parohieId });
-    setSession(DEMO_CIF);
-    setRolActiv(ROL_DB_LA_LOCAL[rezultat.rol] || rezultat.rol);
-    setModAdaugaParohie(false);
-  }
-
   async function handleResetDemo() {
     setResetareEroare("");
     setResetareInCurs(true);
@@ -5375,7 +5348,6 @@ export default function ParohieERP() {
       <LoginScreen
         onSetup={handleSetup}
         onLogin={handleLogin}
-        onDemo={handleDemo}
         onVerifyMfa={handleVerifyMfa}
         onRecoveryLogin={handleRecoveryLogin}
       />
