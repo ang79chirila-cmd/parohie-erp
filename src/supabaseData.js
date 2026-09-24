@@ -2493,7 +2493,11 @@ export async function creeazaFacturaFurnizor(parohieId, { linii, data, furnizor,
   const sumaTotala = linii.reduce((s, l) => s + Number(l.suma), 0);
 
   const rezultatFactura = await salveazaDocument(parohieId, {
-    tip: "facturaFurnizor",
+    // CRITIC: "factura_furnizor" (snake_case), NU "facturaFurnizor" — bug real, găsit în
+    // producție: scrierea cu litere greșite făcea facturile invizibile la orice recitire din
+    // Supabase (getDatoriiFurnizoriGenerale, getFacturiFurnizori — ambele caută snake_case),
+    // deși documentele chiar se salvau corect, doar sub o etichetă pe care nimeni n-o mai căuta.
+    tip: "factura_furnizor",
     data,
     furnizor,
     nrFactura,
