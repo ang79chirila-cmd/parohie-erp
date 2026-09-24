@@ -2744,7 +2744,7 @@ export async function getFacturiFurnizori(parohieId) {
     .eq("parohie_id", parohieId)
     .eq("tip", "factura_furnizor")
     .order("an", { ascending: false })
-    .order("nr", { ascending: false });
+    .order("nr", { ascending: true }); // în ordinea numerotării: furnizor A→Z, dată, nr. factură
   if (error) throw error;
   if (!docs || docs.length === 0) return [];
 
@@ -2788,7 +2788,25 @@ export async function getFacturiFurnizori(parohieId) {
 // deja achitată (există un Ordin de plată legat prin document_sursa_id) — o corecție pe o factură
 // plătită ar desincroniza plata deja înregistrată; ștergerea și reintroducerea manuală e calea
 // corectă în acel caz, nu editarea directă.
+// Numerotarea facturilor de furnizor (în fiecare an): furnizor A→Z, data facturii, numărul facturii
+// emise de furnizor — refăcută pe server de funcția SQL renumeroteaza_facturi_furnizor, după orice
+// creare, modificare sau ștergere. Întoarce [{ documentId, nrNou }] pentru facturile renumerotate.
+async function renumeroteazaFacturiFurnizor(parohieId, an) {
+  const { data, error } = await supabase.rpc("renumeroteaza_facturi_furnizor", { p_parohie_id: parohieId, p_an: an });
+  if (error) throw error;
+  return (data || []).map((r) => ({ documentId: r.document_id, nrNou: r.nr_nou }));
+}
+
 export async function editeazaFacturaFurnizor(documentId, { data, furnizor, nrFactura, dataScadenta, linii }) {
+  const { data: docCurent, error: errDoc } = await supabase
+    .from("documente").select("parohie_id, an").eq("id", documentId).single();
+  if (errDoc) throw errDoc;
+  // Numerotarea e separată pe fiecare an: o factură nu poate fi mutată, prin modificarea datei,
+  // în alt an decât cel în care a fost înregistrată.
+  if (Number(String(data).slice(0, 4)) !== Number(docCurent.an)) {
+    throw new Error(`Data facturii trebuie să rămână în anul ${docCurent.an}. Pentru alt an, ștergeți factura și înregistrați-o din nou în anul corect.`);
+  }
+
   const { data: platiLegate, error: errPlati } = await supabase
     .from("documente").select("id, nr, an").eq("document_sursa_id", documentId).eq("tip", "ordin_plata");
   if (errPlati) throw errPlati;
@@ -2811,7 +2829,9 @@ export async function editeazaFacturaFurnizor(documentId, { data, furnizor, nrFa
     .insert(linii.map((l) => ({ document_id: documentId, cont_id: l.contId, suma: l.suma, explicatie: l.explicatie || null })));
   if (errIns) throw errIns;
 
-  return { suma: linii.reduce((s, l) => s + Number(l.suma), 0) };
+  // Furnizorul, data sau numărul facturii s-ar fi putut schimba → ordinea se reface.
+  const renumerotari = await renumeroteazaFacturiFurnizor(docCurent.parohie_id, docCurent.an);
+  return { suma: linii.reduce((s, l) => s + Number(l.suma), 0), renumerotari };
 }
 
 // Șterge o factură de furnizor — BLOCATĂ dacă e deja achitată (există un Ordin de plată legat).
@@ -2823,7 +2843,21 @@ export async function stergeFacturaFurnizor(documentId) {
     const lista = platiLegate.map((op) => `nr. ${op.nr}/${op.an}`).join(", ");
     throw new Error(`Această factură este deja achitată (Ordin de plată ${lista}) — șterge întâi ordinul/ordinele de plată legate.`);
   }
-  const { renumerotari } = await stergeDocument(documentId);
+  const { data: doc, error: errDoc } = await supabase
+    .from("documente").select("parohie_id, an").eq("id", documentId).single();
+  if (errDoc) throw errDoc;
+  const { error: errLinii } = await supabase.from("linii_document").delete().eq("document_id", documentId);
+  if (errLinii) throw errLinii;
+  const { error: errSterge } = await supabase.from("documente").delete().eq("id", documentId);
+  if (errSterge) throw errSterge;
+
+  const renumerotari = await renumeroteazaFacturiFurnizor(doc.parohie_id, doc.an);
+  // Contorul = numărul de facturi rămase în acel an (următoarea factură continuă corect).
+  const { count } = await supabase
+    .from("documente").select("id", { count: "exact", head: true })
+    .eq("parohie_id", doc.parohie_id).eq("tip", "factura_furnizor").eq("an", doc.an);
+  await supabase.from("contoare").update({ ultimul_numar: count || 0 })
+    .eq("parohie_id", doc.parohie_id).eq("an", doc.an).eq("tip", "factura_furnizor");
   return { renumerotari };
 }
 

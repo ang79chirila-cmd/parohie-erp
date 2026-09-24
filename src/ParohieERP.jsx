@@ -5077,9 +5077,15 @@ function aplicaRenumerotari(s, renumerotari) {
   const nrNouPeDocument = Object.fromEntries(renumerotari.map((r) => [r.documentId, r.nrNou]));
   return {
     ...s,
-    operatiuni: s.operatiuni.map((op) =>
-      op.documentId && nrNouPeDocument[op.documentId] !== undefined ? { ...op, nr: nrNouPeDocument[op.documentId] } : op
-    ),
+    operatiuni: s.operatiuni.map((op) => {
+      let rezultat = op.documentId && nrNouPeDocument[op.documentId] !== undefined ? { ...op, nr: nrNouPeDocument[op.documentId] } : op;
+      // Ordinele de plată ale unei facturi de furnizor renumerotate: explicația menționează numărul
+      // intern al facturii („Factură furnizor nr. X/AN”) — același text e actualizat și pe server.
+      if (op.documentSursaId && nrNouPeDocument[op.documentSursaId] !== undefined && /Factură furnizor nr\. \d+\//.test(op.explicatie || "")) {
+        rezultat = { ...rezultat, explicatie: op.explicatie.replace(/Factură furnizor nr\. \d+\//, `Factură furnizor nr. ${nrNouPeDocument[op.documentSursaId]}/`) };
+      }
+      return rezultat;
+    }),
     miscariStoc: (s.miscariStoc || []).map((m) => {
       if (!m.documentId || nrNouPeDocument[m.documentId] === undefined) return m;
       const nrNou = nrNouPeDocument[m.documentId];
@@ -6434,7 +6440,7 @@ export default function ParohieERP() {
               }}
             />
           </div>
-          <div style={{ display: tabActiv === "operatiuni" ? undefined : "none" }}><OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} /></div>
+          <div style={{ display: tabActiv === "operatiuni" ? undefined : "none" }}><OperatiuniTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} setTab={setTab} parteneri={state.parteneri} onCreatPartener={adaugaPartener} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anSelectat={anSelectatGlobal} setAnSelectat={setAnSelectatGlobal} reincarcaDate={() => setRefreshTrigger((n) => n + 1)} /></div>
           <div style={{ display: tabActiv === "conturi" ? undefined : "none" }}><ConturiTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} setTab={setTab} /></div>
           <div style={{ display: tabActiv === "parteneri" ? undefined : "none" }}><ParteneriTab state={state} setState={setState} parohieId={contActiv.parohieId} permisiuni={permisiuni} setTab={setTab} /></div>
           <div style={{ display: tabActiv === "pangar" ? undefined : "none" }}><PangarTab state={state} setState={setState} derived={derived} permisiuni={permisiuni} parohieId={contActiv.parohieId} parteneri={state.parteneri} onCreatPartener={adaugaPartener} receptieRapidaArticolId={receptieRapidaArticolId} onConsumatReceptieRapida={() => setReceptieRapidaArticolId(null)} actiuneInitiala={actiuneInitiala} onConsumaActiuneInitiala={() => setActiuneInitiala(null)} anPangar={anSelectatGlobal} setAnPangar={setAnSelectatGlobal} /></div>
@@ -7894,7 +7900,7 @@ function MentiunePlataPartiala({ plati = [], rest, aliniereStanga = false }) {
 // Modifică (editează antetul și liniile — corecție parțială) și Șterge (elimină factura întreagă —
 // ștergere totală). Ambele blocate dacă factura e deja achitată (Ordin de plată legat) — vezi
 // motivul exact în comentariul din supabaseData.js, la editeazaFacturaFurnizor/stergeFacturaFurnizor.
-function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose }) {
+function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose, onDateModificate }) {
   const [facturi, setFacturi] = useState(null); // null = încă se încarcă
   const [eroare, setEroare] = useState(null);
   const [factuaInEditare, setFacturaInEditare] = useState(null); // factura completă, sau null
@@ -7950,6 +7956,9 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
     try {
       await stergeFacturaFurnizor(id);
       await incarca();
+      // Numerele celorlalte facturi s-au putut schimba (renumerotare) — resincronizăm și restul
+      // aplicației (datorii pe Tabloul de bord, Registru), nu doar această listă.
+      if (onDateModificate) onDateModificate();
     } catch (e) {
       setEroare(e.message || "Eroare la ștergere.");
     }
@@ -8069,6 +8078,7 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
               await editeazaFacturaFurnizor(factuaInEditare.id, patch);
               setFacturaInEditare(null);
               await incarca();
+              if (onDateModificate) onDateModificate();
             } catch (e) {
               setEroare(e.message || "Eroare la salvare.");
             }
@@ -8235,7 +8245,7 @@ function FacturaFurnizorEditForm({ factura, conturiSelectabile, onClose, onSave,
   );
 }
 
-function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener, actiuneInitiala, onConsumaActiuneInitiala, anSelectat, setAnSelectat }) {
+function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab, parteneri, onCreatPartener, actiuneInitiala, onConsumaActiuneInitiala, anSelectat, setAnSelectat, reincarcaDate }) {
   const [instanteChitanta, setInstanteChitanta] = useState([]);
   const [instanteOP, setInstanteOP] = useState([]);
   const [instanteFacturaFurnizor, setInstanteFacturaFurnizor] = useState([]);
@@ -8967,6 +8977,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           derived={derived}
           permisiuni={permisiuni}
           onClose={() => setAratafacturiFurnizoriLista(false)}
+          onDateModificate={reincarcaDate}
         />
       )}
 
@@ -13648,7 +13659,12 @@ function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, 
     () => (anImplicit != null ? operatiuni.filter((op) => op.an === anImplicit) : operatiuni),
     [operatiuni, anImplicit]
   );
-  const ultimaFacturaEmisa = useMemo(() => ultimulDocumentDeTip(facturiAnImplicit, "facturaFurnizor"), [facturiAnImplicit]);
+  // Data propusă = data celei mai recente facturi înregistrate. (Nu „ultimul număr”: numerotarea
+  // facturilor urmează ordinea furnizor → dată → nr. factură, deci numărul maxim nu e neapărat cel mai recent.)
+  const ultimaFacturaEmisa = useMemo(() => {
+    const facturi = facturiAnImplicit.filter((op) => op.tip === "facturaFurnizor");
+    return facturi.length ? facturi.reduce((max, op) => (op.data > max.data ? op : max)) : null;
+  }, [facturiAnImplicit]);
   const dataImplicita = ultimaFacturaEmisa
     ? ultimaFacturaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();
