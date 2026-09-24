@@ -7496,6 +7496,14 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
                         <div className="flex flex-col items-end leading-tight">
                           <span className="font-semibold text-amber-700">{fmt(d.sumaRamasa)}</span>
                           <span className="text-[11px] text-stone-500">achitat parțial: {fmt(d.suma - d.sumaRamasa)}</span>
+                          {(d.platiExistente || []).length > 0 && (
+                            <span className="text-[11px] text-stone-500">
+                              {[...d.platiExistente]
+                                .sort((x, y) => (x.data < y.data ? -1 : x.data > y.data ? 1 : 0))
+                                .map((p) => `${fmtDataJurnal(p.data)} (${fmt(p.suma)})`)
+                                .join(", ")}
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <span className="font-medium">{fmt(d.sumaRamasa ?? d.suma)}</span>
@@ -7828,6 +7836,59 @@ function fmtDataJurnal(iso) {
   return `${zi}.${luna}.${an}`;
 }
 
+// ── Starea de achitare (comună: Pangar, Consum intern, Facturi furnizori, Tablou de bord) ──────
+// Plățile legate de un document (NRCD / factură), grupate pe Ordin de plată — în memorie, un OP cu
+// mai multe linii apare ca mai multe operațiuni — și ordonate cronologic: [{ data, suma, nr, an }].
+function platiDocument(operatiuni, documentId) {
+  const peOP = {};
+  for (const op of operatiuni || []) {
+    if (op.tip !== "plata" || op.documentSursaId !== documentId) continue;
+    const cheie = op.documentId || `${op.nr}/${op.an}/${op.data}`;
+    if (!peOP[cheie]) peOP[cheie] = { data: op.data, suma: 0, nr: op.nr, an: op.an };
+    peOP[cheie].suma += Number(op.suma) || 0;
+  }
+  return Object.values(peOP)
+    .map((p) => ({ ...p, suma: Math.round(p.suma * 100) / 100 }))
+    .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+}
+
+// Eticheta verde de achitare — se folosește DOAR la plata INTEGRALĂ — urmată de data fiecărei
+// plăți (parțiale și finală). Dacă plata s-a făcut în mai multe tranșe, dedesubt apare și suma
+// fiecărei tranșe. `mica`: varianta compactă, pentru coloane de tabel.
+function EtichetaAchitat({ plati = [], text = "ACHITAT", mica = false, aliniereStanga = false }) {
+  const date = plati.map((p) => fmtDataJurnal(p.data));
+  return (
+    <span className={`inline-flex flex-col gap-0.5 align-middle ${aliniereStanga ? "items-start" : "items-end"}`}>
+      <span
+        className={
+          mica
+            ? "text-xs px-2 py-1 rounded-full bg-emerald-500 text-white font-medium whitespace-nowrap"
+            : "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white border border-emerald-500 whitespace-nowrap"
+        }
+      >
+        {text}{date.length ? ` — ${date.join(", ")}` : ""}
+      </span>
+      {plati.length > 1 && (
+        // Detaliile se așază pe mai multe rânduri dacă e nevoie (nu lățesc tabelul peste ecran).
+        <span className={`text-[11px] text-stone-500 max-w-[15rem] leading-snug ${aliniereStanga ? "text-left" : "text-right"}`}>
+          {plati.map((p) => `${fmt(p.suma)} lei (${fmtDataJurnal(p.data)})`).join(" + ")}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// Plată parțială (nu e încă „achitat”): ce s-a plătit, pe tranșe cu data fiecăreia, și restul.
+function MentiunePlataPartiala({ plati = [], rest, aliniereStanga = false }) {
+  if (plati.length === 0) return null;
+  const achitat = plati.reduce((s, p) => s + p.suma, 0);
+  return (
+    <span className={`text-[11px] text-amber-700 max-w-[15rem] leading-snug ${aliniereStanga ? "text-left" : "text-right"}`}>
+      Achitat parțial {fmt(achitat)} lei — {plati.map((p) => `${fmtDataJurnal(p.data)} (${fmt(p.suma)})`).join(", ")} · rest {fmt(rest)} lei
+    </span>
+  );
+}
+
 // Tablou de vizualizare/editare pentru toate facturile de furnizor înregistrate (indiferent de
 // starea de achitare) — cerut explicit de user, separat de formularul de creare. Fiecare rând are
 // Modifică (editează antetul și liniile — corecție parțială) și Șterge (elimină factura întreagă —
@@ -7929,7 +7990,7 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
                 <tr className="text-left text-xs text-stone-500 font-bold border-b border-stone-200">
                   {antet("ffNrAn", "Nr./An", { className: "min-w-[6.75rem]" })}
                   {antet("ffData", "Data", { className: "min-w-[7rem]" })}
-                  {antet("ffFurnizor", "Furnizor", { className: "min-w-[16rem]" })}
+                  {antet("ffFurnizor", "Furnizor", { className: "min-w-[12rem]" })}
                   {antet("ffNrFactura", "Nr. factură", { className: "min-w-[7.5rem] whitespace-nowrap" })}
                   <th className="px-2 py-1.5 align-bottom font-bold">Scadență</th>
                   {antet("ffSuma", "Sumă", { className: "min-w-[6.5rem] text-right", aliniereDreapta: true })}
@@ -7946,7 +8007,10 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
                   </tr>
                 )}
                 {procesate.map((f) => {
+                  // Orice plată legată blochează editarea/ștergerea (ca pe server); dar eticheta
+                  // „ACHITATĂ” apare DOAR când plățile acoperă întreaga sumă a facturii.
                   const eAchitata = f.platiLegate.length > 0;
+                  const achitataIntegral = eAchitata && f.sumaRamasa <= 0.005;
                   return (
                     <tr key={f.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50">
                       <td className="px-2 py-1.5 whitespace-nowrap">{f.nr}/{f.an}</td>
@@ -7956,9 +8020,12 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
                       <td className="px-2 py-1.5 text-stone-500 whitespace-nowrap">{f.dataScadenta ? fmtDataJurnal(f.dataScadenta) : "—"}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-medium whitespace-nowrap">{fmt(f.suma)}</td>
                       <td className="px-2 py-1.5">
-                        {eAchitata ? (
-                          <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium whitespace-nowrap" title={`Achitată prin OP ${f.platiLegate.map((p) => `${p.nr}/${p.an}`).join(", ")}`}>
-                            Achitată
+                        {achitataIntegral ? (
+                          <EtichetaAchitat plati={f.platiLegate} text="ACHITATĂ" mica aliniereStanga />
+                        ) : eAchitata ? (
+                          <span className="inline-flex flex-col items-start gap-0.5">
+                            <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-800 font-medium whitespace-nowrap">Achitată parțial</span>
+                            <MentiunePlataPartiala plati={f.platiLegate} rest={f.sumaRamasa} aliniereStanga />
                           </span>
                         ) : (
                           <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitată</span>
@@ -11988,26 +12055,20 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
                           <div className="flex gap-1.5 justify-end items-center">
                             {(() => {
                               const datorie = (state.datoriiFurnizori || []).find((d) => d.documentId === grup.documentId);
-                              if (!datorie) {
-                                const platiLegate = state.operatiuni.filter((op) => op.tip === "plata" && op.documentSursaId === grup.documentId);
-                                const dateDistincte = [...new Set(platiLegate.map((op) => op.data))].sort();
-                                const dataAfisata = dateDistincte.length > 0 ? fmtDataJurnal(dateDistincte[dateDistincte.length - 1]) : null;
-                                const titluTooltip = dateDistincte.length > 1
-                                  ? `Achitat în ${dateDistincte.length} plăți: ${dateDistincte.map(fmtDataJurnal).join(", ")}`
-                                  : undefined;
-                                return (
-                                  <span
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white border border-emerald-500 whitespace-nowrap"
-                                    title={titluTooltip}
-                                  >
-                                    ACHITAT{dataAfisata ? ` — ${dataAfisata}` : ""}
-                                  </span>
-                                );
-                              }
-                              if (permisiuni.citireOnly) {
-                                return <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitat</span>;
-                              }
-                              return <Btn variant="rosu" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie }])}>Achită</Btn>;
+                              const plati = platiDocument(state.operatiuni, grup.documentId);
+                              // Fără datorie activă = achitat integral → ACHITAT + data fiecărei plăți.
+                              if (!datorie) return <EtichetaAchitat plati={plati} />;
+                              const partial = plati.length > 0 && datorie.sumaRamasa < datorie.suma;
+                              return (
+                                <span className="inline-flex flex-col items-end gap-0.5">
+                                  {permisiuni.citireOnly ? (
+                                    <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">{partial ? "Achitat parțial" : "Neachitat"}</span>
+                                  ) : (
+                                    <Btn variant="rosu" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie }])}>Achită</Btn>
+                                  )}
+                                  {partial && <MentiunePlataPartiala plati={plati} rest={datorie.sumaRamasa} />}
+                                </span>
+                              );
                             })()}
                             {anInchisDefinitiv ? (
                               <span className="text-xs text-stone-400">Închis definitiv</span>
@@ -15977,26 +16038,20 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                     <td className="px-3 py-1 text-stone-500">{doc.nrFactura} (NRCD {doc.nrNRCD}/{doc.anNRCD})</td>
                     <td className="px-3 py-1 text-right">
                       {(() => {
-                        if (!datorie) {
-                          const platiLegate = (state.operatiuni || []).filter((op) => op.tip === "plata" && op.documentSursaId === doc.documentId);
-                          const dateDistincte = [...new Set(platiLegate.map((op) => op.data))].sort();
-                          const dataAfisata = dateDistincte.length > 0 ? fmtDataJurnal(dateDistincte[dateDistincte.length - 1]) : null;
-                          const titluTooltip = dateDistincte.length > 1
-                            ? `Achitat în ${dateDistincte.length} plăți: ${dateDistincte.map(fmtDataJurnal).join(", ")}`
-                            : undefined;
+                        const plati = platiDocument(state.operatiuni, doc.documentId);
+                        // Fără datorie activă = achitat integral → ACHITAT + data fiecărei plăți.
+                        if (!datorie) return <EtichetaAchitat plati={plati} />;
+                        const partial = plati.length > 0 && datorie.sumaRamasa < datorie.suma;
+                        if (permisiuni.citireOnly) {
                           return (
-                            <span
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-500 text-white border border-emerald-500 whitespace-nowrap"
-                              title={titluTooltip}
-                            >
-                              ACHITAT{dataAfisata ? ` — ${dataAfisata}` : ""}
+                            <span className="inline-flex flex-col items-end gap-0.5">
+                              <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">{partial ? "Achitat parțial" : "Neachitat"}</span>
+                              {partial && <MentiunePlataPartiala plati={plati} rest={datorie.sumaRamasa} />}
                             </span>
                           );
                         }
-                        if (permisiuni.citireOnly) {
-                          return <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 font-medium whitespace-nowrap">Neachitat</span>;
-                        }
                         return (
+                          <div className="flex flex-col items-end gap-0.5">
                           <div className="flex gap-1.5 justify-end items-center">
                             <Btn variant="rosu" onClick={() => setInstanteAchitare((l) => [...l, { id: uid(), datorie }])}>Achită</Btn>
                             {confirmareStergereNRCD === doc.documentId ? (
@@ -16019,6 +16074,8 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                             ) : (
                               <Btn variant="danger" onClick={() => setConfirmareStergereNRCD(doc.documentId)}>Șterge</Btn>
                             )}
+                          </div>
+                          {partial && <MentiunePlataPartiala plati={plati} rest={datorie.sumaRamasa} />}
                           </div>
                         );
                       })()}

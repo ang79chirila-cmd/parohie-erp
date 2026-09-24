@@ -2686,17 +2686,31 @@ export async function getFacturiFurnizori(parohieId) {
     docIds
   );
 
+  // Suma fiecărui Ordin de plată (din liniile lui) — necesară ca să deosebim plata INTEGRALĂ de
+  // plata PARȚIALĂ: o factură e „achitată” doar când plățile acoperă întreaga sumă.
+  const opIds = (platiDocs || []).map((p) => p.id);
+  const liniiPlati = await inLoturi((lot) => supabase.from("linii_document").select("document_id, suma").in("document_id", lot), opIds);
+  const sumaPeOP = {};
+  for (const l of liniiPlati || []) sumaPeOP[l.document_id] = (sumaPeOP[l.document_id] || 0) + Number(l.suma);
+
   const platiPeFactura = {};
-  for (const p of platiDocs || []) (platiPeFactura[p.document_sursa_id] ||= []).push({ nr: p.nr, an: p.an, data: p.data });
+  for (const p of platiDocs || []) {
+    (platiPeFactura[p.document_sursa_id] ||= []).push({
+      nr: p.nr, an: p.an, data: p.data, suma: Math.round((sumaPeOP[p.id] || 0) * 100) / 100,
+    });
+  }
 
   return docs.map((d) => {
     const liniiDoc = (linii || []).filter((l) => l.document_id === d.id);
     const suma = liniiDoc.reduce((s, l) => s + Number(l.suma), 0);
+    const platiLegate = (platiPeFactura[d.id] || []).sort((x, y) => (x.data < y.data ? -1 : x.data > y.data ? 1 : 0));
+    const sumaAchitata = Math.round(platiLegate.reduce((s, p) => s + p.suma, 0) * 100) / 100;
+    const sumaRamasa = Math.round((suma - sumaAchitata) * 100) / 100;
     return {
       id: d.id, an: d.an, nr: d.nr, data: d.data, furnizor: d.furnizor,
       nrFactura: d.nr_factura, dataScadenta: d.data_scadenta, status: d.status, suma,
       linii: liniiDoc.map((l) => ({ id: l.id, contId: l.cont_id, suma: Number(l.suma), explicatie: l.explicatie })),
-      platiLegate: platiPeFactura[d.id] || [],
+      platiLegate, sumaAchitata, sumaRamasa,
     };
   });
 }
