@@ -27,4 +27,4 @@ jobs:
       # (nu ca tipar cu *), ca să nu depindă de cum interpretează fiecare versiune de Node
       # expansiunea de "glob" — un singur fișier de test acum, ușor de extins mai târziu.
       - name: Rulează testele
-        run: node --test tests/pangarFinanciar.test.mjs
+      run: node --test tests/pangarFinanciar.test.mjs tests/jurnalFinanciar.test.mjs
