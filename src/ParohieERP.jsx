@@ -6034,6 +6034,16 @@ function SecuritateModal({ onClose, fortatReinrolare }) {
   const [amNotat, setAmNotat] = useState(false);
   const [error, setError] = useState("");
   const [seProceseaza, setSeProceseaza] = useState(false);
+  // Reautentificare obligatorie la dezactivarea 2FA: parola curentă + codul TOTP curent.
+  const [parolaDezactivare, setParolaDezactivare] = useState("");
+  const [codDezactivare, setCodDezactivare] = useState("");
+
+  function anuleazaDezactivarea() {
+    setParolaDezactivare("");
+    setCodDezactivare("");
+    setError("");
+    setPas("status");
+  }
 
   useEffect(() => {
     (async () => {
@@ -6088,12 +6098,46 @@ function SecuritateModal({ onClose, fortatReinrolare }) {
     }
   }
 
+  // Dezactivarea cere dovada ambilor factori, nu doar o sesiune deschisă:
+  //  1. parola curentă — verificată printr-o reautentificare Supabase (sesiunea coboară la "aal1");
+  //  2. codul TOTP curent — verificat prin challenge/verify (sesiunea urcă înapoi la "aal2");
+  //  3. abia apoi eliminarea factorului (Supabase cere "aal2" pentru a elimina un factor verificat).
+  // Ordinea contează: dacă parola ar fi verificată după cod, sesiunea ar rămâne la "aal1"
+  // și eliminarea factorului ar fi refuzată de server.
   async function dezactiveaza() {
     setError("");
+    const cod = codDezactivare.trim();
+    if (!parolaDezactivare) {
+      setError("Introduceți parola curentă.");
+      return;
+    }
+    if (!/^\d{6}$/.test(cod)) {
+      setError("Introduceți codul de 6 cifre din aplicația de autentificare.");
+      return;
+    }
     setSeProceseaza(true);
     try {
+      const { data: dateUtilizator, error: errUtilizator } = await supabase.auth.getUser();
+      const email = dateUtilizator?.user?.email;
+      if (errUtilizator || !email) {
+        setError("Sesiune expirată — reconectați-vă și reîncercați.");
+        return;
+      }
+      const { error: errParola } = await supabase.auth.signInWithPassword({ email, password: parolaDezactivare });
+      if (errParola) {
+        setError("Parola curentă este incorectă.");
+        return;
+      }
+      try {
+        await verificaLoginTOTP(factorActiv.id, cod);
+      } catch (e) {
+        setError("Cod incorect sau expirat — verificați aplicația de autentificare și reîncercați.");
+        return;
+      }
       await dezactiveazaTOTP(factorActiv.id);
       setFactorActiv(null);
+      setParolaDezactivare("");
+      setCodDezactivare("");
       setPas("status");
     } catch (e) {
       setError("Eroare la dezactivare — reîncercați.");
@@ -6155,9 +6199,32 @@ function SecuritateModal({ onClose, fortatReinrolare }) {
               Sigur vrei să dezactivezi autentificarea în doi pași? Contul va rămâne
               protejat doar de parolă.
             </p>
+            <p className="text-xs text-stone-500">
+              Pentru confirmare, introdu parola curentă și codul actual din aplicația de autentificare.
+            </p>
+            <Field label="Parola curentă">
+              <input
+                type="password"
+                autoComplete="current-password"
+                className={inputCls}
+                value={parolaDezactivare}
+                onChange={(e) => setParolaDezactivare(e.target.value)}
+              />
+            </Field>
+            <Field label="Cod de 6 cifre din aplicație">
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                className={inputCls}
+                value={codDezactivare}
+                onChange={(e) => setCodDezactivare(e.target.value.replace(/\D/g, ""))}
+              />
+            </Field>
             {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
             <div className="flex justify-end gap-2">
-              <Btn variant="ghost" onClick={() => setPas("status")}>Anulează</Btn>
+              <Btn variant="ghost" onClick={anuleazaDezactivarea} disabled={seProceseaza}>Anulează</Btn>
               <Btn variant="danger" onClick={dezactiveaza} disabled={seProceseaza}>
                 {seProceseaza ? "Se dezactivează..." : "Da, dezactivează"}
               </Btn>
