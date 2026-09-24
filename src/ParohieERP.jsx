@@ -4841,11 +4841,24 @@ export default function ParohieERP() {
   const authCurent = contActiv; // { cif, username, rol, parohieId } — folosit pentru afișare (username, rol)
 
   useEffect(() => {
-    // La încărcarea aplicației, verificăm dacă mai există o sesiune Supabase activă (utilizatorul
-    // nu trebuie să se re-logheze de fiecare dată când redeschide aplicația).
+    // La încărcarea aplicației (inclusiv la reîncărcarea paginii în aceeași fereastră) verificăm
+    // dacă mai există o sesiune Supabase activă. Sesiunea e păstrată doar cât e deschisă
+    // fereastra (vezi supabaseClient.js), deci la o deschidere nouă se cere din nou autentificarea.
+    // O sesiune care a trecut doar de parolă ("aal1"), dar al cărei cont are 2FA activ, NU este
+    // restaurată: altfel, închiderea/reîncărcarea ferestrei la ecranul codului TOTP ar ocoli 2FA.
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
+      let sesiuneValida = !!data.session?.user;
+      if (sesiuneValida) {
+        try {
+          const { data: nivel, error: errNivel } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (errNivel || (nivel?.nextLevel === "aal2" && nivel?.currentLevel !== "aal2")) sesiuneValida = false;
+        } catch (e) {
+          sesiuneValida = false;
+        }
+        if (!sesiuneValida) await delogare();
+      }
+      if (sesiuneValida) {
         const { data: profil } = await supabase
           .from("utilizatori")
           .select("parohie_id, rol, username, parohii(cif)")
