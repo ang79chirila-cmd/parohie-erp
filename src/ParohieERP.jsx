@@ -2035,6 +2035,50 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
   const [largime, setLargime] = useState(largimeInitiala);
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
+  const continutRef = useRef(null);
+
+  // REGULĂ: orice fereastră își arată ABSOLUT TOT conținutul pe lățime. Dacă ceva din interior
+  // (câmpuri, liste derulante cu denumiri lungi, tabele) nu încape și ar rămâne ascuns în dreapta,
+  // fereastra se lărgește automat exact cât e nevoie, până la lățimea ecranului. Se verifică la
+  // deschidere, la orice schimbare a conținutului (linii adăugate etc.) și la redimensionarea
+  // ecranului. Pe verticală, conținutul mai înalt decât ecranul rămâne accesibil prin derulare.
+  useLayoutEffect(() => {
+    const continut = continutRef.current;
+    const fereastra = containerRef.current;
+    if (!continut || !fereastra) return undefined;
+    let cadru = null;
+    const ajusteazaLatimea = () => {
+      cadru = null;
+      let lipsa = continut.scrollWidth - continut.clientWidth;
+      // Zonele cu derulare orizontală proprie (tabele) din interiorul ferestrei.
+      continut.querySelectorAll(".overflow-x-auto, .overflow-auto, .overflow-x-scroll").forEach((zona) => {
+        lipsa = Math.max(lipsa, zona.scrollWidth - zona.clientWidth);
+      });
+      if (lipsa <= 1) return;
+      const latimeActuala = fereastra.getBoundingClientRect().width;
+      const latimeMaxima = window.innerWidth - 16;
+      if (latimeActuala >= latimeMaxima - 1) return; // deja cât ecranul — nu se mai poate lărgi
+      setLargime(Math.min(Math.ceil(latimeActuala + lipsa + 4), latimeMaxima));
+    };
+    const programeaza = () => {
+      if (cadru === null) cadru = requestAnimationFrame(ajusteazaLatimea);
+    };
+    ajusteazaLatimea();
+    const observatorDimensiuni = typeof ResizeObserver !== "undefined" ? new ResizeObserver(programeaza) : null;
+    if (observatorDimensiuni) {
+      observatorDimensiuni.observe(continut);
+      if (continut.firstElementChild) observatorDimensiuni.observe(continut.firstElementChild);
+    }
+    const observatorModificari = new MutationObserver(programeaza);
+    observatorModificari.observe(continut, { childList: true, subtree: true, characterData: true });
+    window.addEventListener("resize", programeaza);
+    return () => {
+      if (cadru !== null) cancelAnimationFrame(cadru);
+      if (observatorDimensiuni) observatorDimensiuni.disconnect();
+      observatorModificari.disconnect();
+      window.removeEventListener("resize", programeaza);
+    };
+  }, []);
 
   const esteFocalizata = !ctxFereastra || ctxFereastra.focalizata === idRef.current;
   const esteMinimizata = !!(ctxFereastra && ctxFereastra.minimizate[idRef.current] !== undefined);
@@ -2136,14 +2180,18 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
           backgroundColor: culoareFundal,
           width: largime,
           height: inaltime || undefined,
-          maxHeight: "calc(100vh - 124px)",
+          maxHeight: pozitie ? `calc(100vh - ${Math.max(0, pozitie.top)}px - 16px)` : "calc(100vh - 124px)",
           maxWidth: "calc(100vw - 16px)",
           // Bannerul colorat de sus (identitate + navigare) are înălțime fixă: h-11 (44px) + h-14
           // (56px) = 100px exact. Toate ferestrele se aliniază strict la această linie, imediat sub
           // banner — nicio variație verticală între ele, indiferent de ordinea/numărul lor de deschidere.
           top: pozitie ? pozitie.top : "100px",
-          left: pozitie ? pozitie.left : `calc(50% + ${offsetInitial.x}px)`,
-          transform: pozitie ? "none" : "translateX(-50%)",
+          // Poziție orizontală: centrată (cu decalajul în cascadă), dar limitată astfel încât fereastra
+          // să fie MEREU integral vizibilă — nicio margine în afara ecranului, oricât de lată ar fi.
+          left: pozitie
+            ? `max(0px, min(${pozitie.left}px, calc(100% - min(${largime}px, calc(100vw - 16px)) - 8px)))`
+            : `clamp(8px, calc(50% + ${offsetInitial.x}px - min(${largime}px, calc(100vw - 16px)) / 2), calc(100% - min(${largime}px, calc(100vw - 16px)) - 8px))`,
+          transform: "none",
           pointerEvents: "auto",
           boxShadow: esteFocalizata
             ? "0 25px 50px -12px rgba(0,0,0,0.45), 0 0 0 1px rgba(31,56,100,0.15)"
@@ -2177,7 +2225,7 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
             )}
           </div>
         </div>
-        <div className="p-5 overflow-y-auto flex-1">{children}</div>
+        <div ref={continutRef} className="p-5 overflow-y-auto flex-1">{children}</div>
         <div
           onMouseDown={porniRedimensionarea}
           title="Trage pentru a redimensiona"
@@ -7749,45 +7797,113 @@ function FacturaFurnizorEditForm({ factura, conturiSelectabile, onClose, onSave,
   const [dataScadenta, setDataScadenta] = useState(factura.dataScadenta || "");
   const [linii, setLinii] = useState(factura.linii.map((l) => ({ id: uid(), contId: l.contId, suma: String(l.suma), explicatie: l.explicatie || "" })));
 
+  const actualizeazaLinie = (id, patch) => setLinii((ls) => ls.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  const adaugaLinie = () => setLinii((ls) => [...ls, { id: uid(), contId: "", suma: "", explicatie: "" }]);
+  const stergeLinie = (id) => setLinii((ls) => (ls.length > 1 ? ls.filter((x) => x.id !== id) : ls));
+  const denumireCont = (contId) => {
+    const c = conturiSelectabile.find((x) => x.id === contId);
+    return c ? `${c.simbol} — ${c.denumire}` : "";
+  };
+
   const suma = linii.reduce((s, l) => s + (Number(l.suma) || 0), 0);
   const valid = furnizor.trim() && data && linii.length > 0 && linii.every((l) => l.contId && Number(l.suma) > 0);
 
   return (
-    <Modal title={`Modifică factura nr. ${factura.nr}/${factura.an}`} onClose={onClose}>
-      <div className="p-4 space-y-3">
-        <Field label="Denumire furnizor"><input className={inputCls} value={furnizor} onChange={(e) => setFurnizor(e.target.value)} /></Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Nr. factură"><input className={inputCls} value={nrFactura} onChange={(e) => setNrFactura(e.target.value)} /></Field>
-          <Field label="Data"><input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} /></Field>
-        </div>
-        <Field label="Data scadenței (opțional)"><input type="date" className={inputCls} value={dataScadenta} onChange={(e) => setDataScadenta(e.target.value)} /></Field>
+    <Modal title={`Modifică factura nr. ${factura.nr}/${factura.an}`} onClose={onClose} wide="xl">
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-stone-500">
+          Factura nu este achitată, deci poate fi corectată. Modificările se salvează direct în Registrul Jurnal.
+        </p>
 
-        <div>
-          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-1">Defalcare pe articole bugetare</div>
-          {linii.map((l) => (
-            <div key={l.id} className="flex gap-2 items-center mb-1.5">
-              <select className={`${inputCls} flex-1`} value={l.contId} onChange={(e) => setLinii((ls) => ls.map((x) => (x.id === l.id ? { ...x, contId: e.target.value } : x)))}>
-                <option value="">— selectați —</option>
-                {conturiSelectabile.map((c) => <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>)}
-              </select>
-              <input type="number" className={`${inputCls} w-28`} value={l.suma} onChange={(e) => setLinii((ls) => ls.map((x) => (x.id === l.id ? { ...x, suma: e.target.value } : x)))} placeholder="Sumă" />
-              <input className={`${inputCls} w-36`} value={l.explicatie} onChange={(e) => setLinii((ls) => ls.map((x) => (x.id === l.id ? { ...x, explicatie: e.target.value } : x)))} placeholder="Explicație" />
-              <button onClick={() => setLinii((ls) => ls.filter((x) => x.id !== l.id))} className="text-rose-500 hover:text-rose-700 p-1"><Trash2 size={16} /></button>
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-6">
+            <Field label="Furnizor">
+              <input className={inputCls} value={furnizor} onChange={(e) => setFurnizor(e.target.value)} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Nr. factură">
+              <input className={inputCls} value={nrFactura} onChange={(e) => setNrFactura(e.target.value)} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Data facturii">
+              <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Data scadenței">
+              <input type="date" className={inputCls} value={dataScadenta} onChange={(e) => setDataScadenta(e.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        {/* Liniile facturii, ca un tabel: capul de coloane o singură dată, apoi câte un rând pe linie.
+            Denumirile articolelor bugetare pot avea peste 150 de caractere; când nu încap în câmpul de
+            selecție, denumirea completă e afișată integral sub rând — nimic nu rămâne ascuns. */}
+        <div className="flex flex-col gap-1">
+          <div className="text-xs uppercase tracking-wide text-stone-500 font-medium">Defalcare pe articole bugetare</div>
+          <Card className="p-3 flex flex-col gap-2">
+            <div className="grid grid-cols-12 gap-2 text-xs font-medium text-stone-500">
+              <div className="col-span-6">Articol bugetar</div>
+              <div className="col-span-2 text-right pr-1">Sumă (lei)</div>
+              <div className="col-span-3">Explicație</div>
+              <div className="col-span-1" />
             </div>
-          ))}
-          <Btn variant="ghost" onClick={() => setLinii((ls) => [...ls, { id: uid(), contId: "", suma: "", explicatie: "" }])}>+ Adaugă linie</Btn>
+            {linii.map((l) => {
+              const denumire = denumireCont(l.contId);
+              return (
+                <div key={l.id} className="flex flex-col gap-1">
+                  <div className="grid grid-cols-12 gap-2 items-center">
+                    <select className={`${inputCls} col-span-6 w-full min-w-0`} value={l.contId} onChange={(e) => actualizeazaLinie(l.id, { contId: e.target.value })} title={denumire}>
+                      <option value="">— selectați —</option>
+                      {conturiSelectabile.map((c) => (
+                        <option key={c.id} value={c.id}>{c.simbol} — {c.denumire}</option>
+                      ))}
+                    </select>
+                    <input type="number" step="0.01" className={`${inputCls} col-span-2 w-full text-right tabular-nums`} value={l.suma} onChange={(e) => actualizeazaLinie(l.id, { suma: e.target.value })} placeholder="0,00" />
+                    <input className={`${inputCls} col-span-3 w-full`} value={l.explicatie} onChange={(e) => actualizeazaLinie(l.id, { explicatie: e.target.value })} placeholder="opțional" />
+                    <div className="col-span-1 flex justify-center">
+                      <button
+                        type="button"
+                        title={linii.length === 1 ? "Factura trebuie să aibă cel puțin o linie" : "Elimină linia"}
+                        onClick={() => stergeLinie(l.id)}
+                        disabled={linii.length === 1}
+                        className="text-stone-300 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed p-1"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                  {denumire.length > 60 && <div className="text-xs text-stone-500 leading-snug pl-1">{denumire}</div>}
+                </div>
+              );
+            })}
+          </Card>
+          <Btn variant="ghost" onClick={adaugaLinie} className="self-start mt-1">
+            <Plus size={14} /> Adaugă articol bugetar
+          </Btn>
         </div>
 
-        <div className="text-right text-sm text-stone-600">Total: <span className="font-medium tabular-nums">{fmt(suma)} lei</span></div>
+        <Card className="p-3 bg-stone-50 flex items-center justify-between">
+          <span className="text-sm font-medium text-stone-600">Valoare totală factură</span>
+          <span className="font-serif text-lg text-[#1F3864] tabular-nums">{fmt(suma)} lei</span>
+        </Card>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Btn variant="ghost" onClick={onClose}>Renunță</Btn>
+        {!valid && (
+          <span className="text-xs text-stone-500">
+            Pentru salvare sunt necesare: furnizorul, data facturii și, pe fiecare linie, articolul bugetar și o sumă mai mare decât zero.
+          </span>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <Btn variant="ghost" onClick={onClose} disabled={seSalveaza}>Renunță</Btn>
           <Btn
-            variant="primary"
+            variant="gold"
             disabled={!valid || seSalveaza}
             onClick={() => onSave({ furnizor, nrFactura, data, dataScadenta: dataScadenta || null, linii: linii.map((l) => ({ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie })) })}
           >
-            {seSalveaza ? "Se salvează..." : "Salvează"}
+            {seSalveaza ? "Se salvează..." : "Salvează modificările"}
           </Btn>
         </div>
       </div>
