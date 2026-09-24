@@ -7218,6 +7218,58 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
   const azi = new Date(todayISO());
   const zileVechime = (dataFactura) => Math.floor((azi - new Date(dataFactura)) / (1000 * 60 * 60 * 24));
 
+  // Datorii curente către furnizori — filtre și sortare pe coloane (aceleași componente ca în lista
+  // „Facturi furnizori” și în Registrul Jurnal). Cheile au prefixul „dd” ca listele de sugestii să nu
+  // se confunde cu ale altor tabele din aceeași pagină.
+  const textFacturaDatorie = (d) =>
+    `${d.nrFactura} (${d.tipDatorie === "generala" ? `Factură furnizor ${d.nrFacturaFurnizor}/${d.anFacturaFurnizor}` : `NRCD ${d.nrNRCD}`})`;
+  const aziIso = todayISO();
+  const configColoaneDatorii = useMemo(() => {
+    const ziua = new Date(aziIso);
+    const vechimeDe = (d) => Math.floor((ziua - new Date(d.dataFactura)) / (1000 * 60 * 60 * 24));
+    return {
+      ddFurnizor: { get: (d) => d.furnizor || "" },
+      ddFactura: { get: textFacturaDatorie },
+      // Sumă totală = valoarea integrală a facturii; Rest de plată = ce a mai rămas după plățile
+      // parțiale deja făcute (egal cu suma totală dacă nu s-a plătit nimic).
+      ddSumaTotala: {
+        get: (d) => fmt(d.suma),
+        cautare: (d) => `${fmt(d.suma)} ${d.suma}`,
+        sort: (d) => Number(d.suma) || 0,
+      },
+      ddRest: {
+        get: (d) => fmt(d.sumaRamasa ?? d.suma),
+        cautare: (d) => `${fmt(d.sumaRamasa ?? d.suma)} ${d.sumaRamasa ?? d.suma}${(d.sumaRamasa ?? d.suma) < d.suma ? " parțial partial" : ""}`,
+        sort: (d) => Number(d.sumaRamasa ?? d.suma) || 0,
+      },
+      ddVechime: {
+        get: (d) => `${vechimeDe(d)} zile`,
+        cautare: (d) => `${vechimeDe(d)} zile${vechimeDe(d) > 60 ? " peste 60" : ""}`,
+        sort: (d) => vechimeDe(d),
+      },
+    };
+  }, [aziIso]); // eslint-disable-line react-hooks/exhaustive-deps
+  const {
+    filtre: filtreDatorii, setFiltre: setFiltreDatorii, procesate: datoriiAfisate, sugestiiPentru: sugestiiDatorii,
+    sortColoana: sortColoanaDatorii, sortDirectie: sortDirectieDatorii, onSort: onSortDatorii,
+  } = useFiltrareColoane(datoriiNeachitate, configColoaneDatorii);
+  const areFiltreDatorii = Object.values(filtreDatorii).some((v) => v && String(v).trim());
+  const totalDatoriiAfisate = datoriiAfisate.reduce((sum, d) => sum + (d.sumaRamasa ?? d.suma), 0);
+  const antetDatorii = (cheie, eticheta, extra = {}) => (
+    <AntetFiltrabil
+      cheie={cheie}
+      eticheta={eticheta}
+      filtre={filtreDatorii}
+      setFiltre={setFiltreDatorii}
+      sugestii={sugestiiDatorii(cheie)}
+      sortColoana={sortColoanaDatorii}
+      sortDirectie={sortDirectieDatorii}
+      onSort={onSortDatorii}
+      className={`px-2 py-1.5 align-bottom font-bold ${extra.className || ""}`}
+      aliniereDreapta={extra.aliniereDreapta}
+    />
+  );
+
   // Achită o factură (NRCD) integral SAU parțial. `sumaDePlata` e suma introdusă de utilizator
   // în modal — poate fi mai mică decât restul de plată (achitare parțială) sau egală cu el
   // (achitare integrală). Fiecare apel creează propriul Ordin de plată, legat de NRCD prin
@@ -7394,30 +7446,62 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
           derulare îndelungată ca să fie văzută. */}
       {datoriiNeachitate.length > 0 && (
         <Card className="p-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium text-stone-700">Datorii curente către furnizori</span>
-            <span className="text-sm tabular-nums text-stone-500">Total: {fmt(totalDatoriiCurente)} RON</span>
+            <span className="text-sm tabular-nums text-stone-500">Total rest de plată: {fmt(totalDatoriiCurente)} RON</span>
           </div>
+          <div className="flex items-center justify-between mb-2 text-xs text-stone-500">
+            <span>
+              {areFiltreDatorii
+                ? `Afișate ${datoriiAfisate.length} din ${datoriiNeachitate.length} datorii · rest de plată afișat: ${fmt(totalDatoriiAfisate)} RON`
+                : `${datoriiNeachitate.length} datorii`}
+              {sortColoanaDatorii ? " · sortare activă (clic pe antet pentru a inversa ordinea)" : " · clic pe antetul unei coloane pentru sortare"}
+            </span>
+            {areFiltreDatorii && (
+              <button type="button" onClick={() => setFiltreDatorii({})} className="text-[#1F3864] hover:underline">
+                Șterge filtrele
+              </button>
+            )}
+          </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
-                <th className="px-2 py-1 font-bold">Furnizor</th>
-                <th className="px-2 py-1 font-bold">Factură</th>
-                <th className="px-2 py-1 text-right font-bold">Sumă</th>
-                <th className="px-2 py-1 text-right font-bold">Vechime</th>
-                <th className="px-2 py-1 font-bold"></th>
+              {/* Lățimi minime: eticheta, săgețile de sortare și câmpul „Filtrează...” încap integral. */}
+              <tr className="text-left text-xs text-stone-500 font-bold border-b border-stone-200">
+                {antetDatorii("ddFurnizor", "Furnizor", { className: "min-w-[14rem]" })}
+                {antetDatorii("ddFactura", "Factură", { className: "min-w-[14rem]" })}
+                {antetDatorii("ddSumaTotala", "Sumă totală", { className: "min-w-[8rem] text-right whitespace-nowrap", aliniereDreapta: true })}
+                {antetDatorii("ddRest", "Rest de plată", { className: "min-w-[8.5rem] text-right whitespace-nowrap", aliniereDreapta: true })}
+                {antetDatorii("ddVechime", "Vechime", { className: "min-w-[7.5rem] text-right", aliniereDreapta: true })}
+                <th className="px-2 py-1.5 align-bottom font-bold"></th>
               </tr>
             </thead>
             <tbody>
-              {datoriiNeachitate.map((d) => {
+              {datoriiAfisate.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-2 py-4 text-center text-sm text-stone-500">Nicio datorie nu corespunde filtrelor.</td>
+                </tr>
+              )}
+              {datoriiAfisate.map((d) => {
                 const vechime = zileVechime(d.dataFactura);
                 const veche = vechime > 60;
                 return (
                   <tr key={d.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-2 py-1">{d.furnizor}</td>
-                    <td className="px-2 py-1 text-stone-500">{d.nrFactura} ({d.tipDatorie === "generala" ? `Factură furnizor ${d.nrFacturaFurnizor}/${d.anFacturaFurnizor}` : `NRCD ${d.nrNRCD}`})</td>
-                    <td className="px-2 py-1 text-right tabular-nums font-medium">{fmt(d.sumaRamasa ?? d.suma)}</td>
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-1 text-stone-500">{textFacturaDatorie(d)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-stone-600 whitespace-nowrap">{fmt(d.suma)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">
+                      {(d.sumaRamasa ?? d.suma) < d.suma ? (
+                        // Plată parțială: restul e evidențiat, iar dedesubt apare cât s-a achitat deja.
+                        <div className="flex flex-col items-end leading-tight">
+                          <span className="font-semibold text-amber-700">{fmt(d.sumaRamasa)}</span>
+                          <span className="text-[11px] text-stone-500">achitat parțial: {fmt(d.suma - d.sumaRamasa)}</span>
+                        </div>
+                      ) : (
+                        <span className="font-medium">{fmt(d.sumaRamasa ?? d.suma)}</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 text-right whitespace-nowrap">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${veche ? "text-rose-700 bg-rose-50" : "text-stone-500 bg-stone-100"}`}>
                         {vechime} zile{veche ? " — peste 60!" : ""}
                       </span>
@@ -7430,6 +7514,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
