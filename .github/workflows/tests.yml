@@ -1,0 +1,35 @@
+name: Teste automate
+
+# Rulează automat de fiecare dată când se încarcă cod nou pe master, sau la orice pull request
+# către master — fără nicio acțiune suplimentară din partea ta. Dacă vreo modificare viitoare
+# strică una din formulele testate (achitare parțială, consolidare comisioane, formatare
+# cantități, soldurile Casă/Bancă/Depozit, conversia sumelor pentru XLSX), apare un X roșu pe
+# commit, pe GitHub, în loc să treacă neobservat.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  teste:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descarcă codul
+        uses: actions/checkout@v4
+
+      - name: Pregătește Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Testele nu au nicio dependință externă (folosesc doar test runner-ul inclus în Node) —
+      # nu e nevoie de "npm install", rulează direct, în câteva secunde. Fiecare fișier de test e
+      # numit explicit (nu un tipar cu *), pentru că un tipar general s-a comportat diferit pe
+      # GitHub Actions față de mediul local de verificare — vezi istoricul acestui fișier.
+      # La adăugarea unui nou fișier de test, se adaugă și aici, pe o linie nouă.
+      - name: Rulează testele
+        run: |
+          node --test \
+            tests/pangarFinanciar.test.mjs \
+            tests/jurnalFinanciar.test.mjs
