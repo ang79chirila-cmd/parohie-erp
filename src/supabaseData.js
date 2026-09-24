@@ -2668,6 +2668,75 @@ export async function getDatoriiFurnizoriGenerale(parohieId) {
 // Toate facturile de furnizor, indiferent de starea de achitare (spre deosebire de
 // getDatoriiFurnizoriGenerale, care întoarce doar cele neachitate) — folosită pentru tabloul de
 // vizualizare/editare a tuturor facturilor înregistrate, nu doar a celor rămase de plată.
+// ── Verificare factură dublă ───────────────────────────────────────────────────────────────
+// Compararea ignoră diferențele de formă: litere mari/mici, spații, diacritice, semne de punctuație
+// (la furnizor) și semnele de la finalul numărului (ex. „PROT4/6958/” = „prot4/6958”).
+export function normalizeazaNrFactura(nr) {
+  return String(nr || "").toLowerCase().replace(/\s+/g, "").replace(/[/.\-]+$/, "");
+}
+export function normalizeazaFurnizor(furnizor) {
+  return String(furnizor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+// Caută în evidența parohiei (facturi de furnizor + recepții NRCD) documente care par a fi ACEEAȘI
+// factură cu cea care urmează să fie înregistrată sau modificată: același furnizor și
+//   (a) același număr de factură, sau
+//   (b) aceeași dată și aceeași valoare (prinde și numerele tastate greșit).
+// Nu blochează nimic — rezultatul servește doar avertizării. Filtrarea pe parohie o face serverul
+// (regulile de acces: fiecare utilizator vede doar documentele propriei parohii).
+// Valoarea: factură de furnizor = suma liniilor; NRCD = cantitate × preț de achiziție (pangar)
+// + valoarea liniilor de consum intern — exact valoarea de plată a recepției.
+export async function cautaFacturiExistente({ furnizor, nrFactura, data, suma, excludeDocumentId } = {}) {
+  const fz = normalizeazaFurnizor(furnizor);
+  const nf = normalizeazaNrFactura(nrFactura);
+  if (!fz) return [];
+  const { data: docs, error } = await supabase
+    .from("documente")
+    .select("id, tip, nr, an, data, furnizor, nr_factura, status")
+    .in("tip", ["factura_furnizor", "nrcd"]);
+  if (error) throw error;
+  const candidati = (docs || []).filter((d) => d.id !== excludeDocumentId && normalizeazaFurnizor(d.furnizor) === fz);
+  if (candidati.length === 0) return [];
+
+  const valoare = {};
+  const adauga = (id, v) => { valoare[id] = (valoare[id] || 0) + (Number(v) || 0); };
+  const idsFacturi = candidati.filter((d) => d.tip === "factura_furnizor").map((d) => d.id);
+  const idsNrcd = candidati.filter((d) => d.tip === "nrcd").map((d) => d.id);
+  const linii = await inLoturi((lot) => supabase.from("linii_document").select("document_id, suma").in("document_id", lot), idsFacturi);
+  for (const l of linii) adauga(l.document_id, l.suma);
+  const miscari = await inLoturi(
+    (lot) => supabase.from("miscari_stoc_pangar").select("document_id, cantitate, articol_id").eq("tip", "intrare").in("document_id", lot),
+    idsNrcd
+  );
+  const articole = await inLoturi(
+    (lot) => supabase.from("articole_pangar").select("id, pret_achizitie").in("id", lot),
+    [...new Set(miscari.map((m) => m.articol_id))]
+  );
+  const pret = Object.fromEntries(articole.map((a) => [a.id, Number(a.pret_achizitie)]));
+  for (const m of miscari) adauga(m.document_id, Number(m.cantitate) * (pret[m.articol_id] || 0));
+  const consum = await inLoturi(
+    (lot) => supabase.from("miscari_consum_intern").select("document_id, valoare_totala").eq("tip", "intrare").in("document_id", lot),
+    idsNrcd
+  );
+  for (const c of consum) adauga(c.document_id, c.valoare_totala);
+
+  const rezultate = [];
+  for (const d of candidati) {
+    const val = Math.round((valoare[d.id] || 0) * 100) / 100;
+    const acelasiNumar = !!nf && normalizeazaNrFactura(d.nr_factura) === nf;
+    const aceeasiDataSiValoare = !!data && d.data === data && Number(suma) > 0 && Math.abs(val - Number(suma)) < 0.005;
+    if (!acelasiNumar && !aceeasiDataSiValoare) continue;
+    rezultate.push({
+      id: d.id, tip: d.tip, nr: d.nr, an: d.an, data: d.data, furnizor: d.furnizor, nrFactura: d.nr_factura,
+      status: d.status, valoare: val,
+      motiv: acelasiNumar
+        ? (aceeasiDataSiValoare ? "același număr, aceeași dată și aceeași valoare" : "același număr de factură")
+        : "aceeași dată și aceeași valoare",
+    });
+  }
+  return rezultate.sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : 0));
+}
+
 export async function getFacturiFurnizori(parohieId) {
   const { data: docs, error } = await supabase
     .from("documente")

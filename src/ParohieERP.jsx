@@ -16,7 +16,7 @@ import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveaza
   creeazaStocInitialConsumIntern as creeazaStocInitialConsumInternBackend,
   editeazaStocInitialConsumIntern as editeazaStocInitialConsumInternBackend,
   stergeStocInitialConsumIntern as stergeStocInitialConsumInternBackend,
-  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, stergeBonConsum, getBonuriConsum, getDatoriiFurnizoriGenerale, getFacturiFurnizori, editeazaFacturaFurnizor, stergeFacturaFurnizor, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
+  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, stergeBonConsum, getBonuriConsum, getDatoriiFurnizoriGenerale, getFacturiFurnizori, editeazaFacturaFurnizor, stergeFacturaFurnizor, cautaFacturiExistente, normalizeazaNrFactura, normalizeazaFurnizor, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import { yearOf, soldCasaBancaLaData, soldCasaBancaLaAn, esteSumaFormatata, parseSumaFormatata, pasGrilaNatural } from "./jurnalFinanciar.mjs";
@@ -8101,6 +8101,32 @@ function FacturaFurnizorEditForm({ factura, conturiSelectabile, onClose, onSave,
   const suma = linii.reduce((s, l) => s + (Number(l.suma) || 0), 0);
   const valid = furnizor.trim() && data && linii.length > 0 && linii.every((l) => l.contId && Number(l.suma) > 0);
 
+  // Verificare „factură dublă” la salvare — doar dacă s-a schimbat ceva ce identifică factura
+  // (furnizor, număr, dată, valoare); factura însăși e exclusă din comparație.
+  const [verificareDubla, setVerificareDubla] = useState(null); // { existente, eroare } | null
+  const [verificand, setVerificand] = useState(false);
+  const construiestePatch = () => ({
+    furnizor, nrFactura, data, dataScadenta: dataScadenta || null,
+    linii: linii.map((l) => ({ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie })),
+  });
+  async function salveaza() {
+    const schimbat =
+      normalizeazaFurnizor(furnizor) !== normalizeazaFurnizor(factura.furnizor) ||
+      normalizeazaNrFactura(nrFactura) !== normalizeazaNrFactura(factura.nrFactura) ||
+      data !== factura.data ||
+      Math.abs(suma - Number(factura.suma || 0)) >= 0.005;
+    if (schimbat) {
+      setVerificand(true);
+      const rezultat = await verificaFacturaDubla({ furnizor, nrFactura, data, suma, excludeDocumentId: factura.id });
+      setVerificand(false);
+      if (rezultat.existente.length > 0 || rezultat.eroare) {
+        setVerificareDubla(rezultat);
+        return;
+      }
+    }
+    onSave(construiestePatch());
+  }
+
   return (
     <Modal title={`Modifică factura nr. ${factura.nr}/${factura.an}`} onClose={onClose} wide="xl">
       <div className="flex flex-col gap-3">
@@ -8191,15 +8217,20 @@ function FacturaFurnizorEditForm({ factura, conturiSelectabile, onClose, onSave,
 
         <div className="flex justify-end gap-2">
           <Btn variant="ghost" onClick={onClose} disabled={seSalveaza}>Renunță</Btn>
-          <Btn
-            variant="gold"
-            disabled={!valid || seSalveaza}
-            onClick={() => onSave({ furnizor, nrFactura, data, dataScadenta: dataScadenta || null, linii: linii.map((l) => ({ contId: l.contId, suma: Number(l.suma), explicatie: l.explicatie })) })}
-          >
-            {seSalveaza ? "Se salvează..." : "Salvează modificările"}
+          <Btn variant="gold" disabled={!valid || seSalveaza || verificand} onClick={salveaza}>
+            {seSalveaza ? "Se salvează..." : verificand ? "Se verifică..." : "Salvează modificările"}
           </Btn>
         </div>
       </div>
+      {verificareDubla && (
+        <AvertizareFacturaDubla
+          existente={verificareDubla.existente}
+          eroare={verificareDubla.eroare}
+          textContinua="Salvează totuși"
+          onInapoi={() => setVerificareDubla(null)}
+          onContinua={() => { setVerificareDubla(null); onSave(construiestePatch()); }}
+        />
+      )}
     </Modal>
   );
 }
@@ -12614,7 +12645,11 @@ function ReceptieEditForm({ miscare, articole, opLegat, alteLiniiNrcd, onAdaugaL
     }
   }
 
-  async function submit() {
+  // Verificare „factură dublă” la salvare — doar dacă s-au schimbat furnizorul, numărul facturii
+  // sau data; recepția însăși e exclusă din comparație.
+  const [verificareDubla, setVerificareDubla] = useState(null); // { existente, eroare } | null
+
+  async function submit(ignoraDubluri = false) {
     const cant = Number(cantitate);
     if (!articolId) { setError("Selectați un produs din nomenclator."); return; }
     if (!cant || cant <= 0) { setError("Introduceți o cantitate validă, mai mare ca 0."); return; }
@@ -12624,6 +12659,19 @@ function ReceptieEditForm({ miscare, articole, opLegat, alteLiniiNrcd, onAdaugaL
       return;
     }
     setError("");
+    const schimbat =
+      normalizeazaFurnizor(furnizor) !== normalizeazaFurnizor(miscare.furnizor) ||
+      normalizeazaNrFactura(nrFactura) !== normalizeazaNrFactura(miscare.nrFactura) ||
+      data !== miscare.data;
+    if (schimbat && !ignoraDubluri) {
+      setSalvand(true);
+      const rezultat = await verificaFacturaDubla({ furnizor, nrFactura, data, suma: null, excludeDocumentId: miscare.documentId });
+      setSalvand(false);
+      if (rezultat.existente.length > 0 || rezultat.eroare) {
+        setVerificareDubla(rezultat);
+        return;
+      }
+    }
     setSalvand(true);
     try {
       await onSave({
@@ -12744,10 +12792,19 @@ function ReceptieEditForm({ miscare, articole, opLegat, alteLiniiNrcd, onAdaugaL
           {!cerutConfirmare ? (
             <Btn variant="gold" onClick={() => setCerutConfirmare(true)}>Salvează</Btn>
           ) : (
-            <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
+            <Btn variant="gold" onClick={() => submit()} disabled={salvand}>{salvand ? "Se salvează..." : "Da, confirmă modificarea"}</Btn>
           )}
         </div>
       </div>
+      {verificareDubla && (
+        <AvertizareFacturaDubla
+          existente={verificareDubla.existente}
+          eroare={verificareDubla.eroare}
+          textContinua="Salvează totuși"
+          onInapoi={() => setVerificareDubla(null)}
+          onContinua={() => { setVerificareDubla(null); submit(true); }}
+        />
+      )}
     </Modal>
   );
 }
@@ -13147,7 +13204,10 @@ function VanzareEditForm({ vanzare, grupuri, onClose, onSave, onAnuleaza }) {
 // o factură reală. Produsele se aleg strict din nomenclator (fără introducere manuală de text),
 // din listă derulantă — orice produs nou creat apare automat aici, fără nimic suplimentar.
 function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, furnizoriAutorizati, liniiInitiale, operatiuni, grupeConsumIntern, onClose, onSave }) {
-  const [pas, setPas] = useState("detalii"); // detalii | decizie | acum | amanata
+  const [pas, setPas] = useState("detalii"); // detalii | dubla | decizie | acum | amanata
+  // Verificarea „factură dublă” (la „Continuă”): rezultatul și starea „se verifică”.
+  const [verificareDubla, setVerificareDubla] = useState(null); // { existente, eroare } | null
+  const [verificand, setVerificand] = useState(false);
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
   // Aceeași corecție ca la ChitantaForm/OrdinPlataForm/VanzareMultiplaForm — vezi explicația de-acolo.
@@ -13235,8 +13295,18 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
     return true;
   }
 
-  function mergiLaDecizie() {
+  // „Continuă”: după validare, se verifică dacă aceeași factură nu e deja înregistrată (același
+  // furnizor + același număr, sau aceeași dată + aceeași valoare). Dacă da, apare avertizarea.
+  async function mergiLaDecizie() {
     if (!validateDetalii()) return;
+    setVerificand(true);
+    const rezultat = await verificaFacturaDubla({ furnizor, nrFactura, data, suma: valoareAchizitieTotala });
+    setVerificand(false);
+    if (rezultat.existente.length > 0 || rezultat.eroare) {
+      setVerificareDubla(rezultat);
+      setPas("dubla");
+      return;
+    }
     setPas("decizie");
   }
 
@@ -13404,10 +13474,21 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
 
           <div className="flex justify-end gap-2 mt-2">
             <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
-            <Btn variant="gold" onClick={mergiLaDecizie}>Continuă</Btn>
+            <Btn variant="gold" onClick={mergiLaDecizie} disabled={verificand}>{verificand ? "Se verifică..." : "Continuă"}</Btn>
           </div>
         </div>
       </Modal>
+    );
+  }
+
+  if (pas === "dubla") {
+    return (
+      <AvertizareFacturaDubla
+        existente={verificareDubla?.existente}
+        eroare={verificareDubla?.eroare}
+        onInapoi={() => setPas("detalii")}
+        onContinua={() => setPas("decizie")}
+      />
     );
   }
 
@@ -13482,8 +13563,84 @@ function ReceptieNRCDForm({ articole, anImplicit, parteneri, onCreatPartener, fu
   );
 }
 
+// Avertizare „posibilă factură dublă” — comună tuturor formularelor în care se introduce o factură
+// de furnizor (factură nouă, recepție NRCD nouă, modificarea unei facturi sau a unei recepții).
+// Nu blochează: utilizatorul vede documentele deja înregistrate care seamănă cu factura curentă și
+// alege. Focusul pornește pe „Înapoi” — un Enter apăsat din reflex NU înregistrează dublura.
+function AvertizareFacturaDubla({ existente = [], eroare = "", onInapoi, onContinua, textContinua = "Înregistrează totuși" }) {
+  const denumireTip = (t) => (t === "nrcd" ? "Recepție NRCD" : "Factură furnizor");
+  return (
+    <Modal title="Atenție — posibilă factură dublă" onClose={onInapoi} wide="xl">
+      <div className="flex flex-col gap-3">
+        {eroare ? (
+          <div className="bg-amber-50 border border-amber-300 rounded-md p-3 text-sm text-amber-900 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>{eroare}</span>
+          </div>
+        ) : (
+          <div className="bg-amber-50 border border-amber-300 rounded-md p-3 text-sm text-amber-900 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <span>
+              În evidența parohiei există deja {existente.length === 1 ? "un document care seamănă" : `${existente.length} documente care seamănă`} cu
+              această factură (același furnizor). Verificați, ca aceeași factură să nu fie înregistrată de două ori.
+            </span>
+          </div>
+        )}
+        {existente.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-stone-500 font-bold border-b border-stone-200">
+                  <th className="px-2 py-1.5">Document</th>
+                  <th className="px-2 py-1.5">Data</th>
+                  <th className="px-2 py-1.5">Nr. factură</th>
+                  <th className="px-2 py-1.5 text-right">Valoare</th>
+                  <th className="px-2 py-1.5">Stare</th>
+                  <th className="px-2 py-1.5 whitespace-nowrap">Seamănă prin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {existente.map((d) => (
+                  <tr key={d.id} className="border-b border-stone-100">
+                    <td className="px-2 py-1.5 whitespace-nowrap">{denumireTip(d.tip)} nr. {d.nr}/{d.an}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap">{fmtDataJurnal(d.data)}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap">{d.nrFactura || "—"}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">{fmt(d.valoare)} lei</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap">{d.status === "achitata" ? "achitată" : "neachitată"}</td>
+                    <td className="px-2 py-1.5 text-amber-800">{d.motiv}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <Btn variant="primary" onClick={onInapoi}>Înapoi — verific datele</Btn>
+          <Btn variant="ghost" onClick={onContinua}>{textContinua}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Rulează verificarea de dublură; întoarce { existente, eroare } — eroarea (ex. conexiune) nu
+// blochează înregistrarea, dar e afișată, ca utilizatorul să știe că verificarea nu s-a putut face.
+async function verificaFacturaDubla(criterii) {
+  try {
+    return { existente: await cautaFacturiExistente(criterii), eroare: "" };
+  } catch (e) {
+    return {
+      existente: [],
+      eroare: "Verificarea facturilor deja înregistrate nu s-a putut face acum (conexiune la server). Continuați doar dacă sunteți sigur că factura nu a mai fost introdusă.",
+    };
+  }
+}
+
 function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, operatiuni, onClose, onSave }) {
-  const [pas, setPas] = useState("detalii"); // detalii | decizie | acum | amanata
+  const [pas, setPas] = useState("detalii"); // detalii | dubla | decizie | acum | amanata
+  // Verificarea „factură dublă” (la „Continuă”): rezultatul și starea „se verifică”.
+  const [verificareDubla, setVerificareDubla] = useState(null); // { existente, eroare } | null
+  const [verificand, setVerificand] = useState(false);
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
   // Aceeași corecție ca la OrdinPlataForm/ReceptieNRCDForm — vezi explicația de-acolo.
@@ -13535,8 +13692,18 @@ function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, 
     return true;
   }
 
-  function mergiLaDecizie() {
+  // „Continuă”: după validare, se verifică dacă aceeași factură nu e deja înregistrată (același
+  // furnizor + același număr, sau aceeași dată + aceeași valoare). Dacă da, apare avertizarea.
+  async function mergiLaDecizie() {
     if (!validateDetalii()) return;
+    setVerificand(true);
+    const rezultat = await verificaFacturaDubla({ furnizor, nrFactura, data, suma: valoareTotala });
+    setVerificand(false);
+    if (rezultat.existente.length > 0 || rezultat.eroare) {
+      setVerificareDubla(rezultat);
+      setPas("dubla");
+      return;
+    }
     setPas("decizie");
   }
 
@@ -13622,10 +13789,21 @@ function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, 
 
           <div className="flex justify-end gap-2 mt-2">
             <Btn variant="ghost" onClick={onClose}>Anulează</Btn>
-            <Btn variant="gold" onClick={mergiLaDecizie}>Continuă</Btn>
+            <Btn variant="gold" onClick={mergiLaDecizie} disabled={verificand}>{verificand ? "Se verifică..." : "Continuă"}</Btn>
           </div>
         </div>
       </Modal>
+    );
+  }
+
+  if (pas === "dubla") {
+    return (
+      <AvertizareFacturaDubla
+        existente={verificareDubla?.existente}
+        eroare={verificareDubla?.eroare}
+        onInapoi={() => setPas("detalii")}
+        onContinua={() => setPas("decizie")}
+      />
     );
   }
 
