@@ -7236,6 +7236,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
     return {
       ddFurnizor: { get: (d) => d.furnizor || "" },
       ddFactura: { get: textFacturaDatorie },
+      ddData: { get: (d) => (d.dataFactura ? fmtDataJurnal(d.dataFactura) : ""), sort: (d) => d.dataFactura || "" },
       // Sumă totală = valoarea integrală a facturii; Rest de plată = ce a mai rămas după plățile
       // parțiale deja făcute (egal cu suma totală dacă nu s-a plătit nimic).
       ddSumaTotala: {
@@ -7454,7 +7455,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
         <Card className="p-4">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium text-stone-700">Datorii curente către furnizori</span>
-            <span className="text-sm tabular-nums text-stone-500">Total rest de plată: {fmt(totalDatoriiCurente)} RON</span>
+            <span className="text-xl font-bold uppercase tracking-wide text-rose-700 tabular-nums whitespace-nowrap">Total rest de plată: {fmt(totalDatoriiCurente)} RON</span>
           </div>
           <div className="flex items-center justify-between mb-2 text-xs text-stone-500">
             <span>
@@ -7476,6 +7477,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
               <tr className="text-left text-xs text-stone-500 font-bold border-b border-stone-200">
                 {antetDatorii("ddFurnizor", "Furnizor", { className: "min-w-[14rem]" })}
                 {antetDatorii("ddFactura", "Factură", { className: "min-w-[14rem]" })}
+                {antetDatorii("ddData", "Data facturii", { className: "min-w-[7.5rem] whitespace-nowrap" })}
                 {antetDatorii("ddSumaTotala", "Sumă totală", { className: "min-w-[8rem] text-right whitespace-nowrap", aliniereDreapta: true })}
                 {antetDatorii("ddRest", "Rest de plată", { className: "min-w-[8.5rem] text-right whitespace-nowrap", aliniereDreapta: true })}
                 {antetDatorii("ddVechime", "Vechime", { className: "min-w-[7.5rem] text-right", aliniereDreapta: true })}
@@ -7485,7 +7487,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
             <tbody>
               {datoriiAfisate.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-2 py-4 text-center text-sm text-stone-500">Nicio datorie nu corespunde filtrelor.</td>
+                  <td colSpan={7} className="px-2 py-4 text-center text-sm text-stone-500">Nicio datorie nu corespunde filtrelor.</td>
                 </tr>
               )}
               {datoriiAfisate.map((d) => {
@@ -7495,6 +7497,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
                   <tr key={d.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
                     <td className="px-2 py-1">{d.furnizor}</td>
                     <td className="px-2 py-1 text-stone-500">{textFacturaDatorie(d)}</td>
+                    <td className="px-2 py-1 tabular-nums whitespace-nowrap">{d.dataFactura ? fmtDataJurnal(d.dataFactura) : "—"}</td>
                     <td className="px-2 py-1 text-right tabular-nums text-stone-600 whitespace-nowrap">{fmt(d.suma)}</td>
                     <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">
                       {(d.sumaRamasa ?? d.suma) < d.suma ? (
