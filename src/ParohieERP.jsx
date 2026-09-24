@@ -13419,6 +13419,126 @@ const LUNI_LUNGI = ["Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie"
 
 // Grafic simplu, pe SVG simplu (fără nicio bibliotecă externă — nicio dependență nouă adăugată în
 // package.json), cu bare perechi (venituri/cheltuieli) pe fiecare punct din axa orizontală.
+const PALETA_PLACINTA = ["#1F3864", "#B8860B", "#059669", "#dc2626", "#7c3aed", "#0891b2", "#ea580c", "#4d7c0f", "#be185d", "#0369a1", "#a16207", "#4338ca"];
+
+function culoareIntunecata(hex, factor = 0.62) {
+  const nr = parseInt(hex.slice(1), 16);
+  const r = Math.round(((nr >> 16) & 255) * factor);
+  const g = Math.round(((nr >> 8) & 255) * factor);
+  const b = Math.round((nr & 255) * factor);
+  return `rgb(${r},${g},${b})`;
+}
+
+// Grafic tip plăcintă, cu efect pseudo-3D (perspectivă eliptică + "grosime" — un teanc de straturi
+// întunecate, decalate vertical, sub fața de sus, care simulează un disc solid). SVG simplu, fără
+// nicio bibliotecă de grafice — nicio dependență nouă în package.json.
+function GraficPlacinta3D({ date }) {
+  const cx = 120, cy = 92, rx = 96, ry = 52, adancime = 16;
+  const total = date.reduce((s, d) => s + d.suma, 0);
+  let unghi = -Math.PI / 2;
+  const felii = date.map((d, i) => {
+    const fractie = total > 0 ? d.suma / total : 0;
+    const unghiStart = unghi;
+    unghi += fractie * 2 * Math.PI;
+    return { ...d, unghiStart, unghiFinal: unghi, culoare: PALETA_PLACINTA[i % PALETA_PLACINTA.length] };
+  });
+  const punct = (u, centruY) => [cx + rx * Math.cos(u), centruY + ry * Math.sin(u)];
+  const cale = (f, centruY) => {
+    const [x1, y1] = punct(f.unghiStart, centruY);
+    const [x2, y2] = punct(f.unghiFinal, centruY);
+    const largeArc = f.unghiFinal - f.unghiStart > Math.PI ? 1 : 0;
+    return `M ${cx},${centruY} L ${x1},${y1} A ${rx},${ry} 0 ${largeArc} 1 ${x2},${y2} Z`;
+  };
+  if (total === 0) return <div className="text-sm text-stone-400">Fără date de afișat.</div>;
+  return (
+    <div className="flex flex-col sm:flex-row items-start gap-4">
+      <svg viewBox={`0 0 ${cx * 2} ${cy + ry + adancime + 10}`} style={{ width: 260, height: cy + ry + adancime + 10, flexShrink: 0 }}>
+        {Array.from({ length: adancime }).map((_, s) => (
+          <g key={s}>
+            {felii.map((f, i) => <path key={i} d={cale(f, cy + adancime - s)} fill={culoareIntunecata(f.culoare)} />)}
+          </g>
+        ))}
+        {felii.map((f, i) => (
+          <path key={i} d={cale(f, cy)} fill={f.culoare} stroke="white" strokeWidth="1">
+            <title>{`${f.eticheta}: ${fmt(f.suma)} lei (${f.procent.toFixed(1)}%)`}</title>
+          </path>
+        ))}
+      </svg>
+      <div className="flex-1 min-w-0 space-y-1 pt-1 w-full">
+        {felii.map((f, i) => (
+          <div key={i} className="flex items-center gap-2 text-sm">
+            <span className="w-3 h-3 rounded-sm inline-block shrink-0" style={{ background: f.culoare }} />
+            <span className="text-stone-700 truncate flex-1">{f.eticheta}</span>
+            <span className="tabular-nums font-medium shrink-0">{f.procent.toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Text explicativ, generat automat din date — etichetează articolul dominant, gradul de
+// concentrare, și, dacă există anul anterior pentru comparație, cele mai mari mișcări (cu cauze
+// posibile, nu certe — trebuie verificate direct în Jurnal) și o extrapolare simplă, explicit
+// calificată drept orientativă (nu o prognoză fiabilă — se bazează pe doar doi ani de date).
+function naratiuneStructura(lista, listaAnterioara, etichetaTip, an) {
+  if (lista.length === 0) return [`Nu există date de ${etichetaTip} pentru anul ${an}.`];
+  const total = lista.reduce((s, d) => s + d.suma, 0);
+  const top1 = lista[0];
+  const top3 = lista.slice(0, 3);
+  const procentTop3 = top3.reduce((s, d) => s + d.procent, 0);
+  const propozitii = [];
+
+  propozitii.push(
+    `În ${an}, cea mai mare pondere din ${etichetaTip} o are articolul „${top1.eticheta}", cu ${fmt(top1.suma)} lei (${top1.procent.toFixed(1)}% din total).`
+  );
+  if (top3.length > 1) {
+    const gradConcentrare = procentTop3 > 70 ? "puternic concentrată pe puține surse" : procentTop3 > 45 ? "moderat concentrată" : "relativ diversificată";
+    propozitii.push(
+      `Primele ${top3.length} articole (${top3.map((t) => t.eticheta).join(", ")}) concentrează împreună ${procentTop3.toFixed(1)}% din total — o structură ${gradConcentrare}.`
+    );
+  }
+
+  if (listaAnterioara && listaAnterioara.length > 0) {
+    const totalAnterior = listaAnterioara.reduce((s, d) => s + d.suma, 0);
+    const mapAnterior = new Map(listaAnterioara.map((d) => [d.eticheta, d.suma]));
+    const mapCurent = new Map(lista.map((d) => [d.eticheta, d.suma]));
+    const miscari = lista.map((d) => ({ eticheta: d.eticheta, diferenta: d.suma - (mapAnterior.get(d.eticheta) || 0) }));
+    for (const [eticheta, suma] of mapAnterior) {
+      if (!mapCurent.has(eticheta)) miscari.push({ eticheta, diferenta: -suma });
+    }
+    miscari.sort((a, b) => Math.abs(b.diferenta) - Math.abs(a.diferenta));
+    const crescator = miscari.find((m) => m.diferenta > 0);
+    const scazator = miscari.find((m) => m.diferenta < 0);
+    const evolutieTotal = totalAnterior > 0 ? ((total - totalAnterior) / totalAnterior) * 100 : null;
+
+    if (evolutieTotal !== null) {
+      propozitii.push(
+        `Față de anul anterior (${an - 1}), totalul ${etichetaTip} a ${evolutieTotal >= 0 ? "crescut" : "scăzut"} cu ${Math.abs(evolutieTotal).toFixed(1)}% (de la ${fmt(totalAnterior)} la ${fmt(total)} lei).`
+      );
+    }
+    if (crescator) {
+      propozitii.push(
+        `Cea mai mare creștere se observă la „${crescator.eticheta}" (+${fmt(crescator.diferenta)} lei) — posibile cauze: o campanie sau eveniment specific din acel an, o modificare de preț sau de volum de tranzacții; o verificare directă pe acest cont, în Registrul Jurnal, ar confirma cauza exactă, nu doar o presupunere.`
+      );
+    }
+    if (scazator) {
+      propozitii.push(
+        `Cea mai mare scădere se observă la „${scazator.eticheta}" (${fmt(scazator.diferenta)} lei) — posibile cauze: reducerea reală a activității pe acel articol, o schimbare de clasificare contabilă între ani, sau o singură tranzacție mare din anul anterior care nu s-a repetat.`
+      );
+    }
+    if (evolutieTotal !== null) {
+      const estimatUrmator = total * (1 + evolutieTotal / 100);
+      propozitii.push(
+        `Dacă acest ritm s-ar menține neschimbat, o simplă extrapolare — NU o prognoză fiabilă, fiindcă se bazează pe compararea a doar doi ani — ar situa totalul anului ${an + 1} în jurul a ${fmt(estimatUrmator)} lei. O estimare demnă de încredere ar necesita cel puțin 3-4 ani de istoric și, ideal, cunoașterea cauzelor din spatele variațiilor observate.`
+      );
+    }
+  } else {
+    propozitii.push(`Nu există date din anul anterior (${an - 1}) pentru comparație — evoluția și o eventuală estimare vor putea fi calculate din anul următor înainte.`);
+  }
+  return propozitii;
+}
+
 function GraficBarePerechi({ date, etichetaSerie1 = "Venituri", etichetaSerie2 = "Cheltuieli", culoare1 = "#059669", culoare2 = "#dc2626", inaltime = 220 }) {
   const latime = Math.max(420, date.length * 64);
   const maxima = Math.max(1, ...date.flatMap((d) => [d.serie1 || 0, d.serie2 || 0]));
@@ -13455,35 +13575,73 @@ function GraficBarePerechi({ date, etichetaSerie1 = "Venituri", etichetaSerie2 =
 }
 
 // Grafic-linie, pentru evoluția multianuală (venituri/cheltuieli/excedent an de an).
+// Numere "rotunde" pentru liniile de grilă (1/2/5 × 10^n) — evită valori ciudate pe axa Y
+// (ex. 3.847,33), alege întotdeauna un pas natural, ușor de citit.
+function pasGrilaNatural(maxim, nrLinii = 4) {
+  const brut = maxim / nrLinii;
+  const exponent = Math.floor(Math.log10(brut || 1));
+  const factor = Math.pow(10, exponent);
+  const normalizat = brut / factor;
+  const pasNormalizat = normalizat <= 1 ? 1 : normalizat <= 2 ? 2 : normalizat <= 5 ? 5 : 10;
+  return pasNormalizat * factor;
+}
+
+// Grafic-linie cartezian — axă Y cu linii de grilă și valori, axă X cu etichetele corect
+// poziționate (start/mijloc/sfârșit, ca să nu se taie la capete), plus valoarea afișată la
+// fiecare punct.
 function GraficLinieMultianuala({ date, serii }) {
-  const inaltime = 220;
-  const latime = Math.max(420, date.length * 80);
-  const maxima = Math.max(1, ...date.flatMap((d) => serii.map((s) => Math.abs(d[s.key]) || 0)));
-  const inaltimeUtila = inaltime - 36;
-  const zero = inaltimeUtila / 2;
+  const inaltime = 260;
+  const PAD = { stanga: 64, dreapta: 16, sus: 16, jos: 30 };
+  const latimeTotala = Math.max(460, date.length * 90);
+  const latimeUtila = latimeTotala - PAD.stanga - PAD.dreapta;
+  const inaltimeUtila = inaltime - PAD.sus - PAD.jos;
+
   const areNegative = serii.some((s) => date.some((d) => d[s.key] < 0));
-  const pasX = date.length > 1 ? latime / (date.length - 1) : 0;
-  const yPentru = (v) => (areNegative ? zero - (v / maxima) * zero : inaltimeUtila - (v / maxima) * inaltimeUtila);
+  const maximaAbs = Math.max(1, ...date.flatMap((d) => serii.map((s) => Math.abs(d[s.key]) || 0)));
+  const pas = pasGrilaNatural(maximaAbs);
+  const maximaAxa = Math.ceil(maximaAbs / pas) * pas;
+  const liniiGrila = [];
+  for (let v = areNegative ? -maximaAxa : 0; v <= maximaAxa; v += pas) liniiGrila.push(v);
+
+  const pasX = date.length > 1 ? latimeUtila / (date.length - 1) : 0;
+  const xPentru = (i) => PAD.stanga + i * pasX;
+  const yPentru = (v) => PAD.sus + inaltimeUtila - ((v + (areNegative ? maximaAxa : 0)) / (maximaAxa + (areNegative ? maximaAxa : 0))) * inaltimeUtila;
+
   return (
     <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${latime} ${inaltime}`} style={{ width: latime, height: inaltime }}>
-        {areNegative && <line x1={0} y1={zero} x2={latime} y2={zero} stroke="#e7e5e4" strokeWidth="1" />}
-        {!areNegative && <line x1={0} y1={inaltimeUtila} x2={latime} y2={inaltimeUtila} stroke="#e7e5e4" strokeWidth="1" />}
+      <svg viewBox={`0 0 ${latimeTotala} ${inaltime}`} style={{ width: latimeTotala, height: inaltime }}>
+        {/* Grilă orizontală + valori pe axa Y */}
+        {liniiGrila.map((v) => (
+          <g key={v}>
+            <line x1={PAD.stanga} y1={yPentru(v)} x2={latimeTotala - PAD.dreapta} y2={yPentru(v)} stroke={v === 0 ? "#a8a29e" : "#e7e5e4"} strokeWidth={v === 0 ? 1.2 : 1} />
+            <text x={PAD.stanga - 6} y={yPentru(v) + 3} textAnchor="end" fontSize="10" fill="#78716c">{fmt(v)}</text>
+          </g>
+        ))}
+        {/* Axa X */}
+        <line x1={PAD.stanga} y1={PAD.sus + inaltimeUtila} x2={PAD.stanga} y2={PAD.sus} stroke="#a8a29e" strokeWidth="1" />
         {serii.map((s) => {
-          const puncte = date.map((d, i) => `${i * pasX},${yPentru(d[s.key])}`).join(" ");
+          const puncte = date.map((d, i) => `${xPentru(i)},${yPentru(d[s.key])}`).join(" ");
           return (
             <g key={s.key}>
               <polyline points={puncte} fill="none" stroke={s.culoare} strokeWidth="2.5" />
               {date.map((d, i) => (
-                <circle key={i} cx={i * pasX} cy={yPentru(d[s.key])} r="3" fill={s.culoare}>
-                  <title>{`${d.an} — ${s.eticheta}: ${fmt(d[s.key])} lei`}</title>
-                </circle>
+                <g key={i}>
+                  <circle cx={xPentru(i)} cy={yPentru(d[s.key])} r="3" fill={s.culoare}>
+                    <title>{`${d.an} — ${s.eticheta}: ${fmt(d[s.key])} lei`}</title>
+                  </circle>
+                  <text x={xPentru(i)} y={yPentru(d[s.key]) - 8} textAnchor="middle" fontSize="9.5" fill={s.culoare} fontWeight="600">{fmt(d[s.key])}</text>
+                </g>
               ))}
             </g>
           );
         })}
         {date.map((d, i) => (
-          <text key={i} x={i * pasX} y={inaltime - 6} textAnchor="middle" fontSize="11" fill="#57534e">{d.an}</text>
+          <text
+            key={i} x={xPentru(i)} y={inaltime - 8} fontSize="11" fill="#57534e"
+            textAnchor={i === 0 ? "start" : i === date.length - 1 ? "end" : "middle"}
+          >
+            {d.an}
+          </text>
         ))}
       </svg>
       <div className="flex items-center gap-4 mt-1 text-xs text-stone-500">
@@ -13529,11 +13687,11 @@ function AnalizaFinanciaraTab({ state, derived }) {
   }, [operatiuni, aniDisponibili, derived.contById]);
 
   // 2. Structura veniturilor/cheltuielilor pe articole bugetare, pentru anul selectat.
-  const structuraAn = useMemo(() => {
+  const calculeazaStructuraAn = useCallback((an) => {
     const venituri = {};
     const cheltuieli = {};
     for (const op of operatiuni) {
-      if (op.an !== anSelectat) continue;
+      if (op.an !== an) continue;
       const cont = derived.contById[op.contId];
       if (cont?.clasa === "viramente") continue;
       const eticheta = cont ? `${cont.simbol} — ${cont.denumire}` : op.contId;
@@ -13547,7 +13705,12 @@ function AnalizaFinanciaraTab({ state, derived }) {
         .sort((a, b) => b.suma - a.suma);
     };
     return { venituri: construieste(venituri), cheltuieli: construieste(cheltuieli) };
-  }, [operatiuni, anSelectat, derived.contById]);
+  }, [operatiuni, derived.contById]);
+  const structuraAn = useMemo(() => calculeazaStructuraAn(anSelectat), [calculeazaStructuraAn, anSelectat]);
+  const structuraAnAnterior = useMemo(
+    () => (aniDisponibili.includes(anSelectat - 1) ? calculeazaStructuraAn(anSelectat - 1) : null),
+    [calculeazaStructuraAn, anSelectat, aniDisponibili]
+  );
 
   // 3. Execuție bugetară — cele mai mari depășiri și restanțe, pentru anul selectat (doar
   // articolele care au o prevedere bugetară nenulă în acel an).
@@ -13685,30 +13848,20 @@ function AnalizaFinanciaraTab({ state, derived }) {
         </select>
       </div>
 
-      {/* 2. Structura veniturilor/cheltuielilor */}
+      {/* 2. Structura veniturilor/cheltuielilor — grafic plăcintă 3D + narațiune */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="p-4">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Structura veniturilor — {anSelectat}</div>
-          <div className="space-y-1.5 max-h-80 overflow-y-auto">
-            {structuraAn.venituri.length === 0 && <div className="text-sm text-stone-400">Niciun venit înregistrat în {anSelectat}.</div>}
-            {structuraAn.venituri.map((r) => (
-              <div key={r.eticheta} className="text-sm">
-                <div className="flex justify-between"><span className="text-stone-700 truncate pr-2">{r.eticheta}</span><span className="tabular-nums font-medium">{fmt(r.suma)} lei ({r.procent.toFixed(0)}%)</span></div>
-                <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-emerald-600" style={{ width: `${r.procent}%` }} /></div>
-              </div>
-            ))}
+          <GraficPlacinta3D date={structuraAn.venituri} />
+          <div className="mt-4 pt-3 border-t border-stone-100 space-y-2 text-sm text-stone-600 leading-relaxed">
+            {naratiuneStructura(structuraAn.venituri, structuraAnAnterior?.venituri, "venituri", anSelectat).map((p, i) => <p key={i}>{p}</p>)}
           </div>
         </Card>
         <Card className="p-4">
           <div className="text-xs uppercase tracking-wide text-stone-500 font-medium mb-3">Structura cheltuielilor — {anSelectat}</div>
-          <div className="space-y-1.5 max-h-80 overflow-y-auto">
-            {structuraAn.cheltuieli.length === 0 && <div className="text-sm text-stone-400">Nicio cheltuială înregistrată în {anSelectat}.</div>}
-            {structuraAn.cheltuieli.map((r) => (
-              <div key={r.eticheta} className="text-sm">
-                <div className="flex justify-between"><span className="text-stone-700 truncate pr-2">{r.eticheta}</span><span className="tabular-nums font-medium">{fmt(r.suma)} lei ({r.procent.toFixed(0)}%)</span></div>
-                <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-rose-600" style={{ width: `${r.procent}%` }} /></div>
-              </div>
-            ))}
+          <GraficPlacinta3D date={structuraAn.cheltuieli} />
+          <div className="mt-4 pt-3 border-t border-stone-100 space-y-2 text-sm text-stone-600 leading-relaxed">
+            {naratiuneStructura(structuraAn.cheltuieli, structuraAnAnterior?.cheltuieli, "cheltuieli", anSelectat).map((p, i) => <p key={i}>{p}</p>)}
           </div>
         </Card>
       </div>
