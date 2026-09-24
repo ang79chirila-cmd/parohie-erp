@@ -4125,6 +4125,26 @@ function PasswordChecklist({ rules }) {
   );
 }
 
+// Atribute care descurajează completarea automată/salvarea datelor de autentificare de către
+// browser (CIF, utilizator, coduri). Browserele le tratează ca recomandări: Chrome ignoră
+// autocomplete="off" pe câmpurile de parolă, de aceea parola folosește "new-password" și
+// rămâne needitabilă (readOnly) până la primul click/focus, ca să nu fie precompletată la încărcare.
+// Atributele data-* sunt recunoscute de managerele de parole populare (LastPass, 1Password, Bitwarden).
+const faraAutocompletare = {
+  autoComplete: "off",
+  autoCorrect: "off",
+  autoCapitalize: "off",
+  spellCheck: false,
+  "data-lpignore": "true",
+  "data-1p-ignore": "true",
+  "data-bwignore": "true",
+  "data-form-type": "other",
+};
+const faraAutocompletareParola = {
+  ...faraAutocompletare,
+  autoComplete: "new-password",
+};
+
 function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin }) {
   const [pas, setPas] = useState("cif"); // "cif" | "login" | "setup" | "mfa-cod" | "mfa-recuperare"
   const [cif, setCif] = useState("");
@@ -4134,6 +4154,8 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
   const [confirm, setConfirm] = useState("");
   const [emailRecuperare, setEmailRecuperare] = useState("");
   const [showPw, setShowPw] = useState(false);
+  // Câmpul de parolă de la autentificare pornește needitabil (vezi faraAutocompletareParola).
+  const [parolaBlocata, setParolaBlocata] = useState(true);
   const [error, setError] = useState("");
   const [verificand, setVerificand] = useState(false);
   const [codMfa, setCodMfa] = useState("");
@@ -4244,6 +4266,7 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                     onChange={(e) => setCif(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && submitCif()}
                     placeholder="ex: 12345678"
+                    {...faraAutocompletare}
                     autoFocus
                   />
                 </div>
@@ -4280,6 +4303,7 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                   className={inputCls}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  {...faraAutocompletare}
                   autoFocus
                 />
               </Field>
@@ -4292,6 +4316,9 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && submitLogin()}
+                    {...faraAutocompletareParola}
+                    readOnly={parolaBlocata}
+                    onFocus={() => setParolaBlocata(false)}
                   />
                   <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600">
                     {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -4321,6 +4348,8 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                   value={codMfa}
                   onChange={(e) => setCodMfa(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && submitMfaCod()}
+                  {...faraAutocompletare}
+                  inputMode="numeric"
                   placeholder="123456"
                   maxLength={6}
                   autoFocus
@@ -4350,6 +4379,7 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                   className={`${inputCls} text-center tracking-widest font-mono`}
                   value={codRecuperareIntrodus}
                   onChange={(e) => setCodRecuperareIntrodus(e.target.value)}
+                  {...faraAutocompletare}
                   onKeyDown={(e) => e.key === "Enter" && submitCodRecuperare()}
                   placeholder="XXXX-XXXX-XXXX"
                   autoFocus
@@ -4376,7 +4406,7 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                 <input className={inputCls} value={denumireParohie} onChange={(e) => setDenumireParohie(e.target.value)} />
               </Field>
               <Field label="Nume de utilizator (ales de dvs.)">
-                <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+                <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} {...faraAutocompletare} autoFocus />
               </Field>
               <Field label="Parolă">
                 <input
@@ -4384,6 +4414,7 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                   className={inputCls}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  {...faraAutocompletareParola}
                 />
               </Field>
               <PasswordChecklist rules={rules} />
@@ -4393,6 +4424,7 @@ function LoginScreen({ onSetup, onLogin, onDemo, onVerifyMfa, onRecoveryLogin })
                   className={inputCls}
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
+                  {...faraAutocompletareParola}
                 />
               </Field>
               <Field label="Email (doar pentru recuperarea parolei proprii de Administrator)">
