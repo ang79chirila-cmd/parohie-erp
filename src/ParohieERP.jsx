@@ -1746,10 +1746,13 @@ function useFiltrareColoane(rows, config) {
     for (const [cheie, valoare] of Object.entries(filtre)) {
       if (!valoare || !config[cheie]) continue;
       const q = String(valoare).toLowerCase();
-      r = r.filter((row) => String(config[cheie].get(row) ?? "").toLowerCase().includes(q));
+      // `cautare` (opțional): textul în care se caută, dacă diferă de cel afișat (ex. sumă: „3.683,00 3683”).
+      const text = config[cheie].cautare || config[cheie].get;
+      r = r.filter((row) => String(text(row) ?? "").toLowerCase().includes(q));
     }
     if (sortColoana && config[sortColoana]) {
-      const getter = config[sortColoana].get;
+      // `sort` (opțional): valoarea după care se sortează, dacă diferă de cea afișată (ex. dată ISO, nr./an).
+      const getter = config[sortColoana].sort || config[sortColoana].get;
       r = [...r].sort((a, b) => {
         const va = getter(a), vb = getter(b);
         const cmp = typeof va === "number" && typeof vb === "number"
@@ -1776,12 +1779,12 @@ function useFiltrareColoane(rows, config) {
 // `sortDirectie`) + câmp de text cu sugestii, sub etichetă. Se folosește doar pentru coloanele
 // prezente în `config`; restul rămân <th> simple. Fără `onSort`, eticheta rămâne statică (exact
 // comportamentul de dinainte — retrocompatibil cu toate tabelele care nu au nevoie de sortare).
-function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, className, sortColoana, sortDirectie, onSort }) {
+function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, className, sortColoana, sortDirectie, onSort, aliniereDreapta }) {
   const listaId = `sugestii-col-${cheie}`;
   const activ = sortColoana === cheie;
   return (
     <th className={className || "px-2 py-1 align-bottom font-bold"}>
-      <div className="flex flex-col gap-1">
+      <div className={`flex flex-col gap-1 ${aliniereDreapta ? "items-end" : ""}`}>
         {onSort ? (
           <button
             type="button"
@@ -1802,7 +1805,7 @@ function AntetFiltrabil({ cheie, eticheta, filtre, setFiltre, sugestii, classNam
           value={filtre[cheie] || ""}
           onChange={(e) => setFiltre((f) => ({ ...f, [cheie]: e.target.value }))}
           placeholder="Filtrează..."
-          className="w-full text-xs font-normal normal-case border border-stone-200 rounded px-1 py-0.5 text-stone-600"
+          className={`w-full text-xs font-normal normal-case border border-stone-200 rounded px-1 py-0.5 text-stone-600 ${aliniereDreapta ? "text-right" : ""}`}
         />
         <datalist id={listaId}>
           {sugestii?.map((s) => <option key={s} value={s} />)}
@@ -2013,6 +2016,29 @@ function FereastraProvider({ children }) {
   );
 }
 
+// Lucru din tastatură în ferestre: elementele care pot primi focus (câmpuri, liste, butoane, legături).
+const SELECTOR_FOCALIZABIL =
+  'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+function elementeFocalizabile(radacina) {
+  if (!radacina) return [];
+  return [...radacina.querySelectorAll(SELECTOR_FOCALIZABIL)].filter((el) => el.getClientRects().length > 0);
+}
+
+// Elementul care primește focusul la deschiderea unei ferestre (sau la trecerea la pasul următor):
+// 1) un element marcat explicit cu data-autofocus; 2) primul câmp editabil (text, dată, listă);
+// 3) primul buton care NU e distructiv (butoanele de ștergere/anulare roșii sunt evitate, ca un
+// Enter apăsat din reflex să nu declanșeze o ștergere); 4) altfel, primul element disponibil.
+function alegeFocusInitial(radacina) {
+  const toate = elementeFocalizabile(radacina);
+  const explicit = toate.find((el) => el.hasAttribute("data-autofocus"));
+  if (explicit) return explicit;
+  const camp = toate.find((el) => ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName) && !el.readOnly);
+  if (camp) return camp;
+  const butonSigur = toate.find((el) => el.tagName === "BUTTON" && !/rose/.test(el.className));
+  return butonSigur || toate[0] || null;
+}
+
 function Modal({ title, onClose, children, wide, className = "", culoareFundal = "#FAF8F3" }) {
   const largimeInitiala = wide === "xl" ? 1024 : wide ? 672 : 448;
   const containerRef = useRef(null);
@@ -2036,6 +2062,7 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
   const continutRef = useRef(null);
+  const esteMinimizataPentruEfecte = !!(ctxFereastra && ctxFereastra.minimizate[idRef.current] !== undefined);
 
   // REGULĂ: orice fereastră își arată ABSOLUT TOT conținutul pe lățime. Dacă ceva din interior
   // (câmpuri, liste derulante cu denumiri lungi, tabele) nu încape și ar rămâne ascuns în dreapta,
@@ -2045,7 +2072,7 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
   useLayoutEffect(() => {
     const continut = continutRef.current;
     const fereastra = containerRef.current;
-    if (!continut || !fereastra) return undefined;
+    if (!continut || !fereastra) return undefined; // minimizată — se reatașează la restaurare
     let cadru = null;
     const ajusteazaLatimea = () => {
       cadru = null;
@@ -2078,10 +2105,71 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
       observatorModificari.disconnect();
       window.removeEventListener("resize", programeaza);
     };
-  }, []);
+  }, [esteMinimizataPentruEfecte]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const esteFocalizata = !ctxFereastra || ctxFereastra.focalizata === idRef.current;
-  const esteMinimizata = !!(ctxFereastra && ctxFereastra.minimizate[idRef.current] !== undefined);
+  const esteMinimizata = esteMinimizataPentruEfecte;
+  const esteFocalizataRef = useRef(esteFocalizata);
+  esteFocalizataRef.current = esteFocalizata;
+
+  // LUCRU DIN TASTATURĂ — fereastra primește automat focusul, fără click de mouse:
+  //  • la deschidere, la trecerea la alt pas (titlu nou, ex. „Factură nouă” → „Plata facturii”) și
+  //    la restaurarea din bara de jos: focus pe primul câmp (sau pe primul buton nedistructiv);
+  //  • dacă elementul cu focus dispare (conținut înlocuit, date încărcate ulterior), focusul revine
+  //    în fereastră, fără să fie „furat” de la un câmp în care utilizatorul lucrează deja;
+  //  • TAB / Shift+TAB circulă numai printre elementele ferestrei (nu mai „scapă” în pagina din spate);
+  //  • la închidere, focusul revine pe elementul care a deschis fereastra (ex. butonul „Modifică”).
+  const focalizeazaPrimul = useCallback(() => {
+    const radacina = continutRef.current;
+    if (!radacina) return;
+    if (radacina.contains(document.activeElement)) return; // utilizatorul e deja în fereastră
+    const el = alegeFocusInitial(radacina);
+    if (el) el.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+    const anterior = document.activeElement;
+    return () => {
+      requestAnimationFrame(() => {
+        const activ = document.activeElement;
+        if ((!activ || activ === document.body) && anterior && anterior !== document.body && document.contains(anterior) && typeof anterior.focus === "function") {
+          anterior.focus({ preventScroll: true });
+        }
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (esteMinimizata) return undefined;
+    const cadru = requestAnimationFrame(focalizeazaPrimul);
+    return () => cancelAnimationFrame(cadru);
+  }, [title, esteMinimizata, focalizeazaPrimul]);
+
+  useEffect(() => {
+    const radacina = continutRef.current;
+    if (!radacina || esteMinimizata) return undefined;
+    const observator = new MutationObserver(() => {
+      const activ = document.activeElement;
+      if (esteFocalizataRef.current && (!activ || activ === document.body)) focalizeazaPrimul();
+    });
+    observator.observe(radacina, { childList: true, subtree: true });
+    return () => observator.disconnect();
+  }, [esteMinimizata, focalizeazaPrimul]);
+
+  function peTastaInFereastra(e) {
+    if (e.key !== "Tab" || !continutRef.current || !continutRef.current.contains(e.target)) return;
+    const toate = elementeFocalizabile(continutRef.current);
+    if (toate.length === 0) return;
+    const primul = toate[0];
+    const ultimul = toate[toate.length - 1];
+    if (e.shiftKey && document.activeElement === primul) {
+      e.preventDefault();
+      ultimul.focus();
+    } else if (!e.shiftKey && document.activeElement === ultimul) {
+      e.preventDefault();
+      primul.focus();
+    }
+  }
 
   const minimizeaza = useCallback(() => {
     if (ctxFereastra) ctxFereastra.minimizeaza(idRef.current, title);
@@ -2105,6 +2193,7 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
   useEffect(() => {
     if (ctxFereastra && esteFocalizata && !eraFocalizataInainte.current) {
       setZIndexLocal(ctxFereastra.urmatorulZIndex());
+      requestAnimationFrame(focalizeazaPrimul);
     }
     eraFocalizataInainte.current = esteFocalizata;
   }, [esteFocalizata]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2205,6 +2294,7 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
           if (containerRef.current && !containerRef.current.contains(e.target)) return;
           aduLaFata();
         }}
+        onKeyDown={peTastaInFereastra}
       >
         <div
           className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 cursor-move select-none flex-shrink-0"
@@ -7681,6 +7771,34 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
     [derived.contById]
   );
 
+  // Filtre și sortare pe coloane (aceleași componente ca în Registrul Jurnal). Cheile au prefixul
+  // „ff” ca listele de sugestii să nu se confunde cu cele ale tabelelor din pagina din spate.
+  const randuriFacturi = useMemo(() => facturi || [], [facturi]);
+  const configColoaneFacturi = useMemo(() => ({
+    ffNrAn: { get: (f) => `${f.nr}/${f.an}`, sort: (f) => Number(f.an) * 1000000 + Number(f.nr) },
+    ffData: { get: (f) => fmtDataJurnal(f.data), sort: (f) => f.data || "" },
+    ffFurnizor: { get: (f) => f.furnizor || "" },
+    ffNrFactura: { get: (f) => f.nrFactura || "" },
+    ffSuma: { get: (f) => fmt(f.suma), cautare: (f) => `${fmt(f.suma)} ${f.suma}`, sort: (f) => Number(f.suma) || 0 },
+  }), []);
+  const { filtre, setFiltre, procesate, sugestiiPentru, sortColoana, sortDirectie, onSort } =
+    useFiltrareColoane(randuriFacturi, configColoaneFacturi);
+  const areFiltre = Object.values(filtre).some((v) => v && String(v).trim());
+  const antet = (cheie, eticheta, extra = {}) => (
+    <AntetFiltrabil
+      cheie={cheie}
+      eticheta={eticheta}
+      filtre={filtre}
+      setFiltre={setFiltre}
+      sugestii={sugestiiPentru(cheie)}
+      sortColoana={sortColoana}
+      sortDirectie={sortDirectie}
+      onSort={onSort}
+      className={`px-2 py-1.5 align-bottom font-bold ${extra.className || ""}`}
+      aliniereDreapta={extra.aliniereDreapta}
+    />
+  );
+
   async function confirmaStergere(id) {
     setSeSalveaza(true);
     try {
@@ -7705,31 +7823,53 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
         {facturi === null && <div className="text-sm text-stone-500 py-6 text-center">Se încarcă...</div>}
         {facturi !== null && facturi.length === 0 && <div className="text-sm text-stone-500 py-6 text-center">Nicio factură de furnizor înregistrată încă.</div>}
         {facturi !== null && facturi.length > 0 && (
+          <>
+          <div className="flex items-center justify-between mb-2 text-xs text-stone-500">
+            <span>
+              {areFiltre
+                ? `Afișate ${procesate.length} din ${facturi.length} facturi`
+                : `${facturi.length} facturi`}
+              {sortColoana ? " · sortare activă (clic pe antet pentru a inversa ordinea)" : " · clic pe antetul unei coloane pentru sortare"}
+            </span>
+            {areFiltre && (
+              <button type="button" onClick={() => setFiltre({})} className="text-[#1F3864] hover:underline">
+                Șterge filtrele
+              </button>
+            )}
+          </div>
           <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200">
-                  <th className="px-2 py-1.5 font-bold">Nr./An</th>
-                  <th className="px-2 py-1.5 font-bold">Data</th>
-                  <th className="px-2 py-1.5 font-bold">Furnizor</th>
-                  <th className="px-2 py-1.5 font-bold">Nr. factură</th>
-                  <th className="px-2 py-1.5 font-bold">Scadență</th>
-                  <th className="px-2 py-1.5 text-right font-bold">Sumă</th>
-                  <th className="px-2 py-1.5 font-bold">Stare</th>
-                  <th className="px-2 py-1.5 font-bold"></th>
+              <thead className="sticky top-0 bg-white z-10">
+                {/* Lățimi minime: eticheta, săgețile de sortare și câmpul „Filtrează...” încap integral. */}
+                <tr className="text-left text-xs text-stone-500 font-bold border-b border-stone-200">
+                  {antet("ffNrAn", "Nr./An", { className: "min-w-[6.75rem]" })}
+                  {antet("ffData", "Data", { className: "min-w-[7rem]" })}
+                  {antet("ffFurnizor", "Furnizor", { className: "min-w-[16rem]" })}
+                  {antet("ffNrFactura", "Nr. factură", { className: "min-w-[7.5rem] whitespace-nowrap" })}
+                  <th className="px-2 py-1.5 align-bottom font-bold">Scadență</th>
+                  {antet("ffSuma", "Sumă", { className: "min-w-[6.5rem] text-right", aliniereDreapta: true })}
+                  <th className="px-2 py-1.5 align-bottom font-bold">Stare</th>
+                  <th className="px-2 py-1.5 align-bottom font-bold"></th>
                 </tr>
               </thead>
               <tbody>
-                {facturi.map((f) => {
+                {procesate.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-2 py-6 text-center text-sm text-stone-500">
+                      Nicio factură nu corespunde filtrelor.
+                    </td>
+                  </tr>
+                )}
+                {procesate.map((f) => {
                   const eAchitata = f.platiLegate.length > 0;
                   return (
                     <tr key={f.id} className="border-b border-stone-100 odd:bg-white even:bg-stone-50">
-                      <td className="px-2 py-1.5">{f.nr}/{f.an}</td>
-                      <td className="px-2 py-1.5">{fmtDataJurnal(f.data)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{f.nr}/{f.an}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{fmtDataJurnal(f.data)}</td>
                       <td className="px-2 py-1.5">{f.furnizor}</td>
-                      <td className="px-2 py-1.5 text-stone-500">{f.nrFactura || "—"}</td>
-                      <td className="px-2 py-1.5 text-stone-500">{f.dataScadenta ? fmtDataJurnal(f.dataScadenta) : "—"}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(f.suma)}</td>
+                      <td className="px-2 py-1.5 text-stone-500 whitespace-nowrap">{f.nrFactura || "—"}</td>
+                      <td className="px-2 py-1.5 text-stone-500 whitespace-nowrap">{f.dataScadenta ? fmtDataJurnal(f.dataScadenta) : "—"}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium whitespace-nowrap">{fmt(f.suma)}</td>
                       <td className="px-2 py-1.5">
                         {eAchitata ? (
                           <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium whitespace-nowrap" title={`Achitată prin OP ${f.platiLegate.map((p) => `${p.nr}/${p.an}`).join(", ")}`}>
@@ -7760,6 +7900,7 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
       {factuaInEditare && (
