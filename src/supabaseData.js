@@ -1990,6 +1990,37 @@ export async function editeazaBonConsumConsumIntern(documentId, { data, motiv, b
   return { articolePatch, miscariNoiIesire: miscariNoi, idsMiscariSterse: miscariVechi.map((m) => m.id), liniiRezultat };
 }
 
+// Șterge un bon de consum întreg — restituie stocul consumat de fiecare linie, șterge mișcările
+// și documentul (cu renumerotarea aferentă). Lipsea complet din aplicație — doar editarea exista.
+export async function stergeBonConsum(documentId) {
+  const { data: miscari, error: errM } = await supabase.from("miscari_consum_intern").select("*").eq("document_id", documentId).eq("tip", "iesire");
+  if (errM) throw errM;
+  if (!miscari || miscari.length === 0) throw new Error("Nu s-au găsit mișcări de stoc pentru acest bon de consum.");
+
+  const idsArticole = [...new Set(miscari.map((m) => m.articol_id))];
+  const { data: articole, error: errArt } = await supabase.from("articole_consum_intern").select("id, stoc").in("id", idsArticole);
+  if (errArt) throw errArt;
+  const articolById = Object.fromEntries(articole.map((a) => [a.id, a]));
+
+  const cantitatePeArticol = new Map();
+  for (const m of miscari) cantitatePeArticol.set(m.articol_id, (cantitatePeArticol.get(m.articol_id) || 0) + Number(m.cantitate));
+
+  const articolePatch = [];
+  for (const [articolId, cantitate] of cantitatePeArticol) {
+    const art = articolById[articolId];
+    const stocNou = Number(art.stoc) + cantitate;
+    const { error: errUpd } = await supabase.from("articole_consum_intern").update({ stoc: stocNou }).eq("id", articolId);
+    if (errUpd) throw errUpd;
+    articolePatch.push({ id: articolId, stoc: stocNou });
+  }
+
+  const { error: errDel } = await supabase.from("miscari_consum_intern").delete().eq("document_id", documentId).eq("tip", "iesire");
+  if (errDel) throw errDel;
+
+  const { renumerotari } = await stergeDocument(documentId);
+  return { articolePatch, idsMiscariSterse: miscari.map((m) => m.id), renumerotari };
+}
+
 // Bonurile de consum sunt documente reale (tip "bon_consum"), fără nicio linie financiară —
 // reconstituim forma așteptată de interfață (nr/an/dată/motiv/beneficiar/linii) din documente +
 // mișcările de tip "iesire" legate de fiecare. Motivul, deși comun tuturor liniilor unui bon,

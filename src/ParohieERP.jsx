@@ -16,7 +16,7 @@ import { getToatePrevederile, salveazaPrevederiBugetare, getOperatiuni, salveaza
   creeazaStocInitialConsumIntern as creeazaStocInitialConsumInternBackend,
   editeazaStocInitialConsumIntern as editeazaStocInitialConsumInternBackend,
   stergeStocInitialConsumIntern as stergeStocInitialConsumInternBackend,
-  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, getBonuriConsum, getDatoriiFurnizoriGenerale, getFacturiFurnizori, editeazaFacturaFurnizor, stergeFacturaFurnizor, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
+  bonDeConsumConsumIntern, editeazaBonConsumConsumIntern, stergeBonConsum, getBonuriConsum, getDatoriiFurnizoriGenerale, getFacturiFurnizori, editeazaFacturaFurnizor, stergeFacturaFurnizor, incarcaImagineProdusPangar, stergeDocument, getParteneri, creeazaPartener, editeazaPartener, stergePartener, editeazaReceptiePangar, adaugaLinieReceptiePangar, editeazaVanzarePangar, creeazaStocInitialPangar, editeazaStocInitialPangar, stergeStocInitialPangar, getLocuriInhumare, creeazaLocInhumare, getConcesiuni, creeazaConcesiune as creeazaConcesiuneApi, getPersoaneInhumate, creeazaPersoanaInhumata, reinnoiesteConcesiune, editeazaConcesiuneApi, transferaConcesiuneApi, getBunuriPatrimoniu, creeazaBunPatrimoniu, editeazaBunPatrimoniu, caseazaBunPatrimoniu, getCorespondenta, creeazaCorespondentaIntrare, creeazaCorespondentaIesire, actualizeazaStatusCorespondenta, getArhiva, creeazaDocumentArhiva, getInventarieriPatrimoniu, creeazaInventariere, getOrganismeParohiale, creeazaMandatOrganism, stergeMandatOrganism, adaugaMembruOrganism, actualizeazaMembruOrganism, stergeMembruOrganism, adaugaProcesVerbalOrganism, actualizeazaProcesVerbalOrganism, stergeProcesVerbalOrganism, adaugaComisionBancarPending, getComisioaneBancareNeconsolidate, consolideazaComisioaneLuna } from "./supabaseData";
 import ImportDateTab from "./ImportDateTab";
 import { normalizeazaPlati, esteAchitareValida, calculeazaLiniiCuRest, construiesteLiniiAchitare, ultimaZiCalendaristica, formateazaCantitate } from "./pangarFinanciar.mjs";
 import {
@@ -14758,6 +14758,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
   const [notice, setNotice] = useState(null);
   const [instanteEditReceptie, setInstanteEditReceptie] = useState([]); // [{id, miscare}]
   const [instanteEditBon, setInstanteEditBon] = useState([]); // [{id, bon}]
+  const [confirmareStergereBon, setConfirmareStergereBon] = useState(null); // documentId | null
   const [confirmareStergereReceptie, setConfirmareStergereReceptie] = useState(null); // miscareId | null
   const [instanteAchitare, setInstanteAchitare] = useState([]); // [{id, datorie}]
   const [confirmareStergereNRCD, setConfirmareStergereNRCD] = useState(null); // documentId | null
@@ -14959,7 +14960,31 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
     }
   }
 
-  // (rescris integral mai sus — codul de dedesubt, acum orfan, se șterge)
+  // Ștergere bon de consum: restituie stocul consumat de fiecare linie a bonului, apoi șterge
+  // mișcările și documentul întreg (cu renumerotarea aferentă) — lipsea complet, doar editarea
+  // exista.
+  async function stergeBon(bonId) {
+    const bonVechi = state.bonuriConsum.find((b) => b.id === bonId);
+    if (!bonVechi) return;
+    try {
+      const rezultat = await stergeBonConsum(bonId);
+      setState((s) => {
+        const sPatched = aplicaRenumerotari(s, rezultat.renumerotari);
+        return {
+          ...sPatched,
+          articoleConsumIntern: sPatched.articoleConsumIntern.map((a) => {
+            const patch = rezultat.articolePatch.find((p) => p.id === a.id);
+            return patch ? { ...a, stoc: patch.stoc } : a;
+          }),
+          miscariConsumIntern: sPatched.miscariConsumIntern.filter((m) => !rezultat.idsMiscariSterse.includes(m.id)),
+          bonuriConsum: sPatched.bonuriConsum.filter((b) => b.id !== bonId),
+          jurnalAudit: adaugaAudit(sPatched, permisiuni.label, `Ștergere bon de consum nr. ${bonVechi.nr}/${bonVechi.an}`),
+        };
+      });
+    } catch (e) {
+      setNotice(e.message || "Eroare la ștergerea bonului de consum.");
+    }
+  }
 
   // Grupare pe denumire+UM (produsul, din perspectiva utilizatorului), cu loturile FIFO în spate.
   const grupeConsumIntern = useMemo(() => {
@@ -15374,9 +15399,19 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
                   <td className="px-3 py-1">
                     {anInchisDefinitiv ? (
                       <span className="text-xs text-stone-400">Închis definitiv</span>
-                    ) : (
-                      !permisiuni.citireOnly && <Btn variant="gold" onClick={() => setInstanteEditBon((l) => [...l, { id: uid(), bon }])}>Modifică</Btn>
-                    )}
+                    ) : !permisiuni.citireOnly ? (
+                      confirmareStergereBon === bon.id ? (
+                        <div className="flex gap-1">
+                          <Btn variant="danger" onClick={async () => { await stergeBon(bon.id); setConfirmareStergereBon(null); }}>Confirmă</Btn>
+                          <Btn variant="ghost" onClick={() => setConfirmareStergereBon(null)}>Anulează</Btn>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1">
+                          <Btn variant="gold" onClick={() => setInstanteEditBon((l) => [...l, { id: uid(), bon }])}>Modifică</Btn>
+                          <Btn variant="danger" onClick={() => setConfirmareStergereBon(bon.id)}>Șterge</Btn>
+                        </div>
+                      )
+                    ) : null}
                   </td>
                 </tr>
               );
