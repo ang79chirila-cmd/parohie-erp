@@ -34,7 +34,7 @@ export async function logare(cif, username, parola) {
   const { data: randuriProfil, error: errProfil } = await supabase.rpc("profil_propriu");
   const profil = Array.isArray(randuriProfil) ? randuriProfil[0] : randuriProfil;
   if (errProfil || !profil) {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
     return { ok: false, error: "Profilul contului nu a putut fi găsit." };
   }
 
@@ -50,7 +50,10 @@ export async function delogare() {
   } catch (e) {
     // ignorat intenționat — vezi comentariul de mai sus
   }
-  await supabase.auth.signOut();
+  // scope "local": închide pe server DOAR sesiunea acestei ferestre. Varianta implicită ("global")
+  // închide toate sesiunile contului — astfel o logare refuzată (cont deja conectat) ar fi delogat
+  // tocmai sesiunea legitimă deja deschisă (defect găsit la testul din 24.09.2026).
+  await supabase.auth.signOut({ scope: "local" });
 }
 
 // Limita de sesiuni simultane (verificată pe server, funcția SQL "inregistreaza_sesiune"):
