@@ -1840,7 +1840,10 @@ export async function stergeStocInitialConsumIntern(miscareId) {
 // vezi receptioneazaFacturaMixta). Devine un document real (tip "bon_consum"), numerotat prin
 // mecanismul atomic obișnuit — dar fără nicio linie financiară (linii: []).
 export async function bonDeConsumConsumIntern(parohieId, { data, motiv, beneficiar, linii }) {
-  const rezultatDoc = await salveazaDocument(parohieId, { tip: "bonConsum", data, tert: beneficiar || null, linii: [] });
+  // CRITIC: "bon_consum" (snake_case), NU "bonConsum" — a doua apariție a aceleiași clase de bug
+  // găsite la facturi furnizor (tip scris cu literă mare, căutat cu underscore la citire, în
+  // getBonuriConsum) — corectată aici înainte să apuce să dea aceeași sperietură.
+  const rezultatDoc = await salveazaDocument(parohieId, { tip: "bon_consum", data, tert: beneficiar || null, linii: [] });
   const documentId = rezultatDoc.documentId;
 
   const idsArticole = [...new Set(linii.map((l) => l.articolId).filter(Boolean))];
