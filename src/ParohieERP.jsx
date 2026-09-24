@@ -2149,7 +2149,14 @@ function Modal({ title, onClose, children, wide, className = "", culoareFundal =
             ? "0 25px 50px -12px rgba(0,0,0,0.45), 0 0 0 1px rgba(31,56,100,0.15)"
             : "0 10px 20px -8px rgba(0,0,0,0.3)",
         }}
-        onMouseDown={aduLaFata}
+        onMouseDown={(e) => {
+          // Evenimentele dintr-o fereastră-copil (deschisă din interiorul acesteia, dar randată prin
+          // portal direct în <body>) urcă prin arborele React până aici, deși în DOM nu aparțin
+          // acestei ferestre. Le ignorăm — altfel un click în fereastra-copil aducea fereastra-părinte
+          // în față, ascunzând copilul (defect găsit la „Facturi furnizori → Modifică”, 25.09.2026).
+          if (containerRef.current && !containerRef.current.contains(e.target)) return;
+          aduLaFata();
+        }}
       >
         <div
           className="flex items-center justify-between px-5 py-3 border-b border-stone-200 sticky top-0 cursor-move select-none flex-shrink-0"
@@ -7709,6 +7716,9 @@ function FacturiFurnizoriListaModal({ parohieId, derived, permisiuni, onClose })
       </div>
       {factuaInEditare && (
         <FacturaFurnizorEditForm
+          // key: la „Modifică” pe altă factură, formularul se reinițializează cu datele ei. Fără key,
+          // formularul păstra datele facturii anterioare și le-ar fi salvat peste factura nou aleasă.
+          key={factuaInEditare.id}
           factura={factuaInEditare}
           conturiSelectabile={conturiSelectabile}
           onClose={() => setFacturaInEditare(null)}
