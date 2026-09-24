@@ -28,11 +28,11 @@ export async function logare(cif, username, parola) {
   }
 
   // Aducem profilul (parohie_id, rol) — necesar pentru a ști ce vede utilizatorul (fără alegere manuală a rolului).
-  const { data: profil, error: errProfil } = await supabase
-    .from("utilizatori")
-    .select("parohie_id, rol, username")
-    .eq("id", data.user.id)
-    .maybeSingle();
+  // Prin funcția SQL "profil_propriu" (SECURITY DEFINER, întoarce doar rândul celui logat): profilul
+  // trebuie citit înainte de pasul 2FA și de înregistrarea sesiunii, deci nu poate depinde de
+  // regulile de acces la datele parohiei (care vor cere o sesiune înregistrată).
+  const { data: randuriProfil, error: errProfil } = await supabase.rpc("profil_propriu");
+  const profil = Array.isArray(randuriProfil) ? randuriProfil[0] : randuriProfil;
   if (errProfil || !profil) {
     await supabase.auth.signOut();
     return { ok: false, error: "Profilul contului nu a putut fi găsit." };
@@ -41,8 +41,39 @@ export async function logare(cif, username, parola) {
   return { ok: true, session: data.session, parohieId: profil.parohie_id, rol: profil.rol, username: profil.username };
 }
 
+// Delogare: întâi eliberăm locul sesiunii (limita de sesiuni simultane), apoi închidem sesiunea.
+// Eșecul eliberării (ex. fără internet) nu blochează delogarea: locul expiră oricum pe server
+// după 3 minute fără semnal de viață.
 export async function delogare() {
+  try {
+    await supabase.rpc("elibereaza_sesiune");
+  } catch (e) {
+    // ignorat intenționat — vezi comentariul de mai sus
+  }
   await supabase.auth.signOut();
+}
+
+// Limita de sesiuni simultane (verificată pe server, funcția SQL "inregistreaza_sesiune"):
+// o singură sesiune pe cont și maximum 3 sesiuni pe parohie. Aceeași funcție servește și ca
+// semnal de viață (apelată periodic cât aplicația e deschisă). Întoarce codul serverului:
+// "ok" | "cont_ocupat" | "parohie_plina" | "necesita_2fa" | "neautentificat" | "fara_parohie".
+// Aruncă excepție doar la eroare tehnică (ex. rețea), ca apelantul să poată reîncerca.
+export async function inregistreazaSesiune() {
+  const { data, error } = await supabase.rpc("inregistreaza_sesiune");
+  if (error) throw error;
+  return data;
+}
+
+// Mesajele afișate utilizatorului când serverul refuză o sesiune.
+export function mesajRefuzSesiune(cod) {
+  switch (cod) {
+    case "cont_ocupat":
+      return "Acest cont este deja conectat pe alt dispozitiv sau în altă fereastră. Delogați-vă acolo și încercați din nou. Dacă fereastra a fost închisă fără delogare, locul se eliberează automat în cel mult 3 minute.";
+    case "parohie_plina":
+      return "La această parohie sunt deja conectate 3 persoane (limita maximă de sesiuni simultane). Încercați din nou după ce una dintre ele se deloghează.";
+    default:
+      return "Sesiunea nu a putut fi validată de server. Autentificați-vă din nou.";
+  }
 }
 
 // Creare cont — apelează Edge Function-ul deja publicat și testat ("creeaza-utilizator").

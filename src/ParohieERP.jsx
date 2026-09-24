@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { supabase } from "./supabaseClient";
-import { gasesteParohieDupaCif, logare, delogare, creeazaCont, tokenSesiuneCurenta } from "./authSupabase";
+import { gasesteParohieDupaCif, logare, delogare, creeazaCont, tokenSesiuneCurenta, inregistreazaSesiune, mesajRefuzSesiune } from "./authSupabase";
 import {
   inceapeInrolareTOTP, confirmaInrolareTOTP, listeazaFactoriMFA, verificaLoginTOTP,
   dezactiveazaTOTP, genereazaCodRecuperare, foloseesteCodRecuperare, reseteazaMfaUtilizator,
@@ -718,6 +718,38 @@ function emptyState() {
 }
 
 const DEMO_CIF = "00000000";
+
+// Delogare automată după inactivitate: dacă, cu aplicația deschisă, nu există nicio acțiune a
+// utilizatorului (mouse, tastatură, atingere, derulare) timp de 10 minute, sesiunea se închide
+// și se cere din nou autentificarea completă (parolă + cod 2FA). Momentul ultimei activități e
+// păstrat și în sessionStorage, ca o reîncărcare a paginii după pauză să nu redeschidă sesiunea.
+const INACTIVITATE_MAX_MS = 10 * 60 * 1000;
+const CHEIE_ULTIMA_ACTIVITATE = "parohieerp-ultima-activitate";
+// Semnalul de viață al sesiunii către server (limita de sesiuni simultane): la fiecare minut.
+// Serverul eliberează locul unei sesiuni fără semnal de peste 3 minute (fereastră închisă fără delogare).
+const SEMNAL_SESIUNE_MS = 60 * 1000;
+const MESAJ_SESIUNE_INCHISA_DE_SERVER =
+  "Sesiunea ta nu mai este validă pe server (a fost închisă sau locul ei a fost ocupat cât dispozitivul a fost inactiv). Autentifică-te din nou.";
+const MESAJ_DELOGARE_INACTIVITATE =
+  "Ai fost delogat automat după 10 minute de inactivitate. Pentru a continua, autentifică-te din nou (parolă și, dacă e activ, codul de 6 cifre).";
+
+function citesteUltimaActivitate() {
+  try {
+    const v = Number(window.sessionStorage.getItem(CHEIE_ULTIMA_ACTIVITATE));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function scrieUltimaActivitate(momentMs) {
+  try {
+    if (momentMs == null) window.sessionStorage.removeItem(CHEIE_ULTIMA_ACTIVITATE);
+    else window.sessionStorage.setItem(CHEIE_ULTIMA_ACTIVITATE, String(momentMs));
+  } catch (e) {
+    // sessionStorage indisponibil — controlul în memorie (din pagină) rămâne activ.
+  }
+}
 const DEMO_NUME_PAROHIE = "Parohia „Sfântul Nicolae” (fictivă — date de test)";
 
 // Roluri și permisiuni: un singur cont de acces (CIF), utilizatorul alege rolul activ după autentificare.
@@ -4144,7 +4176,40 @@ const faraAutocompletareParola = {
   autoComplete: "new-password",
 };
 
-function LoginScreen({ onSetup, onLogin, onVerifyMfa, onRecoveryLogin }) {
+// Avertisment afișat doar în ultimul minut înainte de delogarea automată din inactivitate.
+// Componentă separată, cu propriul cronometru, ca actualizarea la fiecare secundă să nu
+// redeseneze întreaga aplicație. Orice activitate (mișcare de mouse, click, tastă, derulare)
+// actualizează ultimaActivitateRef, deci avertismentul dispare singur la următoarea secundă.
+function AvertismentInactivitate({ ultimaActivitateRef }) {
+  const [secunde, setSecunde] = useState(null);
+  useEffect(() => {
+    const actualizeaza = () => {
+      const ramas = INACTIVITATE_MAX_MS - (Date.now() - ultimaActivitateRef.current);
+      setSecunde(ramas > 0 && ramas <= 60000 ? Math.ceil(ramas / 1000) : null);
+    };
+    actualizeaza();
+    const interval = window.setInterval(actualizeaza, 1000);
+    return () => window.clearInterval(interval);
+  }, [ultimaActivitateRef]);
+
+  if (secunde == null) return null;
+  return (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4" role="alertdialog" aria-live="assertive">
+      <div className="bg-white rounded-lg shadow-xl border border-amber-300 max-w-sm w-full p-5 text-center">
+        <div className="flex items-center justify-center gap-2 text-amber-700 font-medium">
+          <AlertTriangle size={18} /> Inactivitate
+        </div>
+        <p className="mt-2 text-sm text-stone-700">
+          Vei fi delogat automat în <span className="font-semibold text-rose-700 tabular-nums">{secunde}</span>{" "}
+          {secunde === 1 ? "secundă" : "secunde"}.
+        </p>
+        <p className="mt-1 text-xs text-stone-500">Mișcă mouse-ul sau apasă orice tastă pentru a rămâne conectat.</p>
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({ onSetup, onLogin, onVerifyMfa, onRecoveryLogin, mesajInfo }) {
   const [pas, setPas] = useState("cif"); // "cif" | "login" | "setup" | "mfa-cod" | "mfa-recuperare"
   const [cif, setCif] = useState("");
   const [denumireParohie, setDenumireParohie] = useState("");
@@ -4189,6 +4254,8 @@ function LoginScreen({ onSetup, onLogin, onVerifyMfa, onRecoveryLogin }) {
     if (rez === "mfa") {
       setError("");
       setPas("mfa-cod");
+    } else if (rez && rez.refuz) {
+      setError(rez.refuz);
     } else if (!rez) {
       setError("Cod fiscal (CIF), nume de utilizator sau parolă incorectă.");
     }
@@ -4201,7 +4268,12 @@ function LoginScreen({ onSetup, onLogin, onVerifyMfa, onRecoveryLogin }) {
       return;
     }
     const ok = await onVerifyMfa(codMfa.trim());
-    if (!ok) setError("Cod incorect — reîncercați.");
+    if (ok && ok.refuz) {
+      // Cod corect, dar serverul a refuzat sesiunea (limita de sesiuni) — revenim la parolă.
+      setCodMfa("");
+      setPas("login");
+      setError(ok.refuz);
+    } else if (!ok) setError("Cod incorect — reîncercați.");
   }
 
   async function submitCodRecuperare() {
@@ -4211,7 +4283,10 @@ function LoginScreen({ onSetup, onLogin, onVerifyMfa, onRecoveryLogin }) {
       return;
     }
     const ok = await onRecoveryLogin(codRecuperareIntrodus.trim());
-    if (!ok) setError("Cod de recuperare invalid sau deja folosit.");
+    if (ok && ok.refuz) {
+      setPas("login");
+      setError(ok.refuz);
+    } else if (!ok) setError("Cod de recuperare invalid sau deja folosit.");
   }
 
   async function submitSetup() {
@@ -4252,6 +4327,13 @@ function LoginScreen({ onSetup, onLogin, onVerifyMfa, onRecoveryLogin }) {
             {pas === "mfa-recuperare" && "Cod de recuperare"}
           </p>
         </div>
+
+        {mesajInfo && (
+          <div className="mb-3 bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800 flex items-start gap-2">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>{mesajInfo}</span>
+          </div>
+        )}
 
         <Card className="p-5 flex flex-col gap-3">
           {pas === "cif" && (
@@ -4826,6 +4908,9 @@ export default function ParohieERP() {
   const [authLoaded, setAuthLoaded] = useState(false);
   const [session, setSession] = useState(null); // CIF curent logat, sau null
   const [contActiv, setContActiv] = useState(null); // { cif, username, rol, parohieId } | null
+  // Mesaj afișat pe ecranul de autentificare după delogarea automată din inactivitate.
+  const [mesajDelogare, setMesajDelogare] = useState("");
+  const ultimaActivitateRef = useRef(Date.now());
   const [modAdaugaParohie, setModAdaugaParohie] = useState(false);
   const [showChangePw, setShowChangePw] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -4867,6 +4952,14 @@ export default function ParohieERP() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       let sesiuneValida = !!data.session?.user;
+      const ultimaActivitate = citesteUltimaActivitate();
+      if (sesiuneValida && ultimaActivitate != null && Date.now() - ultimaActivitate >= INACTIVITATE_MAX_MS) {
+        // Pagina a fost reîncărcată după o pauză mai lungă decât limita — nu redeschidem sesiunea.
+        sesiuneValida = false;
+        await delogare();
+        scrieUltimaActivitate(null);
+        setMesajDelogare(MESAJ_DELOGARE_INACTIVITATE);
+      }
       if (sesiuneValida) {
         try {
           const { data: nivel, error: errNivel } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -4875,6 +4968,22 @@ export default function ParohieERP() {
           sesiuneValida = false;
         }
         if (!sesiuneValida) await delogare();
+      }
+      if (sesiuneValida) {
+        // Limita de sesiuni simultane: sesiunea restaurată trebuie să-și păstreze locul pe server.
+        // (La reîncărcarea paginii în aceeași fereastră sesiunea e aceeași, deci locul ei e recunoscut.)
+        try {
+          const cod = await inregistreazaSesiune();
+          if (cod !== "ok") {
+            sesiuneValida = false;
+            await delogare();
+            setMesajDelogare(mesajRefuzSesiune(cod));
+          }
+        } catch (e) {
+          sesiuneValida = false;
+          await delogare();
+          setMesajDelogare("Sesiunea nu a putut fi verificată (conexiune la server). Autentificați-vă din nou.");
+        }
       }
       if (sesiuneValida) {
         const { data: profil } = await supabase
@@ -5207,11 +5316,29 @@ export default function ParohieERP() {
 
   // Creare parohie nouă — apelează Edge Function-ul "creeaza-utilizator" (fără tokenAdmin, deci
   // acest prim cont devine automat "preot"/Administrator), apoi logare automată.
+  // Ocupă locul sesiunii pe server (limita: 1 sesiune / cont, 3 / parohie). Apelată după
+  // autentificarea completă (după codul 2FA, unde e cazul). La refuz, închide sesiunea abia
+  // deschisă și întoarce mesajul pentru utilizator; la succes întoarce null.
+  async function ocupaLocSesiune() {
+    let cod;
+    try {
+      cod = await inregistreazaSesiune();
+    } catch (e) {
+      await delogare();
+      return "Sesiunea nu a putut fi înregistrată (conexiune la server). Încercați din nou.";
+    }
+    if (cod === "ok") return null;
+    await delogare();
+    return mesajRefuzSesiune(cod);
+  }
+
   async function handleSetup(cif, denumireParohie, username, password, emailRecuperare) {
     const rezultat = await creeazaCont({ cif, denumireParohie, username, parola: password, rol: "preot", emailRecuperare });
     if (!rezultat.ok) return { ok: false, error: rezultat.error };
     const rezLogare = await logare(cif, username, password);
     if (!rezLogare.ok) return { ok: false, error: rezLogare.error };
+    const refuzSetup = await ocupaLocSesiune();
+    if (refuzSetup) return { ok: false, error: refuzSetup };
     const { data: userData } = await supabase.auth.getUser();
     setContActiv({ id: userData?.user?.id, cif, username: rezLogare.username, rol: rezLogare.rol, parohieId: rezLogare.parohieId });
     setSession(cif);
@@ -5269,31 +5396,42 @@ export default function ParohieERP() {
       return "mfa";
     }
 
+    const refuz = await ocupaLocSesiune();
+    if (refuz) return { refuz };
+
     setContActiv({ cif, username: rezultat.username, rol: rezultat.rol, parohieId: rezultat.parohieId });
     setSession(cif);
     setRolActiv(ROL_DB_LA_LOCAL[rezultat.rol] || rezultat.rol);
     return true;
   }
 
+  // Întoarce null la succes, sau mesajul de refuz al serverului (limita de sesiuni simultane).
   async function finalizeazaLoginDupaMfa() {
-    if (!mfaPendingAuth) return;
+    if (!mfaPendingAuth) return null;
     const { cif, username, rol, parohieId } = mfaPendingAuth;
+    const refuz = await ocupaLocSesiune();
+    if (refuz) {
+      setMfaPendingAuth(null);
+      return refuz;
+    }
     const { data: userData } = await supabase.auth.getUser();
     setContActiv({ id: userData?.user?.id, cif, username, rol, parohieId });
     setSession(cif);
     setRolActiv(ROL_DB_LA_LOCAL[rol] || rol);
     setMfaPendingAuth(null);
+    return null;
   }
 
   async function handleVerifyMfa(cod6cifre) {
     if (!mfaPendingAuth) return false;
     try {
       await verificaLoginTOTP(mfaPendingAuth.factorId, cod6cifre);
-      await finalizeazaLoginDupaMfa();
-      return true;
     } catch (e) {
       return false;
     }
+    const refuz = await finalizeazaLoginDupaMfa();
+    if (refuz) return { refuz };
+    return true;
   }
 
   async function handleRecoveryLogin(codRecuperare) {
@@ -5302,7 +5440,8 @@ export default function ParohieERP() {
       await foloseesteCodRecuperare(codRecuperare);
       // Codul de recuperare a șters factorul TOTP pierdut pe server — contul e acum
       // fără al doilea factor, exact ca un cont care nu s-a înrolat niciodată.
-      await finalizeazaLoginDupaMfa();
+      const refuz = await finalizeazaLoginDupaMfa();
+      if (refuz) return { refuz };
       setForteazaReinrolareMfa(true);
       setShowSecuritate(true);
       return true;
@@ -5311,7 +5450,82 @@ export default function ParohieERP() {
     }
   }
 
+  // Supraveghere inactivitate — activă doar cât există o sesiune deschisă. Verificarea rulează
+  // la fiecare secundă (ieftin: nu modifică starea decât la delogare), ca delogarea să coincidă
+  // exact cu finalul numărătorii afișate de AvertismentInactivitate.
+  useEffect(() => {
+    if (!session) return undefined;
+    setMesajDelogare("");
+    const acum = Date.now();
+    ultimaActivitateRef.current = acum;
+    scrieUltimaActivitate(acum);
+
+    let ultimaScriere = acum;
+    const marcheazaActivitate = () => {
+      const t = Date.now();
+      ultimaActivitateRef.current = t;
+      // Scriem în sessionStorage cel mult o dată la 5 secunde (evenimentele de mouse sunt foarte dese).
+      if (t - ultimaScriere >= 5000) {
+        ultimaScriere = t;
+        scrieUltimaActivitate(t);
+      }
+    };
+    const verificaInactivitate = () => {
+      if (Date.now() - ultimaActivitateRef.current >= INACTIVITATE_MAX_MS) {
+        handleLogout();
+        setMesajDelogare(MESAJ_DELOGARE_INACTIVITATE);
+      }
+    };
+    const laSchimbareVizibilitate = () => {
+      if (document.visibilityState === "visible") verificaInactivitate();
+    };
+
+    const evenimente = ["mousemove", "mousedown", "keydown", "wheel", "touchstart", "scroll"];
+    evenimente.forEach((ev) => window.addEventListener(ev, marcheazaActivitate, { passive: true, capture: true }));
+    document.addEventListener("visibilitychange", laSchimbareVizibilitate);
+    const interval = window.setInterval(verificaInactivitate, 1000);
+
+    return () => {
+      evenimente.forEach((ev) => window.removeEventListener(ev, marcheazaActivitate, { capture: true }));
+      document.removeEventListener("visibilitychange", laSchimbareVizibilitate);
+      window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // Semnal de viață al sesiunii (limita de sesiuni simultane): o dată pe minut și la revenirea
+  // pe fereastră. Dacă serverul nu mai recunoaște sesiunea (închisă sau locul ei preluat de altă
+  // logare cât dispozitivul a fost inactiv), aplicația se delogează cu mesaj. O eroare de rețea
+  // nu delogează: se reîncearcă la următorul semnal.
+  useEffect(() => {
+    if (!session) return undefined;
+    let activ = true;
+    const trimiteSemnal = async () => {
+      let cod;
+      try {
+        cod = await inregistreazaSesiune();
+      } catch (e) {
+        return;
+      }
+      if (!activ || cod === "ok") return;
+      handleLogout();
+      setMesajDelogare(cod === "parohie_plina" || cod === "cont_ocupat" ? MESAJ_SESIUNE_INCHISA_DE_SERVER : mesajRefuzSesiune(cod));
+    };
+    const laRevenire = () => {
+      if (document.visibilityState === "visible") trimiteSemnal();
+    };
+    const interval = window.setInterval(trimiteSemnal, SEMNAL_SESIUNE_MS);
+    document.addEventListener("visibilitychange", laRevenire);
+    return () => {
+      activ = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", laRevenire);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   function handleLogout() {
+    scrieUltimaActivitate(null);
     delogare();
     setSession(null);
     setContActiv(null);
@@ -5350,6 +5564,7 @@ export default function ParohieERP() {
         onLogin={handleLogin}
         onVerifyMfa={handleVerifyMfa}
         onRecoveryLogin={handleRecoveryLogin}
+        mesajInfo={mesajDelogare}
       />
     );
   }
@@ -5976,6 +6191,8 @@ export default function ParohieERP() {
           onClose={() => setShowAdminMfaUnlock(false)}
         />
       )}
+
+      <AvertismentInactivitate ultimaActivitateRef={ultimaActivitateRef} />
     </div>
     </FereastraProvider>
   );
