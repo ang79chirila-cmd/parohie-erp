@@ -7578,6 +7578,7 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
         <AchitareDatorieModal
           key={inst.id}
           datorie={inst.datorie}
+          exercitiiFinanciare={state.exercitiiFinanciare}
           onClose={() => setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (plati, data) => { await achitaDatorie(inst.datorie.id, plati, data); setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id)); }}
         />
@@ -7651,18 +7652,50 @@ function Dashboard({ state, setState, derived, setTab, onDeschideStocuri, permis
 
 /* ------------------------------ Operațiuni -------------------------------- */
 
-function AchitareDatorieModal({ datorie, onClose, onSave }) {
+// Data de azi, după ceasul LOCAL (România). todayISO() folosește ora UTC, care între 00:00 și 03:00
+// (ora României) arată încă ziua precedentă — pentru verificarea „dată în viitor” contează ziua locală.
+function aziLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function AchitareDatorieModal({ datorie, exercitiiFinanciare, onClose, onSave }) {
   const sumaRamasa = datorie.sumaRamasa ?? datorie.suma;
-  const [data, setData] = useState(todayISO());
+  const [data, setData] = useState(aziLocalISO());
+  // Plată datată înaintea facturii: se cere o confirmare explicită (aproape sigur o greșeală de tastare).
+  const [cerereConfirmareAnterioara, setCerereConfirmareAnterioara] = useState(false);
+  const aziLocal = aziLocalISO();
+  // Plăți deja înregistrate cu dată ULTERIOARĂ celei alese acum — doar informativ (plățile se pot
+  // introduce în orice ordine; contează data reală de pe extras / dispoziția de plată).
+  const platiUlterioare = (datorie.platiExistente || []).filter((p) => data && p.data > data);
   const [sumaBanca, setSumaBanca] = useState(String(sumaRamasa));
   const [sumaCasa, setSumaCasa] = useState("0");
   const [error, setError] = useState("");
   const [salvand, setSalvand] = useState(false);
 
-  async function submit() {
+  async function submit(confirmatDataAnterioara = false) {
     const nBanca = Number(sumaBanca) || 0;
     const nCasa = Number(sumaCasa) || 0;
     const total = Math.round((nBanca + nCasa) * 100) / 100;
+    // ── Verificări de dată ──
+    if (!data) {
+      setError("Data plății este obligatorie.");
+      return;
+    }
+    if (data > aziLocal) {
+      setError(`Data plății (${fmtDataJurnal(data)}) este în viitor. O plată se înregistrează la data la care a fost efectiv făcută — data de pe extrasul bancar sau de pe dispoziția de plată.`);
+      return;
+    }
+    const anPlata = yearOf(data);
+    if (exercitiiFinanciare?.[anPlata]?.inchis) {
+      setError(`Exercițiul financiar ${anPlata} este închis. Corectarea unei erori din acest an se face exclusiv prin ajustare pe contul 106, în anul curent.`);
+      return;
+    }
+    if (datorie.dataFactura && data < datorie.dataFactura && !confirmatDataAnterioara) {
+      setError("");
+      setCerereConfirmareAnterioara(true);
+      return;
+    }
     if (!(total > 0)) {
       setError("Introdu cel puțin o sumă de plată mai mare decât zero (din casă sau din bancă).");
       return;
@@ -7718,8 +7751,24 @@ function AchitareDatorieModal({ datorie, onClose, onSave }) {
         )}
 
         <Field label="Data plății">
-          <input type="date" className={inputCls} value={data} onChange={(e) => setData(e.target.value)} />
+          <input
+            type="date"
+            className={inputCls}
+            value={data}
+            max={aziLocal}
+            onChange={(e) => { setData(e.target.value); setCerereConfirmareAnterioara(false); }}
+          />
           {data && <span className="text-xs text-stone-400">{fmtDataJurnal(data)}</span>}
+          {platiUlterioare.length > 0 && (
+            <span className="text-xs text-amber-700 flex items-start gap-1">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              <span>
+                Există deja {platiUlterioare.length === 1 ? "o plată" : "plăți"} din{" "}
+                {platiUlterioare.map((p) => fmtDataJurnal(p.data)).join(", ")}, ulterioară acestei date — verifică data.
+                Plățile se pot înregistra în orice ordine; contează data reală de pe extras sau de pe dispoziția de plată.
+              </span>
+            </span>
+          )}
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Sumă din bancă (RON)">
@@ -7748,10 +7797,26 @@ function AchitareDatorieModal({ datorie, onClose, onSave }) {
           și din bancă în aceeași achitare, cu propriile ei linii separate în Ordinul de plată.
         </p>
         {error && <span className="text-rose-600 text-xs flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>}
-        <div className="flex justify-end gap-2 mt-2">
-          <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
-          <Btn variant="gold" onClick={submit} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă plata"}</Btn>
-        </div>
+        {cerereConfirmareAnterioara ? (
+          <div className="bg-amber-50 border border-amber-300 rounded-md p-3 flex flex-col gap-2">
+            <span className="text-sm text-amber-900 flex items-start gap-2">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <span>
+                Data plății ({fmtDataJurnal(data)}) este <strong>anterioară datei facturii</strong> ({fmtDataJurnal(datorie.dataFactura)}).
+                O plată făcută înaintea facturii ar fi un avans — cel mai probabil data a fost tastată greșit. Confirmați doar dacă data este corectă.
+              </span>
+            </span>
+            <div className="flex justify-end gap-2">
+              <Btn variant="primary" onClick={() => setCerereConfirmareAnterioara(false)} disabled={salvand}>Corectez data</Btn>
+              <Btn variant="ghost" onClick={() => submit(true)} disabled={salvand}>Da, data este corectă</Btn>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2 mt-2">
+            <Btn variant="ghost" onClick={onClose} disabled={salvand}>Anulează</Btn>
+            <Btn variant="gold" onClick={() => submit()} disabled={salvand}>{salvand ? "Se salvează..." : "Confirmă plata"}</Btn>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -12332,6 +12397,7 @@ function PangarTab({ state, setState, derived, permisiuni, parohieId, parteneri,
       {instanteAchitare.map((inst) => (
         <AchitareDatorieModal key={inst.id}
           datorie={inst.datorie}
+          exercitiiFinanciare={state.exercitiiFinanciare}
           onClose={() => setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (plati, data) => { await achitaDatoriePangar(parohieId, state, setState, inst.datorie.id, plati, data); setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id)); }}
         />
@@ -16491,6 +16557,7 @@ function ConsumInternTab({ state, setState, permisiuni, parohieId, actiuneInitia
       {instanteAchitare.map((inst) => (
         <AchitareDatorieModal key={inst.id}
           datorie={inst.datorie}
+          exercitiiFinanciare={state.exercitiiFinanciare}
           onClose={() => setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (plati, data) => { await achitaDatoriePangar(parohieId, state, setState, inst.datorie.id, plati, data); setInstanteAchitare((l) => l.filter((i) => i.id !== inst.id)); }}
         />
