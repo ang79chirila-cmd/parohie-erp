@@ -8799,6 +8799,13 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       return da < db ? -1 : da > db ? 1 : 0;
     });
   }, [state.operatiuni, derived.contById]);
+  // Fereastra de editare/ștergere arată DOAR transferurile din anul selectat în selectorul general
+  // (ca toate celelalte liste ale Registrului). Ambele laturi ale unui transfer au aceeași dată,
+  // deci același an.
+  const perechiViramenteAn = useMemo(
+    () => perechiViramente.filter((p) => Number((p.plata || p.incasare)?.an ?? yearOf((p.plata || p.incasare)?.data)) === Number(anSelectat)),
+    [perechiViramente, anSelectat]
+  );
 
   function genereazaRegistrulViramente() {
     const randuriViramente = randuri.filter((r) => r.cont?.clasa === "viramente");
@@ -9082,7 +9089,8 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
       {instanteEditareViramente.map((inst) => (
         <EditareViramenteModal
           key={inst.id}
-          perechi={perechiViramente}
+          perechi={perechiViramenteAn}
+          an={anSelectat}
           permisiuni={permisiuni}
           onModifica={(p) => setInstanteEditareViramentFor((l) => [...l, { id: uid(), perechea: p }])}
           onSterge={async (p) => { await stergePerecheVirament(p); }}
@@ -10239,10 +10247,44 @@ function PerecheViramentEditForm({ perechea, onClose, onSave }) {
   );
 }
 
-function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onClose }) {
-  const [confirmareStergere, setConfirmareStergere] = useState(null); // index din perechi | null
+function EditareViramenteModal({ perechi, an, permisiuni, onModifica, onSterge, onClose }) {
+  const [confirmareStergere, setConfirmareStergere] = useState(null); // cheia perechii | null
   const [eroareStergere, setEroareStergere] = useState("");
   const [stergand, setStergand] = useState(false);
+
+  // Cheie stabilă pentru o pereche (plată + încasare) — nu indexul din listă, care se schimbă la
+  // filtrare/sortare (confirmarea de ștergere trebuie să rămână pe transferul ales).
+  const cheiePereche = (p) => `${p.plata?.id || "-"}|${p.incasare?.id || "-"}`;
+
+  // Filtre și sortare pe coloane (aceleași componente ca în celelalte tabele). Prefixul „vv” ține
+  // listele de sugestii separate de ale altor tabele deschise în aceeași pagină.
+  const configColoaneViramente = useMemo(() => ({
+    vvData: { get: (p) => fmtDataJurnal((p.plata || p.incasare).data), sort: (p) => (p.plata || p.incasare).data || "" },
+    vvCont: { get: (p) => `${(p.plata || p.incasare).contId} (${p.cont?.denumire || ""})` },
+    vvExplicatie: { get: (p) => (p.plata || p.incasare).explicatie || "" },
+    vvSuma: {
+      get: (p) => fmt((p.plata || p.incasare).suma),
+      cautare: (p) => `${fmt((p.plata || p.incasare).suma)} ${(p.plata || p.incasare).suma}`,
+      sort: (p) => Number((p.plata || p.incasare).suma) || 0,
+    },
+  }), []);
+  const { filtre, setFiltre, procesate, sugestiiPentru, sortColoana, sortDirectie, onSort } =
+    useFiltrareColoane(perechi, configColoaneViramente);
+  const areFiltre = Object.values(filtre).some((v) => v && String(v).trim());
+  const antet = (cheie, eticheta, extra = {}) => (
+    <AntetFiltrabil
+      cheie={cheie}
+      eticheta={eticheta}
+      filtre={filtre}
+      setFiltre={setFiltre}
+      sugestii={sugestiiPentru(cheie)}
+      sortColoana={sortColoana}
+      sortDirectie={sortDirectie}
+      onSort={onSort}
+      className={`px-2 py-1.5 align-bottom font-bold ${extra.className || ""}`}
+      aliniereDreapta={extra.aliniereDreapta}
+    />
+  );
 
   async function confirmaStergere(p) {
     setStergand(true);
@@ -10258,44 +10300,59 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
   }
 
   return (
-    <Modal title="Editare/ștergere transferuri interne (581/5081)" onClose={onClose} wide>
+    <Modal title={`Editare/ștergere transferuri interne (581/5081) — ${an}`} onClose={onClose} wide>
       <div className="flex flex-col gap-3">
         <p className="text-xs text-stone-500">
-          Toate transferurile interne (Casă ↔ Bancă, Deschidere/Închidere depozit) — separat de Chitanțe/Ordine de
+          Transferurile interne din anul {an} (Casă ↔ Bancă, Deschidere/Închidere depozit) — separat de Chitanțe/Ordine de
           plată, fiindcă au propria secvență de numerotare. Modificarea/ștergerea afectează ambele laturi (plată +
-          încasare) ale transferului, împreună.
+          încasare) ale transferului, împreună. Pentru alt an, schimbă anul din selectorul Registrului Jurnal.
         </p>
+        {perechi.length > 0 && (
+          <div className="flex items-center justify-between text-xs text-stone-500">
+            <span>
+              {areFiltre ? `Afișate ${procesate.length} din ${perechi.length} transferuri` : `${perechi.length} transferuri`}
+              {sortColoana ? " · sortare activă (clic pe antet pentru a inversa ordinea)" : " · clic pe antetul unei coloane pentru sortare"}
+            </span>
+            {areFiltre && (
+              <button type="button" onClick={() => setFiltre({})} className="text-[#1F3864] hover:underline">
+                Șterge filtrele
+              </button>
+            )}
+          </div>
+        )}
         <div className="overflow-x-auto max-h-[60vh]">
           <table className="w-full text-sm border-separate border-spacing-0 [&_th]:border [&_th]:border-stone-300 [&_td]:border [&_td]:border-stone-200">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-stone-500 font-bold border-b border-stone-200 sticky top-0 bg-white">
-                <th className="px-2 py-1 font-bold">Data</th>
-                <th className="px-2 py-1 font-bold">Cont</th>
-                <th className="px-2 py-1 font-bold">Explicație</th>
-                <th className="px-2 py-1 text-right font-bold">Sumă</th>
-                <th className="px-2 py-1 font-bold"></th>
+              {/* Lățimi minime: eticheta, săgețile de sortare și câmpul „Filtrează...” încap integral. */}
+              <tr className="text-left text-xs text-stone-500 font-bold border-b border-stone-200 sticky top-0 bg-white z-10">
+                {antet("vvData", "Data", { className: "min-w-[7rem]" })}
+                {antet("vvCont", "Cont", { className: "min-w-[12rem]" })}
+                {antet("vvExplicatie", "Explicație", { className: "min-w-[14rem]" })}
+                {antet("vvSuma", "Sumă", { className: "min-w-[7.5rem] text-right", aliniereDreapta: true })}
+                <th className="px-2 py-1.5 align-bottom font-bold"></th>
               </tr>
             </thead>
             <tbody>
-              {perechi.map((p, i) => {
+              {procesate.map((p) => {
                 const op = p.plata || p.incasare;
+                const cheie = cheiePereche(p);
                 return (
-                  <tr key={i} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
-                    <td className="px-2 py-1 tabular-nums">{fmtDataJurnal(op.data)}</td>
+                  <tr key={cheie} className="border-b border-stone-100 odd:bg-white even:bg-stone-50 hover:bg-stone-100">
+                    <td className="px-2 py-1 tabular-nums whitespace-nowrap">{fmtDataJurnal(op.data)}</td>
                     <td className="px-2 py-1 font-mono text-xs">{op.contId} <span className="text-stone-400">({p.cont?.denumire})</span></td>
-                    <td className="px-2 py-1 text-stone-500 max-w-[280px] whitespace-normal break-words" title={op.explicatie}>{op.explicatie}</td>
-                    <td className="px-2 py-1 text-right tabular-nums">{fmt(op.suma)}</td>
+                    <td className="px-2 py-1 text-stone-500 max-w-[280px] whitespace-normal break-words">{op.explicatie}</td>
+                    <td className="px-2 py-1 text-right tabular-nums whitespace-nowrap">{fmt(op.suma)}</td>
                     <td className="px-2 py-1">
                       {!permisiuni.citireOnly && (
                         <div className="flex gap-1.5 justify-end">
                           <Btn variant="gold" onClick={() => onModifica(p)} disabled={stergand}>Modifică</Btn>
-                          {confirmareStergere === i ? (
+                          {confirmareStergere === cheie ? (
                             <>
                               <Btn variant="danger" onClick={() => confirmaStergere(p)} disabled={stergand}>{stergand ? "Se șterge..." : "Confirmă"}</Btn>
                               <Btn variant="ghost" onClick={() => { setConfirmareStergere(null); setEroareStergere(""); }} disabled={stergand}>Anulează</Btn>
                             </>
                           ) : (
-                            <Btn variant="danger" onClick={() => setConfirmareStergere(i)} disabled={stergand}>Șterge</Btn>
+                            <Btn variant="danger" onClick={() => setConfirmareStergere(cheie)} disabled={stergand}>Șterge</Btn>
                           )}
                         </div>
                       )}
@@ -10303,8 +10360,11 @@ function EditareViramenteModal({ perechi, permisiuni, onModifica, onSterge, onCl
                   </tr>
                 );
               })}
+              {perechi.length > 0 && procesate.length === 0 && (
+                <tr><td colSpan={5} className="px-2 py-4 text-center text-stone-400">Niciun transfer nu corespunde filtrelor.</td></tr>
+              )}
               {perechi.length === 0 && (
-                <tr><td colSpan={5} className="px-2 py-4 text-center text-stone-400">Niciun transfer intern încă.</td></tr>
+                <tr><td colSpan={5} className="px-2 py-4 text-center text-stone-400">Niciun transfer intern în anul {an}.</td></tr>
               )}
             </tbody>
           </table>
