@@ -7001,9 +7001,21 @@ async function achitaDatoriePangar(parohieId, state, setState, datorieId, plati,
   const liniiAchizitiePentruCalcul = esteFacturaGenerala
     ? datorie.liniiAchizitie.map((l) => ({ categorieBVC: l.contId, suma: l.suma }))
     : datorie.liniiAchizitie;
+  // La NRCD, liniile de achiziție pot veni cheiate în două feluri: după categoria produsului / motivul
+  // de consum intern (ex. „vin” — cum le citește getDatoriiFurnizori din baza de date) SAU direct după
+  // contul de achiziție (ex. „672.01.03.02” — cum le construiește recepția abia înregistrată, înainte
+  // de orice reîncărcare). Harta acceptă ambele forme: fiecare cont de achiziție cunoscut se
+  // „traduce” în el însuși. Fără asta, plata unei recepții proaspăt introduse eșua cu mesajul
+  // „Categoria de produs … nu are un cont de achiziție configurat” (defect găsit la 25.09.2026).
+  const conturiAchizitieCaCategorii = Object.fromEntries(
+    [...Object.values(CATEGORII_PANGAR), ...Object.values(MOTIVE_CA_CATEGORII_ACHIZITIE)]
+      .map((c) => c.achizitie)
+      .filter(Boolean)
+      .map((cont) => [cont, { achizitie: cont }])
+  );
   const categoriiPangarPentruCalcul = esteFacturaGenerala
     ? Object.fromEntries(datorie.liniiAchizitie.map((l) => [l.contId, { achizitie: l.contId }]))
-    : { ...CATEGORII_PANGAR, ...MOTIVE_CA_CATEGORII_ACHIZITIE };
+    : { ...conturiAchizitieCaCategorii, ...CATEGORII_PANGAR, ...MOTIVE_CA_CATEGORII_ACHIZITIE };
 
   if (!esteFacturaGenerala && (!datorie.liniiAchizitie || datorie.liniiAchizitie.length === 0)) {
     throw new Error("Nu s-a găsit nicio linie de achiziție pentru această datorie, în starea curentă a paginii — reîncarcă pagina (Ctrl+Shift+R) și încearcă din nou achitarea.");

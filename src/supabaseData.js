@@ -2420,6 +2420,13 @@ export async function getDatoriiFurnizori(parohieId) {
 
   const docIds = docs.map((d) => d.id);
   const miscari = await inLoturi((lot) => supabase.from("miscari_stoc_pangar").select("*").in("document_id", lot), docIds);
+  // Liniile de Consum intern ale aceluiași NRCD (recepție mixtă sau doar de consum intern) fac parte
+  // din aceeași factură — fără ele, valoarea datoriei ar fi doar partea de Pangar (sau zero).
+  // Cheia lor e motivul (ex. „protocol”), tradus în cont de achiziție la plată (MOTIVE_CONSUM).
+  const miscariConsum = await inLoturi(
+    (lot) => supabase.from("miscari_consum_intern").select("document_id, motiv, valoare_totala").eq("tip", "intrare").in("document_id", lot),
+    docIds
+  );
 
   const articolIds = [...new Set((miscari || []).map((m) => m.articol_id))];
   let articoleById = {};
@@ -2478,6 +2485,12 @@ export async function getDatoriiFurnizori(parohieId) {
       const valoare = Number(m.cantitate) * Number(articol.pret_achizitie);
       suma += valoare;
       sumePeCategorie[articol.categorie_bvc] = (sumePeCategorie[articol.categorie_bvc] || 0) + valoare;
+    }
+    for (const c of (miscariConsum || []).filter((x) => x.document_id === d.id)) {
+      const valoare = Number(c.valoare_totala) || 0;
+      if (!c.motiv || valoare <= 0) continue;
+      suma += valoare;
+      sumePeCategorie[c.motiv] = (sumePeCategorie[c.motiv] || 0) + valoare;
     }
     const platiExistente = platiPeNrcd[d.id] || [];
     const sumaAchitata = platiExistente.reduce((s, p) => s + p.suma, 0);
