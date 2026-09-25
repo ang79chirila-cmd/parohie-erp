@@ -9050,6 +9050,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
           operatiuni={state.operatiuni}
+          datoriiFurnizori={state.datoriiFurnizori}
           onClose={() => setInstanteFacturaFurnizor((l) => l.filter((i) => i.id !== inst.id))}
           onSave={async (linii, opts) => {
             await addFacturaFurnizor(linii, opts);
@@ -13788,24 +13789,23 @@ async function verificaFacturaDubla(criterii) {
   }
 }
 
-function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, operatiuni, onClose, onSave }) {
+function FacturaFurnizorForm({ conturi, anImplicit, parteneri, onCreatPartener, operatiuni, datoriiFurnizori, onClose, onSave }) {
   const [pas, setPas] = useState("detalii"); // detalii | dubla | decizie | acum | amanata
   // Verificarea „factură dublă” (la „Continuă”): rezultatul și starea „se verifică”.
   const [verificareDubla, setVerificareDubla] = useState(null); // { existente, eroare } | null
   const [verificand, setVerificand] = useState(false);
   const [furnizor, setFurnizor] = useState("");
   const [nrFactura, setNrFactura] = useState("");
-  // Aceeași corecție ca la OrdinPlataForm/ReceptieNRCDForm — vezi explicația de-acolo.
-  const facturiAnImplicit = useMemo(
-    () => (anImplicit != null ? operatiuni.filter((op) => op.an === anImplicit) : operatiuni),
-    [operatiuni, anImplicit]
-  );
-  // Data propusă = data celei mai recente facturi înregistrate. (Nu „ultimul număr”: numerotarea
-  // facturilor urmează ordinea furnizor → dată → nr. factură, deci numărul maxim nu e neapărat cel mai recent.)
+  // Data propusă = data celei mai recente facturi de furnizor din anul selectat, dintre cele încă de
+  // plată (Datorii curente). Facturile nu mai fac parte din Registrul Jurnal (nu sunt mișcări de
+  // bani), deci nu mai pot fi căutate printre operațiuni. (Nu „ultimul număr”: numerotarea urmează
+  // ordinea furnizor → dată → nr. factură, deci numărul maxim nu e neapărat cel mai recent.)
   const ultimaFacturaEmisa = useMemo(() => {
-    const facturi = facturiAnImplicit.filter((op) => op.tip === "facturaFurnizor");
-    return facturi.length ? facturi.reduce((max, op) => (op.data > max.data ? op : max)) : null;
-  }, [facturiAnImplicit]);
+    const facturi = (datoriiFurnizori || []).filter(
+      (d) => d.tipDatorie === "generala" && d.dataFactura && (anImplicit == null || yearOf(d.dataFactura) === anImplicit)
+    );
+    return facturi.length ? { data: facturi.reduce((max, d) => (d.dataFactura > max ? d.dataFactura : max), facturi[0].dataFactura) } : null;
+  }, [datoriiFurnizori, anImplicit]);
   const dataImplicita = ultimaFacturaEmisa
     ? ultimaFacturaEmisa.data
     : anImplicit && anImplicit !== yearOf(todayISO()) ? `${anImplicit}-01-01` : todayISO();

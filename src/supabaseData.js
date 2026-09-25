@@ -342,11 +342,21 @@ export async function salveazaDocument(
 // Aduce toate documentele + liniile lor pentru o parohie, reconstruite direct în forma
 // "operatiuni" plată (un rând per linie bugetară) pe care o folosește restul aplicației —
 // aceeași formă produsă local de construiesteChitanta()/construiesteOrdinPlata().
+// Registrul Jurnal (partidă simplă) conține DOAR încasări și plăți efective: chitanțe, ordine de
+// plată și transferurile interne. Facturile de la furnizori NU sunt mișcări de bani — sunt datorii,
+// urmărite separat (Datorii curente); banii ies abia la plată, prin Ordinul de plată legat de
+// factură. Documentele fără valoare de trezorerie (factura_furnizor, nrcd, bon_consum etc.) sunt
+// deci excluse de aici. Altfel, liniile unei facturi apăreau în Registru ca plăți din bancă, fără
+// nr. OP și fără partener, micșorau soldul băncii și se adunau la cheltuieli — iar la achitare,
+// Ordinul de plată le scădea încă o dată (defect găsit la 25.09.2026).
+const TIPURI_DOCUMENTE_TREZORERIE = ["chitanta", "ordin_plata", "virament_incasare", "virament_plata"];
+
 export async function getOperatiuni(parohieId) {
   const { data: documente, error } = await supabase
     .from("documente")
     .select("*")
     .eq("parohie_id", parohieId)
+    .in("tip", TIPURI_DOCUMENTE_TREZORERIE)
     .order("an", { ascending: true })
     .order("nr", { ascending: true });
   if (error) throw error;
