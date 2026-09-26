@@ -8364,7 +8364,10 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
     onConsumaActiuneInitiala();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actiuneInitiala]);
-  const [browseSaltNr, setBrowseSaltNr] = useState(null); // numărul documentului la care se deschide direct navigatorul (link din tabelul Jurnal)
+  // Documentul la care se deschide direct navigatorul (link din tabelul Jurnal): { documentId, nr, an }.
+  // Numărul singur NU identifică un document — numerotarea reîncepe în fiecare an (ex. OP 7/2025 și
+  // OP 7/2026); de aceea se transmit și anul, și id-ul documentului (defect găsit la 26.09.2026).
+  const [browseSalt, setBrowseSalt] = useState(null);
 
   // Fiecare nume nou folosit vreodată la o Chitanță devine automat sugestie pentru viitor —
   // nu necesită o bază de date separată, se extrage direct din chitanțele deja emise.
@@ -8932,7 +8935,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                       <button
                         type="button"
                         className="text-[#1F3864] underline decoration-dotted hover:decoration-solid text-left"
-                        onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("incasare"); }}
+                        onClick={() => { setBrowseSalt({ documentId: r.op.documentId, nr: r.op.nr, an: r.op.an }); setBrowseTip("incasare"); }}
                       >
                         {r.op.nr}
                       </button>
@@ -8948,7 +8951,7 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
                       <button
                         type="button"
                         className="text-[#1F3864] underline decoration-dotted hover:decoration-solid text-left"
-                        onClick={() => { setBrowseSaltNr(r.op.nr); setBrowseTip("plata"); }}
+                        onClick={() => { setBrowseSalt({ documentId: r.op.documentId, nr: r.op.nr, an: r.op.an }); setBrowseTip("plata"); }}
                       >
                         {r.op.nr}
                       </button>
@@ -9123,13 +9126,13 @@ function OperatiuniTab({ state, setState, derived, permisiuni, parohieId, setTab
           articole={state.articole}
           parteneri={parteneri}
           onCreatPartener={onCreatPartener}
-          saltInitialNr={browseSaltNr}
+          saltInitial={browseSalt}
           anImplicit={anSelectat}
           onDuplica={(initial) => {
             if (browseTip === "incasare") setInstanteChitanta((l) => [...l, { id: uid(), initial }]);
             else setInstanteOP((l) => [...l, { id: uid(), initial }]);
           }}
-          onClose={() => { setBrowseTip(null); setBrowseSaltNr(null); }}
+          onClose={() => { setBrowseTip(null); setBrowseSalt(null); }}
         />
       )}
     </div>
@@ -19201,30 +19204,32 @@ function DocumentArhivaForm({ onClose, onSave }) {
 
 /* ------------------------------ Navigator documente (Chitanțe / Ordine de plată) -------------------------------- */
 
-function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, parteneri, onCreatPartener, saltInitialNr, anImplicit, onDuplica, onClose }) {
+function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exercitiiFinanciare, permisiuni, setState, parohie, parohieId, miscariStoc, articole, parteneri, onCreatPartener, saltInitial, anImplicit, onDuplica, onClose }) {
   // Afișare pe ecran: cel mai nou document primul (cerință explicită) — tipărirea (grupeazaDocumente
   // în sine) rămâne cronologică ascendentă, convenția obișnuită pentru un registru tipărit.
   // Viramentele interne (581/5081) au propriul bazin de numerotare, izolat, care se poate suprapune
   // numeric cu cel al chitanțelor/OP-urilor reale — le excludem aici, ca să nu se amestece grupări
   // nelegate între ele. Ele au un raport dedicat (Registrul viramentelor), nu apar în acest navigator.
+  // Navigatorul arată DOAR documentele exercițiului financiar selectat (ca Registrul Jurnal, în
+  // care „fiecare exercițiu financiar se afișează separat”): totalul, „Document X din Y”, navigarea
+  // Precedentul/Următorul și saltul la un număr se referă toate la acel an. Numerotarea reîncepe în
+  // fiecare an, deci numai așa un număr identifică fără echivoc un document. Pentru alt an se
+  // schimbă anul din selectorul Registrului.
   const documente = useMemo(
-    () => grupeazaDocumente(operatiuni.filter((op) => contById[op.contId]?.clasa !== "viramente"), tip),
-    [operatiuni, tip, contById]
+    () => grupeazaDocumente(
+      operatiuni.filter((op) => contById[op.contId]?.clasa !== "viramente" && (anImplicit == null || Number(op.an) === Number(anImplicit))),
+      tip
+    ),
+    [operatiuni, tip, contById, anImplicit]
   );
   const [index, setIndex] = useState(() => {
-    if (saltInitialNr != null) {
-      const gasit = documente.findIndex((d) => d.nr === saltInitialNr);
+    if (saltInitial) {
+      // Întâi după id-ul documentului (unic), apoi după pereche (nr, an) — niciodată doar după nr.
+      let gasit = saltInitial.documentId
+        ? documente.findIndex((d) => d.linii.some((l) => l.documentId === saltInitial.documentId))
+        : -1;
+      if (gasit === -1) gasit = documente.findIndex((d) => d.nr === saltInitial.nr && Number(d.an) === Number(saltInitial.an));
       if (gasit !== -1) return gasit;
-    }
-    // Fără un salt explicit la un anumit număr, navigatorul respectă STRICT anul exercițiului
-    // financiar selectat — se deschide pe ultimul document din ACEL an, nu pe ultimul document
-    // emis vreodată (care ar putea aparține altui an, dacă userul a avansat între timp acolo).
-    // Dacă anul selectat nu are încă niciun document, revine la ultimul document existent, oricare
-    // ar fi anul lui — mai util decât a deschide navigatorul complet gol.
-    if (anImplicit != null) {
-      for (let i = documente.length - 1; i >= 0; i--) {
-        if (documente[i].an === anImplicit) return i;
-      }
     }
     return documente.length - 1;
   });
@@ -19656,11 +19661,13 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
     setIndex(i);
   }
 
+  // Saltul la un număr se face în anul exercițiului afișat (navigatorul conține doar acel an).
   function saltLaNr() {
     const nr = Number(saltNr);
-    const gasit = documente.findIndex((d) => d.nr === nr);
+    const anCautat = anImplicit ?? docCurent?.an;
+    const gasit = documente.findIndex((d) => d.nr === nr && (anCautat == null || Number(d.an) === Number(anCautat)));
     if (gasit === -1) {
-      setEroareSalt(`Nu există documentul nr. ${saltNr}.`);
+      setEroareSalt(`Nu există documentul nr. ${saltNr}${anCautat != null ? ` în anul ${anCautat}` : ""}.`);
       return;
     }
     setEroareSalt("");
@@ -19678,7 +19685,7 @@ function DocumentBrowserModal({ tip, operatiuni, contById, derived, conturi, exe
 
   if (documente.length === 0) {
     return (
-      <Modal title={`${tipEtichetatPlural} — niciun document emis`} onClose={onClose} className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
+      <Modal title={`${tipEtichetatPlural} — niciun document emis${anImplicit != null ? ` în ${anImplicit}` : ""}`} onClose={onClose} className="[&_button]:shadow-sm [&_button:hover]:shadow-md [&_button]:transition-shadow">
         <p className="text-sm text-stone-500">Nu există încă niciun document de acest tip.</p>
       </Modal>
     );
@@ -20106,11 +20113,19 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
     setIndex(i);
   }
 
+  // Numerotarea reîncepe în fiecare an: „7” caută nr. 7 în anul documentului afișat; „7/2025”
+  // caută explicit în anul 2025. Niciodată doar după număr (primul găsit putea fi din alt an).
   function saltLaNr() {
-    const nr = Number(saltNr);
-    const gasit = documente.findIndex((d) => d.nr === nr);
+    const m = String(saltNr).trim().match(/^(\d+)\s*(?:\/\s*(\d{4}))?$/);
+    if (!m) {
+      setEroareSalt("Introduceți numărul documentului (ex. 7) sau numărul și anul (ex. 7/2025).");
+      return;
+    }
+    const nr = Number(m[1]);
+    const anCautat = m[2] ? Number(m[2]) : docCurent?.an;
+    const gasit = documente.findIndex((d) => d.nr === nr && (anCautat == null || Number(d.an) === Number(anCautat)));
     if (gasit === -1) {
-      setEroareSalt(`Nu există documentul nr. ${saltNr}.`);
+      setEroareSalt(`Nu există documentul nr. ${nr}${anCautat != null ? ` în anul ${anCautat}` : ""}.`);
       return;
     }
     setEroareSalt("");
@@ -20145,8 +20160,9 @@ function DocumentBrowserGeneric({ tipEtichetat, documente, campuriAntet, coloane
           </div>
           <div className="flex items-center gap-1">
             <input
-              type="number" className={inputCls + " w-24"} value={saltNr}
-              onChange={(e) => setSaltNr(e.target.value)} placeholder="Nr. doc"
+              type="text" inputMode="numeric" className={inputCls + " w-28"} value={saltNr}
+              onChange={(e) => setSaltNr(e.target.value)} placeholder="Nr. sau nr./an"
+              title="Numărul documentului (în anul celui afișat) sau numărul și anul, ex. 7/2025"
               onKeyDown={(e) => e.key === "Enter" && saltLaNr()}
             />
             <Btn variant="ghost" onClick={saltLaNr}>Salt la doc nr.</Btn>
